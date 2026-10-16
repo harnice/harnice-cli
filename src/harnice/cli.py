@@ -5,7 +5,18 @@ import shutil
 import traceback
 from time import sleep
 
-from colorama import Fore, Style, just_fix_windows_console
+try:
+    from colorama import Fore, Style, just_fix_windows_console
+except ImportError:
+    class _PlainColor:
+        YELLOW = ""
+        RED = ""
+        RESET_ALL = ""
+
+    Fore = Style = _PlainColor()
+
+    def just_fix_windows_console():
+        return None
 
 from harnice.lists import rev_history
 from harnice import state

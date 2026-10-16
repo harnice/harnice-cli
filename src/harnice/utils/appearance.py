@@ -1,5 +1,9 @@
 import ast
-import webcolors
+
+try:
+    import webcolors
+except ImportError:
+    webcolors = None
 
 """
 Appearance data specification
@@ -118,6 +122,8 @@ def normalize_color_into_rrggbb(c):
         if len(lower) == 4:
             return "#" + "".join(ch * 2 for ch in lower[1:])
         return lower
+    if webcolors is None:
+        return c
     try:
         return webcolors.name_to_hex(lower)
     except ValueError:

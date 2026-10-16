@@ -2,7 +2,6 @@ import os
 import re
 import tempfile
 import json
-import yaml
 import xml.etree.ElementTree as ET
 
 from pathlib import Path
@@ -11,6 +10,26 @@ from harnice import fileio, state
 from harnice import build_sandbox
 from harnice.lists import signals_list
 from harnice.utils import block_diagram_utils, build_utils
+
+def _import_yaml():
+    """PyYAML, or a clear stop when a configuration file actually has fields."""
+    try:
+        import yaml
+    except ImportError as exc:
+        raise SystemExit(
+            "Reading this device's config.yaml needs PyYAML. "
+            "An empty configuration file does not."
+        ) from exc
+    return yaml
+
+
+def _yaml_is_blank(raw):
+    """True when every line is empty or a comment, so PyYAML is unnecessary."""
+    for line in raw.splitlines():
+        if line.split("#", 1)[0].strip():
+            return False
+    return True
+
 
 default_desc = "DEVICE, FUNCTION, ATTRIBUTES, etc."
 
@@ -485,6 +504,10 @@ def _validate_config_yaml():
     except FileNotFoundError: # file must not exist, disregard
         return
 
+    if _yaml_is_blank(raw):
+        return
+
+    yaml = _import_yaml()
     try:
         data = yaml.load(raw, Loader=make_line_loader())
     except yaml.YAMLError as e:
@@ -537,6 +560,10 @@ def _default_configuration_from_setup():
     with open(path, "r", encoding="utf-8") as f:
         raw = f.read()
 
+    if _yaml_is_blank(raw):
+        return {}
+
+    yaml = _import_yaml()
     try:
         data = yaml.safe_load(raw)
     except yaml.YAMLError:
