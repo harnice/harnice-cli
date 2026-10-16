@@ -1,0 +1,66 @@
+[project]
+name = "harnice"
+dynamic = ["version"]
+authors = [
+  { name="Kenyon Shutt", email="harnice.io@gmail.com" },
+]
+description = "Electrical System CAD"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "sexpdata",
+    "Pillow",
+    "pypdf",
+    "xlwt",
+    "webcolors",
+    "prompt_toolkit",
+    "PyYAML",
+    "colorama>=0.4.6",
+]
+
+[project.optional-dependencies]
+# OpenCascade bindings for reading and writing B-rep STEP files. Without this
+# Harnice falls back to faceted STEP output and cannot tessellate STEP input.
+# The standalone Harnice.app / Harnice.exe builds always include it.
+step = ["cadquery-ocp>=7.8.1.1,<8"]
+# Window, license check, and update check. Used by the standalone app build.
+# The pip package does not install this extra.
+desktop = ["pywebview>=5.0", "PyJWT[crypto]>=2.8.0", "certifi"]
+
+[project.urls]
+Documentation = "https://harnice.io/"
+Homepage = "https://github.com/harnice/Harnice"
+Issues = "https://github.com/harnice/Harnice/issues"
+
+[project.scripts]
+harnice = "harnice.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["harnice*"]
+exclude = ["harnice.gui*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+harnice = ["defaults/**/*"]
+
+[tool.setuptools.exclude-package-data]
+# defaults/**/* also matches bytecode and Finder junk sitting in a local checkout.
+harnice = ["*.pyc", "*.pyo", "*__pycache__*", "*.DS_Store"]
+
+[tool.setuptools_scm]
+# version derived from git tags (e.g. v0.3.3 → 0.3.3)
+# Drop the +g<hash> local suffix. PyPI rejects it.
+local_scheme = "no-local-version"
+
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
