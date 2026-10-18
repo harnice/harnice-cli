@@ -263,6 +263,9 @@ into both the library snapshot and editable layer. ``replace_destination``
 removes the previous imported destination after the source revision and
 requested files have been validated.
 
+A system import also copies ``maps/channels.tsv`` to the instance. That file
+is the source of truth for a parent system's hierarchical channel map.
+
 **Args:**
 - `input_dict` (dict): Dictionary containing part information with required keys:
     - `instance_name` (str): Name for this instance in the project
@@ -488,7 +491,27 @@ requested files have been validated.
 
     if record_library_history:
         library_history.append(input_dict.get("instance_name"), update_contents)
+
+    if (input_dict.get("item_type") or "").strip() == "system":
+        _import_system_channel_map(lib_used_rev_path, destination_directory)
+
     return destination_directory
+
+
+def _import_system_channel_map(lib_used_rev_path, destination_directory):
+    """Copy an imported system's channel map onto the instance.
+
+    ``maps/channels.tsv`` next to the instance's other files is the source of
+    truth for the downstream system. It is refreshed from the revision just
+    pulled. Nested subsystems keep the channel maps already stored in that
+    revision; those are not rewritten here.
+    """
+    src = os.path.join(lib_used_rev_path, "maps", "channels.tsv")
+    if not os.path.isfile(src):
+        return
+    dest = os.path.join(destination_directory, "maps", "channels.tsv")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copy2(src, dest)
 
 
 def resolve_source_library_revision_folder(input_dict):

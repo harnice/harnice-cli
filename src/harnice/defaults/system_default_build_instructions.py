@@ -32,6 +32,12 @@
 # compatible types, alphabetical. Skips every channel with more than one endpoint.
 channel_map.map_unmapped_compatibles_alphabetically()
 
+# this system's channel map, plus the channel map imported with every child
+# subsystem (recursive). Inside a subsystem, refdes, harness groups, junction
+# ids, and connector/harness chains are prefixed: subsystem.name, or
+# subsystem.subsystem.name. Channel ids are not.
+channel_map.compile_hierarchical()
+
 # one row per passthrough channel, plus routing context (availables per
 # group / from→to type / directionality). Dual-mapped passthroughs are omitted.
 passthrough_map.new()
@@ -198,18 +204,18 @@ for instance in instances_list.read():
 #              SUBSYSTEM SYMBOLS
 # ===========================================================================
 # Each run_macro call is one symbol (switch instances in the console to edit it).
-# scale is applied when dropping the system block diagram into the symbol as a primitive.
+# scale is applied to the system block diagram primitive in the symbol.
 # Connector pins come from unique ICD connectors. The ICD is written after
 # build instructions, so a second build is required after ICD changes.
 # This macro also runs device signals-list / symbol-pin verification on the ICD.
-subsystem_symbol_scale = 0.1
+scale = 0.1
 
 build_utils.run_macro(
     "subsystem_symbol",
     "library/macros/system_artifacts",
     "https://github.com/harnice/harnice",
     artifact_id="subsystem-symbol-1",
-    subsystem_symbol_scale=0.1,
+    scale=scale,
 )
 
 # Each run_macro call is one PDF file.
@@ -233,7 +239,7 @@ build_utils.run_macro(
                     "tblock-key-pn": state.partnumber("pn"),
                     "tblock-key-drawnby": rev_history.info(field="drawnby"),
                     "tblock-key-rev": state.partnumber("R"),
-                    "tblock-key-scale": subsystem_symbol_scale,
+                    "tblock-key-scale": scale,
                     "tblock-key-sheet": "autosheet",
                 },
             },

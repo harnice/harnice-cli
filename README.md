@@ -17,3 +17,7 @@ This repository is the Harnice command-line package. From the checkout:
     PYTHONPATH=src python -m harnice -b
 
 That Python needs the libraries named under `dependencies` in `pyproject.toml`.
+
+Documentation and the AI prompts are in `src/harnice/docs/`.
+`PYTHONPATH=src python -m harnice --docs` prints that path.
+The same pages are at https://harnice.io/.

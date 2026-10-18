@@ -96,6 +96,10 @@ def main():
     from harnice.runtime import apply_source_checkout_env
 
     apply_source_checkout_env()
+    if len(sys.argv) >= 2 and sys.argv[1] == "--docs":
+        _print_docs_dir()
+        return
+
     if len(sys.argv) >= 2 and sys.argv[1] == "--verify-revision":
         from harnice import fileio as fileio_mod
 
@@ -165,6 +169,7 @@ def main():
     # Ensure we are inside a revision folder
     # -----------------------------
     fileio.verify_revision_structure()
+    _ensure_drawnby()
     item_type = rev_history.info(field="project_type")
 
     # -----------------------------
@@ -221,6 +226,38 @@ def main():
 
     rev_history.update_last_build("succeeded")
     return
+
+
+def _docs_tree(path):
+    return os.path.isfile(os.path.join(path, "index.md")) and os.path.isfile(
+        os.path.join(path, "ai_prompts.md")
+    )
+
+
+def bundled_docs_dir():
+    """Directory of the documentation that ships with this install.
+
+    The command-line package keeps it next to this file. A full checkout
+    keeps the same pages at the repository ``docs/`` folder.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    package_docs = os.path.join(here, "docs")
+    if _docs_tree(package_docs):
+        return package_docs
+    checkout_docs = os.path.abspath(os.path.join(here, os.pardir, os.pardir, "docs"))
+    if _docs_tree(checkout_docs):
+        return checkout_docs
+    return None
+
+
+def _print_docs_dir():
+    path = bundled_docs_dir()
+    if not path:
+        fatal(
+            "This install has no documentation folder. "
+            "The docs are at https://harnice.io/."
+        )
+    print(path, flush=True)
 
 
 def _require_desktop():
@@ -296,6 +333,37 @@ def _run_console_server_only():
     )
 
 
+def _ensure_drawnby():
+    """Ask for a drawn-by name when ``drawnby.json`` is missing.
+
+    Interactive terminals only. The desktop app collects the name in its
+    settings dialog, and a non-interactive run (piped stdin, including the
+    console Build button) leaves a missing file for ``fileio.drawnby()`` to
+    report.
+    """
+    path = fileio.drawnby_path()
+    if os.path.exists(path):
+        return
+    if not fileio._should_prompt_for_identity_files():
+        return
+    print(f"drawnby.json was not found at:\n{path}", flush=True)
+    while True:
+        print("Enter your drawn-by name:", flush=True)
+        try:
+            line = input()
+        except EOFError:
+            fatal(
+                "Drawn-by name is not set. "
+                f'Write {{"name": "YOUR NAME"}} to {path}.'
+            )
+        name = (line or "").strip()
+        if not name:
+            warn("Drawn-by name cannot be blank.")
+            continue
+        fileio.write_drawnby(name)
+        return
+
+
 def prompt(text, default=None):
     """Print a prompt and read a line from stdin.
 
@@ -344,6 +412,7 @@ def newrev():
     """
     # Ensure revision structure is valid and get context
     fileio.verify_revision_structure()
+    _ensure_drawnby()
 
     current_r = state.partnumber("R")
     new_rev_number = prompt(
@@ -384,6 +453,7 @@ def newpn():
     and updating filenames to reflect the new part number (and optional new rev).
     """
     fileio.verify_revision_structure()
+    _ensure_drawnby()
 
     current_pn = state.partnumber("pn")
     new_pn = prompt(

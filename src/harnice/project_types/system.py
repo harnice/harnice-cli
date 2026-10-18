@@ -47,6 +47,7 @@ def file_structure():
         },
         "maps": {
             "channels.tsv": "channel map",
+            "hierarchical_channel_map.tsv": "hierarchical channel map",
             "passthrough.tsv": "passthrough map",
             "context.tsv": "passthrough routing context",
         }

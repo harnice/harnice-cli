@@ -75,13 +75,21 @@ def parse_subsystem_symbol_calls(source: str) -> list[dict]:
                         artifact_id = _literal(args[3])
                     artifact_id = str(artifact_id or "").strip()
                     if artifact_id and artifact_id not in seen:
-                        scale = DEFAULT_SCALE
+                        scale, explicit = DEFAULT_SCALE, False
                         if "scale" in keywords:
                             parsed = _literal(keywords["scale"])
-                            if isinstance(parsed, (int, float)):
-                                scale = float(parsed)
+                            if isinstance(parsed, (int, float)) and not isinstance(
+                                parsed, bool
+                            ):
+                                scale, explicit = float(parsed), True
                         seen.add(artifact_id)
-                        out.append({"artifact_id": artifact_id, "scale": scale})
+                        out.append(
+                            {
+                                "artifact_id": artifact_id,
+                                "scale": scale,
+                                "scale_explicit": explicit,
+                            }
+                        )
             self.generic_visit(node)
 
     _Visitor().visit(tree)
@@ -377,6 +385,83 @@ def sync_connector_pins(artifact_id: str, *, only_if_none: bool = False) -> None
             f.write("\n")
 
 
+_PRIMITIVE_OPEN_RE = re.compile(
+    r"<g\b[^>]*\bclass=\"[^\"]*\bsystem-diagram-primitive\b[^\"]*\"[^>]*>",
+    re.IGNORECASE,
+)
+_TRANSFORM_ATTR_RE = re.compile(r"""transform=(["'])(.*?)\1""", re.IGNORECASE)
+_SCALE_CALL_RE = re.compile(
+    r"scale\s*\(\s*[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
+    r"(?:\s*,\s*[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?)?\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _format_scale(scale: float) -> str:
+    return f"{float(scale):.6g}"
+
+
+def _transform_with_scale(transform: str, scale: float) -> str:
+    piece = f"scale({_format_scale(scale)})"
+    if _SCALE_CALL_RE.search(transform):
+        return _SCALE_CALL_RE.sub(piece, transform, count=1)
+    text = (transform or "").strip()
+    return f"{text} {piece}".strip() if text else piece
+
+
+def _rewrite_primitive_scales(svg_text: str, scale: float) -> str:
+    """Set the uniform scale on each system-diagram primitive. Leave translate in place."""
+
+    def repl(match):
+        tag = match.group(0)
+        found = _TRANSFORM_ATTR_RE.search(tag)
+        if not found:
+            return tag[:-1] + f' transform="scale({_format_scale(scale)})">'
+        updated = _transform_with_scale(found.group(2), scale)
+        if updated == found.group(2):
+            return tag
+        return tag[: found.start(2)] + updated + tag[found.end(2) :]
+
+    return _PRIMITIVE_OPEN_RE.sub(repl, svg_text)
+
+
+def apply_declared_diagram_scale(artifact_id: str) -> None:
+    """Write the build-instruction scale onto the symbol's diagram primitive.
+
+    ``scale`` on the ``subsystem_symbol`` ``run_macro`` call is the source of
+    truth. An existing primitive keeps its
+    position; only its scale changes. Symbols with no numeric scale argument
+    are left alone.
+    """
+    row = next(
+        (item for item in list_artifacts() if item.get("artifact_id") == artifact_id),
+        None,
+    )
+    if not row or not row.get("scale_explicit"):
+        return
+    try:
+        scale = float(row.get("scale"))
+    except (TypeError, ValueError):
+        return
+    params = params_path(artifact_id)
+    os.makedirs(os.path.dirname(params), exist_ok=True)
+    with open(params, "w", encoding="utf-8") as f:
+        json.dump({"scale": scale}, f, indent=2)
+        f.write("\n")
+    path = symbol_svg_path(artifact_id)
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        svg_text = f.read()
+    updated = _rewrite_primitive_scales(svg_text, scale)
+    if updated == svg_text:
+        return
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(updated)
+        if not updated.endswith("\n"):
+            f.write("\n")
+
+
 def verify_as_device(artifact_id: str, verbose: bool = True) -> None:
     """Run device signals-list checks and warn on symbol-pin mismatches vs the ICD.
 
@@ -398,6 +483,7 @@ def verify_as_device(artifact_id: str, verbose: bool = True) -> None:
                 "(build twice after external-interface flags exist)."
             )
         sync_connector_pins(artifact_id)
+        apply_declared_diagram_scale(artifact_id)
         return
     # ========================================================================
     # TODO: turn ICD verification back on
@@ -425,6 +511,7 @@ def verify_as_device(artifact_id: str, verbose: bool = True) -> None:
             + ", ".join(sorted(missing))
         )
     sync_connector_pins(artifact_id)
+    apply_declared_diagram_scale(artifact_id)
 
 
 def ensure_symbol_svg(artifact_id: str) -> str:

@@ -1065,9 +1065,12 @@ def _bom_item_type(row):
 
 def _import_bom_devices(update_instances_list=True):
     """
-    Pull every BOM device/harness into ``instance_data`` and optionally the instances list.
+    Pull every BOM device, subsystem, or harness into ``instance_data`` and optionally the instances list.
 
     Devices with ``build.py`` are built via ``device.build()``.
+    A subsystem import also copies that system's channel map to
+    ``instance_data/system/{refdes}/maps/channels.tsv``. That file is the
+    source of truth for ``channel_map.compile_hierarchical()``.
     Called from ``system.build()`` after the BOM is exported from the block diagram.
     """
     bom_rows = fileio.read_tsv("bom")

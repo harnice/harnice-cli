@@ -266,7 +266,10 @@ def path(target_value, structure_dict=None, base_directory=None):
 
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without
-      prompting. Drawn-by is set only from the console GUI — never guessed.
+      prompting. If `drawnby.json` is missing, the CLI (`harnice -b`,
+      `--newrev`, `--newpn`) asks for your name when stdin is a terminal and
+      writes it there. The desktop app asks from Settings (gear) → Drawn by…
+      instead. The name is never guessed.
 
     """
     # FILES NOT DEPENDENT ON PRODUCT TYPE
@@ -573,6 +576,9 @@ def drawnby():
     ```python
     name = fileio.drawnby().get("name")
     ```
+
+    The CLI asks for this name on a terminal when the file does not exist yet.
+    The desktop app asks from Settings (gear) → Drawn by….
     """
     data = read_drawnby()
     name = ((data or {}).get("name") or "").strip()

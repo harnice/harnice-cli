@@ -1,7 +1,7 @@
 import csv
 import os
 
-from harnice import fileio
+from harnice import cli, fileio
 from harnice.lists import cached_tsv, signals_list
 from harnice.project_types import chtype
 from harnice.utils import system_utils
@@ -699,3 +699,174 @@ def passthroughs_consumed_as_patch_ends():
             if refdes and channel_id:
                 consumed.add((refdes, channel_id))
     return consumed
+
+
+def compile_hierarchical():
+    """Write the hierarchical channel map for this system and every child subsystem.
+
+    Reads this system's channel map, then the channel map imported with each
+    child subsystem, recursively. An imported subsystem channel map is the
+    source of truth: this does not rebuild those rows.
+
+    Rows from a subsystem prefix that subsystem's instance name onto
+    ``group_of_connected_harnesses``, ``from_device_refdes``,
+    ``to_device_refdes``, ``multi_ch_junction_id``, ``chain_of_connectors``,
+    and ``chain_of_harnesses``. A list is prefixed per entry (``AMP.H1+AMP.H2``,
+    ``AMP.H1;AMP.H2``, ``AMP.MIC3.J1;AMP.X1.A``). Nested subsystems accumulate
+    prefixes (``AMP.PRE.MIC1``). ``manual_map_channel_python_equiv`` is left
+    blank. Channel ids, repeat ids, and channel types are copied unchanged.
+    This system's own rows are not prefixed. Headers match the channel map.
+
+    Call after channel mapping, including
+    ``map_unmapped_compatibles_alphabetically()``. The sheet snapshots the
+    channel map as it stands at the call.
+
+    Args: none
+
+    Returns: the written rows
+    """
+
+    def namespace_row(row, prefix):
+        """Copy one channel-map row and prefix subsystem identity columns."""
+        out = {
+            col: "" if row.get(col) is None else str(row.get(col, ""))
+            for col in COLUMNS
+        }
+        out["manual_map_channel_python_equiv"] = ""
+        prefix = (prefix or "").strip().strip(".")
+        if not prefix:
+            return out
+
+        def prefixed(name):
+            name = (name or "").strip()
+            return f"{prefix}.{name}" if name else ""
+
+        def prefixed_list(value, sep):
+            return sep.join(prefixed(part) for part in value.split(sep))
+
+        for col in (
+            "from_device_refdes",
+            "to_device_refdes",
+            "multi_ch_junction_id",
+        ):
+            value = (out.get(col) or "").strip()
+            if value:
+                out[col] = prefixed(value)
+        group = out.get("group_of_connected_harnesses") or ""
+        if group.strip():
+            out["group_of_connected_harnesses"] = prefixed_list(group, "+")
+        harnesses = out.get("chain_of_harnesses") or ""
+        if harnesses.strip():
+            out["chain_of_harnesses"] = prefixed_list(harnesses, ";")
+        connectors = out.get("chain_of_connectors") or ""
+        if connectors.strip():
+            tokens = []
+            for part in connectors.split(";"):
+                token = part.strip()
+                if not token:
+                    tokens.append("")
+                    continue
+                refdes, dot, connector = token.partition(".")
+                if dot:
+                    tokens.append(f"{prefixed(refdes)}.{connector}")
+                else:
+                    tokens.append(prefixed(token))
+            out["chain_of_connectors"] = ";".join(tokens)
+        return out
+
+    def collect(rows, system_dir, prefix, rev_hint, seen, live):
+        """Append this system's namespaced rows, then each child subsystem."""
+        real = os.path.realpath(system_dir)
+        if real in seen:
+            return
+        seen.add(real)
+
+        def revision_dir():
+            """``lib/revN`` under an imported subsystem, or ``None``."""
+            found = fileio.list_revision_folders(
+                os.path.join(system_dir, fileio.LIBRARY_USED_DIR)
+            )
+            if not found:
+                return None
+            hint = (rev_hint or "").strip()
+            if hint.lower().startswith("rev"):
+                hint = hint[3:]
+            if hint and hint in found:
+                return found[hint]
+            if len(found) == 1:
+                return next(iter(found.values()))
+
+            def sort_key(suffix):
+                try:
+                    return (0, int(suffix))
+                except ValueError:
+                    return (1, suffix)
+
+            return found[max(found, key=sort_key)]
+
+        if live:
+            source_rows = cached_tsv.read(fileio.path("channel map"))
+        else:
+            # Promoted maps/channels.tsv is the source of truth. Older imports
+            # that only kept the library snapshot are read from lib/revN.
+            path = os.path.join(system_dir, "maps", "channels.tsv")
+            if not os.path.isfile(path):
+                lib_rev = revision_dir()
+                snapped = (
+                    os.path.join(lib_rev, "maps", "channels.tsv") if lib_rev else ""
+                )
+                path = snapped if snapped and os.path.isfile(snapped) else ""
+            if not path:
+                cli.warn(
+                    f"subsystem {prefix} has no imported channel map; "
+                    "its channels are omitted from the hierarchical channel map"
+                )
+                source_rows = []
+            else:
+                source_rows = fileio.read_tsv(path)
+
+        for row in source_rows:
+            rows.append(namespace_row(row, prefix))
+
+        # A live revision stores lists/bom.tsv at its root. An imported
+        # subsystem keeps that BOM under lib/revN.
+        content_root = system_dir
+        if not os.path.isfile(os.path.join(system_dir, "lists", "bom.tsv")):
+            content_root = revision_dir()
+        bom_path = (
+            os.path.join(content_root, "lists", "bom.tsv") if content_root else ""
+        )
+        if not bom_path or not os.path.isfile(bom_path):
+            return
+        systems_dir = os.path.join(content_root, "instance_data", "system")
+        seen_children = set()
+        for row in fileio.read_tsv(bom_path):
+            if (row.get("system") or "").strip().upper() != "TRUE":
+                continue
+            refdes = (row.get("device_refdes") or "").strip()
+            if not refdes or refdes in seen_children:
+                continue
+            seen_children.add(refdes)
+            child_prefix = f"{prefix}.{refdes}" if prefix else refdes
+            child_dir = os.path.join(systems_dir, refdes)
+            if not os.path.isdir(child_dir):
+                cli.warn(
+                    f"subsystem {child_prefix} is on the BOM but has no imported "
+                    "folder under instance_data/system"
+                )
+                continue
+            collect(
+                rows,
+                child_dir,
+                child_prefix,
+                (row.get("rev") or "").strip(),
+                seen,
+                False,
+            )
+
+    rows = []
+    collect(rows, fileio.rev_directory(), "", "", set(), True)
+    out_path = fileio.path("hierarchical channel map")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    cached_tsv.write(out_path, COLUMNS, rows)
+    return rows

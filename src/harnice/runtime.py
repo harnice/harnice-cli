@@ -88,6 +88,30 @@ def app_executable():
     return Path(sys.executable).resolve()
 
 
+def standalone_install_root():
+    """``.app`` bundle or Windows folder this process should replace.
+
+    ``None`` for a source checkout, or when the layout is not a shipped build.
+    """
+    if not is_standalone_app():
+        return None
+    bundled = _bundle_dir()
+    if bundled is None:
+        return None
+    if sys.platform == "darwin":
+        if bundled.name == "MacOS" and bundled.parent.name == "Contents":
+            app = bundled.parent.parent
+            binary = app / "Contents" / "MacOS" / "Harnice"
+            if app.suffix == ".app" and binary.is_file():
+                return app
+        return None
+    if sys.platform == "win32":
+        if (bundled / "Harnice.exe").is_file() and (bundled / "harnice-data").is_dir():
+            return bundled
+        return None
+    return None
+
+
 def source_src_dir():
     """``src/`` of the Harnice checkout that provided this ``runtime`` module."""
     return Path(__file__).resolve().parents[1]
