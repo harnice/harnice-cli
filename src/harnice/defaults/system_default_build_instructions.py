@@ -28,6 +28,19 @@
 # map a channel endpoint to a shared multi_ch_junction_key
 # channel_map.map(("MIC1", "out1"), multi_ch_junction_key="jcn1")
 
+# force a 1:1 patch regardless of channel-type compatibility.
+# Same signal names compile by name (pos still meets pos).
+# Different signal names stay pending until circuits_list.force()
+# pairs every from-side signal and drops every unused to-side signal.
+# The circuit keeps the from-side name. A from-side signal cannot be dropped;
+# swap the endpoints so the extra name is on the to side, then drop it.
+# channel_map.force(("MIC1", "out1"), ("PWR1", "in1"))
+# circuits_list.force(
+#     ("MIC1", "out1"),
+#     {"pos": "live", "neg": "neutral"},
+#     drop=["earth"],
+# )
+
 # remaining single-endpoint channels in the same group of connected harnesses,
 # compatible types, alphabetical. Skips every channel with more than one endpoint.
 channel_map.map_unmapped_compatibles_alphabetically()

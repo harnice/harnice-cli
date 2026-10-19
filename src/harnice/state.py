@@ -10,25 +10,41 @@ import re
 
 # not initializing these variables so that a NameError is raised if they are not set
 def set_pn(x):
-    """Set the current part number (e.g. `"mypart"`). Called by `fileio.verify_revision_structure()`."""
+    """Set the current part number (e.g. `"mypart"`). Called by `fileio.verify_revision_structure()`.
+
+    **Args:**
+    - `x`: Part number string, for example ``"mypart"``. Later calls to ``partnumber`` read this value.
+    """
     global pn
     pn = x
 
 
 def set_rev(x):
-    """Set the current revision (number or string, e.g. 1 or \"A\"). Called by `fileio.verify_revision_structure()`."""
+    """Set the current revision (number or string, e.g. 1 or \"A\"). Called by `fileio.verify_revision_structure()`.
+
+    **Args:**
+    - `x`: Revision number or letter, for example ``1`` or ``"A"``. ``partnumber`` formats this as ``rev1`` or ``revA``.
+    """
     global rev
     rev = x
 
 
 def set_project_type(x):
-    """Set the current project type (e.g. `"harness"`, `"system"`)."""
+    """Set the current project type (e.g. `"harness"`, `"system"`).
+
+    **Args:**
+    - `x`: Project type name, for example ``"harness"``, ``"system"``, or ``"device"``.
+    """
     global project_type
     project_type = x
 
 
 def set_harness(x):
-    """Set the current harness context (used during build)."""
+    """Set the current harness context (used during build).
+
+    **Args:**
+    - `x`: Harness name for this build. New instances pick it up when they do not set ``harness`` themselves.
+    """
     global harness
     harness = x
 
@@ -37,6 +53,9 @@ def set_file_structure(x):
     """Set the default file structure dict used by `fileio.path()` and `fileio.dirpath()`.
 
     The CLI calls this with the current project type's `file_structure()` result.
+
+    **Args:**
+    - `x`: File-structure dict. ``fileio.path`` and ``fileio.dirpath`` resolve keys against it.
     """
     global file_structure
     file_structure = x

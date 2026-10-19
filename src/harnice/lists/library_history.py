@@ -27,10 +27,17 @@ def read():
 
 
 def new():
+    """Create an empty library-history file, replacing one that already exists."""
     cached_tsv.write(fileio.path("library history"), COLUMNS, [])
 
 
 def append(instance_name, instance_data):
+    """Record one library import in the library history.
+
+    **Args:**
+    - `instance_name`: Name for this import. Raises if that name is already in the history.
+    - `instance_data`: Dict of library-history columns (``mpn``, ``item_type``, ``lib_repo``, ``lib_subpath``, and the ``lib_*`` metadata). ``instance_name`` in the dict is replaced by the ``instance_name`` argument. Missing columns are written blank.
+    """
     with cached_tsv.edit(fileio.path("library history"), COLUMNS) as rows:
         instance_data["instance_name"] = instance_name
         for row in rows:

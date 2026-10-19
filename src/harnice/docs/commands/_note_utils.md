@@ -1,6 +1,6 @@
 # Note Utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `note_utils`. Use them as written.*
 ??? info "`note_utils.new_note(note_type, note_text, note_number=None, bubble_text=None, shape_mpn=None, shape_lib_subpath='library/flagnotes/', shape_lib_repo='https://github.com/harnice/harnice', affectedinstances=None)`"
 
@@ -10,6 +10,16 @@
     - If a note with identical (note_type, note_text) already exists:
         * If either existing or new affectedinstances is empty → ERROR.
         * Else → merge affectedinstances into existing note, DO NOT create a new one.
+    
+    **Args:**
+    - `note_type`: Kind of note, such as ``build_note`` or ``rev_change_callout``. Also used as the shape part number when ``shape_mpn`` is omitted.
+    - `note_text`: Note body. A note with the same type and text is updated instead of created again.
+    - `note_number`: Number stored on the note. Optional.
+    - `bubble_text`: Text drawn in the bubble (``print_name``). Optional.
+    - `shape_mpn`: Library part for the note shape. Optional; defaults to ``note_type``.
+    - `shape_lib_subpath`: Library subpath of the shape. Optional; defaults to ``library/flagnotes/``.
+    - `shape_lib_repo`: Library repository URL, or ``"local"``. Optional; defaults to the harnice repository.
+    - `affectedinstances`: Instance names this note applies to. Optional on a new note. When a note with the same type and text already exists, both this list and the existing one must be non-empty so they can be merged; an empty list on either side raises.
 
 ??? info "`note_utils.assign_buildnote_numbers()`"
 
@@ -102,18 +112,27 @@
 
     Return a full copy of `instance`, but with note_affected_instances
     parsed into a real Python list (or left alone if blank).
+    
+    **Args:**
+    - `instance`: Note instance dict. ``note_affected_instances`` is parsed with ``ast.literal_eval`` when it is a non-blank string. A blank or malformed value becomes an empty list. Other fields are copied unchanged.
 
 ??? info "`note_utils.get_lib_build_notes(instance)`"
 
     Returns list of build_notes for this instance from the TSV row.
     Safely parses with ast.literal_eval.
     Always returns a Python list.
+    
+    **Args:**
+    - `instance`: Instance dict whose ``lib_build_notes`` cell is a Python literal list. Blank or malformed values return an empty list.
 
 ??? info "`note_utils.get_lib_tools(instance)`"
 
     Returns list of tools for this instance from the TSV row.
     Safely parses with ast.literal_eval.
     Always returns a Python list.
+    
+    **Args:**
+    - `instance`: Instance dict whose ``lib_tools`` cell is a Python literal list. Blank or malformed values return an empty list.
 
 ??? info "`note_utils.combine_notes(keep_note_text, merge_note_texts, note_type=None)`"
 

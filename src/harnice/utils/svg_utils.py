@@ -527,6 +527,8 @@ def table(
     - `format_dict` expects a dictionary of named styles (drafting ink) for the table.
     - `columns_list` expects a list containing your column header content, width, and formatting rules.
     - `content_list` expects a list containing what is actually presented on your table.
+    - `path_to_svg`: File path the finished SVG table is written to.
+    - `contents_group_name`: Id prefix for the SVG groups that wrap the table. The file contains ``{contents_group_name}-contents-start`` and ``{contents_group_name}-contents-end``.
 
     ### Returns
 
@@ -1840,8 +1842,8 @@ def draw_clean_line(
         from_coords (tuple): Starting (x, y) in inches.
         to_coords (tuple): Ending (x, y) in inches.
         scale (float): Scale factor for arrowhead size and line thickness. Defaults to 1.
-        from_leader (bool): If True, draw an arrowhead at the start. Defaults to False.
-        to_leader (bool): If True, draw an arrowhead at the end. Defaults to True.
+        from_arrowhead (bool): If True, draw an arrowhead at the start. Defaults to False.
+        to_arrowhead (bool): If True, draw an arrowhead at the end. Defaults to True.
         stroke (str): Style color token for the line. Defaults to "black".
         thickness (float): Line thickness in pixels before scaling. Defaults to 1.
 

@@ -1,6 +1,6 @@
 # Circuit Utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `circuit_utils`. Use them as written.*
 ??? info "`circuit_utils.end_ports_of_circuit(circuit_id)`"
 

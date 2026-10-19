@@ -3,7 +3,7 @@
 A list of every physical or notional thing, drawing element, or concept that includes instances added at the harness level, that represents a system
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `post_harness_instances_list`. Use them as written.*
 ??? info "`post_harness_instances_list.rebuild()`"
 
@@ -16,5 +16,9 @@ A list of every physical or notional thing, drawing element, or concept that inc
 
 ??? info "`post_harness_instances_list.push(path_to_system_rev, system_pn_rev)`"
 
-    Documentation needed.
+    Copy this harness instances list into a system revision's harnesses folder.
+    
+    **Args:**
+    - `path_to_system_rev`: Directory of the system revision. The instances list is copied to ``{path_to_system_rev}/harnesses/instances.tsv``.
+    - `system_pn_rev`: System part-and-revision label, such as ``"mypart-rev1"``. The file is copied using ``path_to_system_rev``; pass the label of the system revision that directory belongs to.
 

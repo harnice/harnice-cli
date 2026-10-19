@@ -363,6 +363,7 @@ def new(ignore_project_type=False, path=None):
     - `ignore_project_type` (bool):
         - If `True`, the function will raise an error if `state.project_type` is not set first.
         - If `False`, the function will prompt the user to select a project type.
+    - `path`: Revision-history file to create. Optional. Omit it to use the current project's revision history. Raises if that file already exists.
 
     **Returns:**
 

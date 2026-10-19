@@ -1,6 +1,6 @@
 # Cable Utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `cable_utils`. Use them as written.*
 ??? info "`cable_utils.new_cable(instance_name, mpn, lib_repo, lib_subpath)`"
 

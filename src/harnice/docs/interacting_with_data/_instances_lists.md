@@ -15,8 +15,8 @@ Instances lists are the single comprehensive source of truth for the project you
 | `bom_line_number` | if this instance represents a physical procurable good, it gets assigned a line number on a bill of materials |
 | `mfg` | manufacturer of this instance |
 | `mpn` | manufacturer part number |
-| `item_type` | connector, backshell, whatever |
-| `location_type` | each instance is either better represented by one or ther other |
+| `item_type` | what this instance is: connector, backshell, cable, conductor, node, segment, note, macro, and so on |
+| `location_type` | node or segment; a node is a point, a segment is a length between nodes |
 | `segment_group` | the group of segments that this instance is part of |
 | `segment_order` | the sequential id of this item in its segment group |
 | `connector_group` | a group of co-located parts (connectors, backshells, nodes) |
@@ -37,7 +37,7 @@ Instances lists are the single comprehensive source of truth for the project you
 | `cable_identifier` | which conductor in that cable this instance is assigned to (unique within the cable) |
 | `length` | derived from formboard definition, the length of a segment |
 | `length_tolerance` | derived from formboard definition, the tolerance on the length of a segment |
-| `diameter` | apparent diameter of a segment <---------- change to print_diameter |
+| `diameter` | apparent diameter of a segment, used when the segment is drawn |
 | `appearance` | see harnice.utils.appearance for details |
 | `device_configuration` | compact JSON of filled configuration-setup answers (from BOM) |
 | `note_type` | build_note, rev_note, etc |
@@ -45,13 +45,13 @@ Instances lists are the single comprehensive source of truth for the project you
 | `note_parent` | the instance the note applies to. typically don't use this in the instances list, just note_utils |
 | `note_text` | the content of the note |
 | `note_affected_instances` | list of instances that are affected by the note |
-| `lib_repo` | publically-traceable URL of the library this instance is from |
+| `lib_repo` | publicly traceable URL of the library this instance is from |
 | `lib_subpath` | path to the instance within the library (directories between the project type and the part number) |
 | `lib_desc` | description of the instance per the library's revision history |
 | `lib_latest_rev` | the latest revision of the instance that exists in the remote library |
 | `lib_rev_used_here` | the revision of the instance that is currently used in this project |
 | `lib_status` | the status of the instance per the library's revision history |
-| `lib_releaseticket` | documentation needed |
+| `lib_releaseticket` | release ticket on the library revision, when that library records one |
 | `lib_datestarted` | the date this instance was first added to the library |
 | `lib_datemodified` | the date this instance was last modified in the library |
 | `lib_datereleased` | the date this instance was released in the library, if applicable, per the library's revision history |
@@ -83,39 +83,39 @@ Instances lists are the single comprehensive source of truth for the project you
 
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `instances_list`. Use them as written.*
 ??? info "`instances_list.new_instance(instance_name, instance_data, ignore_duplicates=False)`"
 
     Add a new instance to the instances list.
     
-    ## Usage
+    **Usage**
     `new_instance(instance_name, instance_data, ignore_duplicates=False)`
     
-    ## Args
+    **Args**
     - `instance_name`: String; must be unique within the list.
     - `instance_data`: Dict of column names to values. May include `instance_name`; if present it must match the `instance_name` argument or the code will fail.
     - `ignore_duplicates`: If True, does nothing when an instance with the same `instance_name` already exists. If False (default), raises an error on duplicate.
     
-    ## Returns
+    **Returns**
     -1 on success. Raises on invalid input or duplicate (when `ignore_duplicates` is False).
 
 ??? info "`instances_list.modify(instance_name, instance_data)`"
 
     Update columns for an existing instance by name.
     
-    ## Args
+    **Args**
     - `instance_name`: The unique name of the instance to modify.
     - `instance_data`: Dict of column names to new values. Only provided keys are updated; others are unchanged.
     
-    ## Raises
+    **Raises**
     ValueError if no instance with `instance_name` exists.
 
 ??? info "`instances_list.remove_instance(instance_to_delete)`"
 
     Remove one instance from the instances list.
     
-    ## Args
+    **Args**
     - `instance_to_delete`: Instance row dict (or any dict) whose `instance_name` key identifies the instance to remove. Matching is done by `instance_name` only.
 
 ??? info "`instances_list.new()`"
@@ -128,7 +128,7 @@ Instances lists are the single comprehensive source of truth for the project you
     
     Groups by MPN and assigns the same line number to all instances sharing an MPN. Requires every such instance to have a non-empty `mpn`. Line numbers are assigned in order of first occurrence of each MPN.
     
-    ## Raises
+    **Raises**
     ValueError if any instance marked for BOM has an empty `mpn`.
 
 ??? info "`instances_list.attribute_of(target_instance, attribute)`"
@@ -137,25 +137,25 @@ Instances lists are the single comprehensive source of truth for the project you
     
         String values that look like Python literals (list or dict, e.g. starting with `[` or `{`) are parsed with `ast.literal_eval` and the parsed value is returned; otherwise the raw string is returned.
     
-    ## Args
+    **Args**
     - `target_instance`: The `instance_name` of the instance to look up.
     - `attribute`: The column name to read (e.g. `"mpn"`, `"harness"`).
     
-    ## Returns
+    **Returns**
     The value of that column for the matching instance, or None if not found or attribute missing. List/dict-like strings are returned as list/dict.
 
 ??? info "`instances_list.instance_in_connector_group_with_item_type(connector_group, item_type)`"
 
     Return the single instance in a connector group with the given item type.
     
-    ## Args
+    **Args**
     - `connector_group`: The `connector_group` value to match.
     - `item_type`: The `item_type` value to match (e.g. connector, backshell).
     
-    ## Returns
+    **Returns**
     The matching instance row dict, or 0 if no match.
     
-    ## Raises
+    **Raises**
     ValueError if `connector_group` or `item_type` is blank, or if more than one instance matches.
 
 ??? info "`instances_list.seed_connector_nodes()`"
@@ -177,9 +177,9 @@ Instances lists are the single comprehensive source of truth for the project you
 
     Return a list of unique non-empty values for one column across all instances.
     
-    ## Args
+    **Args**
     - `attribute`: The column name to collect (e.g. `"harness"`, `"item_type"`).
     
-    ## Returns
+    **Returns**
     List of unique values; blanks and None are omitted. Order follows first occurrence in the instances list.
 

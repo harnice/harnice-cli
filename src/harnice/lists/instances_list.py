@@ -10,8 +10,8 @@ COLUMNS = [
     "bom_line_number",  # if this instance represents a physical procurable good, it gets assigned a line number on a bill of materials
     "mfg",  # manufacturer of this instance
     "mpn",  # manufacturer part number
-    "item_type",  # connector, backshell, whatever
-    "location_type",  # each instance is either better represented by one or ther other
+    "item_type",  # what this instance is: connector, backshell, cable, conductor, node, segment, note, macro, and so on
+    "location_type",  # node or segment; a node is a point, a segment is a length between nodes
     "segment_group",  # the group of segments that this instance is part of
     "segment_order",  # the sequential id of this item in its segment group
     "connector_group",  # a group of co-located parts (connectors, backshells, nodes)
@@ -32,7 +32,7 @@ COLUMNS = [
     "cable_identifier",  # which conductor in that cable this instance is assigned to (unique within the cable)
     "length",  # derived from formboard definition, the length of a segment
     "length_tolerance",  # derived from formboard definition, the tolerance on the length of a segment
-    "diameter",  # apparent diameter of a segment <---------- change to print_diameter
+    "diameter",  # apparent diameter of a segment, used when the segment is drawn
     "appearance",  # see harnice.utils.appearance for details
     "device_configuration",  # compact JSON of filled configuration-setup answers (from BOM)
     "note_type",  # build_note, rev_note, etc
@@ -40,13 +40,13 @@ COLUMNS = [
     "note_parent",  # the instance the note applies to. typically don't use this in the instances list, just note_utils
     "note_text",  # the content of the note
     "note_affected_instances",  # list of instances that are affected by the note
-    "lib_repo",  # publically-traceable URL of the library this instance is from
+    "lib_repo",  # publicly traceable URL of the library this instance is from
     "lib_subpath",  # path to the instance within the library (directories between the project type and the part number)
     "lib_desc",  # description of the instance per the library's revision history
     "lib_latest_rev",  # the latest revision of the instance that exists in the remote library
     "lib_rev_used_here",  # the revision of the instance that is currently used in this project
     "lib_status",  # the status of the instance per the library's revision history
-    "lib_releaseticket",  # documentation needed
+    "lib_releaseticket",  # release ticket on the library revision, when that library records one
     "lib_datestarted",  # the date this instance was first added to the library
     "lib_datemodified",  # the date this instance was last modified in the library
     "lib_datereleased",  # the date this instance was released in the library, if applicable, per the library's revision history

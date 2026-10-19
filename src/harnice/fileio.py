@@ -20,6 +20,7 @@ LIBRARY_USED_DIR = "lib"
 
 
 def harnice_root():
+    """Return the Harnice user-data directory on this computer."""
     from harnice.runtime import user_data_dir
 
     return str(user_data_dir())

@@ -237,6 +237,9 @@ def compose_csys(*csys_list):
 
     Each next CSYS is expressed in the previous CSYS's frame. Returns
     ``{x, y, z, alpha, beta, gamma}`` in the first CSYS's parent frame.
+
+    **Args:**
+    - `csys_list`: One or more child CSYS dicts, in order from parent to child. Each dict may include ``x``, ``y``, ``z``, ``alpha``, ``beta``, and ``gamma``. Pass them as separate positional arguments. Optional; with none, the result is the origin with no rotation.
     """
     translation = (0.0, 0.0, 0.0)
     rotation = _identity3()
@@ -267,6 +270,9 @@ def invert_csys(csys):
     The result takes the child frame back to its parent origin: if ``csys``
     is a connector mate relative to the part origin, ``invert_csys(csys)``
     is the shift that puts that mate on the origin.
+
+    **Args:**
+    - `csys`: Child CSYS dict ``{x, y, z, alpha, beta, gamma}``, expressed in its parent frame. The result is the opposite shift, the one that brings that child frame back to the parent origin.
     """
     offset, rotation = _csys_as_pose(csys)
     inverse_r = _transpose3(rotation)
@@ -623,10 +629,16 @@ def move_node(
     - **node_id** — Which node in the network to move.
     - **direction** — Which way to move it: a CSYS dict in the node's
       current frame, usually from ``difference_between_csys``. Segment
-      endpoints that sit on the old location follow the node.
-
-    ``new_location`` / ``new_rotation`` set an absolute world pose instead.
-    ``output_csys`` is an alias for ``direction``.
+      endpoints that sit on the old location follow the node. Optional.
+      Omit this when you pass ``new_location``.
+    - **new_location** — Absolute world position ``[x, y, z]``. Use this
+      instead of ``direction`` when you already know the destination.
+      Segment endpoints on the old location follow the node. Optional.
+    - **new_rotation** — Absolute ``[alpha, beta, gamma]`` in degrees,
+      applied together with ``new_location``. Ignored when ``direction``
+      or ``output_csys`` is set. Optional.
+    - **output_csys** — Alias for ``direction``: a CSYS dict in the node's
+      current frame. Optional.
 
     ## Returns
 
@@ -686,6 +698,11 @@ def adjacent_nodes(input_network, from_node):
     The dict should contain node_id, delta_x, delta_y, and delta_z.
 
     Deltas are calculated by finding the relative position of each node with respect to the from_node coordinate system.
+
+    ## Args
+
+    - **input_network** — Network dict to traverse. Segments connect nodes that share an endpoint location.
+    - **from_node** — Node dict to start from. It needs ``location``. Include ``alpha``, ``beta``, and ``gamma`` when deltas should be in that node's frame; if any angle is missing, deltas are in global coordinates.
     """
     network = input_network
     from_loc = from_node["location"]
@@ -865,7 +882,7 @@ def rotate_csys(csys, angle, about="x"):
 
     **Args:**
     - `csys` (dict): ``{x, y, z, alpha, beta, gamma}`` or a library child.
-    - `angle` (float): Degrees.
+    - `angle` (float): Rotation in degrees, applied in the parent frame before the CSYS's own rotation.
     - `about` (str): ``"x"``, ``"y"``, or ``"z"``.
 
     **Returns:**
@@ -951,7 +968,7 @@ def spin(instance_name, angle, about="x"):
 
     **Args:**
     - `instance_name` (str): Instance to rotate in its parent CSYS.
-    - `angle` (float): Degrees about ``about``.
+    - `angle` (float): Rotation in degrees about the axis given by ``about``.
     - `about` (str): ``"x"`` → ``alpha``, ``"y"`` → ``beta``, ``"z"`` → ``gamma``.
 
     **Returns:**
@@ -1087,6 +1104,13 @@ def rename_node(input_network, new_id, existing_id=None, coordinates=[]):
     If existing ID is used, that's self-explanatory.
 
     If coordinates are given in form {x, y, z, radius} and not 1 node is in the sphere, raise an error.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **new_id** — ``node_id`` to assign to the found node.
+    - **existing_id** — Current ``node_id`` to rename. Use this or ``coordinates``. Optional.
+    - **coordinates** — ``[x, y, z, radius]``. Renames the single node inside that sphere. Raises unless the sphere contains exactly one node. Optional. Pass ``existing_id`` or ``coordinates``.
     """
     network = copy.deepcopy(input_network)
     nodes = network.get("nodes", [])
@@ -1120,7 +1144,15 @@ def rename_node(input_network, new_id, existing_id=None, coordinates=[]):
 
 def new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None):
     """
-    Adds a node at a location
+    Adds a node at a location.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy with the new node appended is returned.
+    - **new_id** — ``node_id`` for the new node.
+    - **new_location** — ``[x, y, z]`` world position. Optional; defaults to an empty location.
+    - **new_rotation** — ``[alpha, beta, gamma]`` in degrees. Angles you omit are left unset. Optional.
+    - **csys** — CSYS dict stored on the node. Optional; omit it to leave the node without a ``csys``.
     """
     network = copy.deepcopy(input_network)
     node = {
@@ -1139,7 +1171,13 @@ def new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None)
 
 def reroute_segment(input_network, existing_endpoint_node_name, new_endpoint_node_name):
     """
-    Moves a segment that ends at an existing node to the coordinates of a new node
+    Moves a segment that ends at an existing node to the coordinates of a new node.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **existing_endpoint_node_name** — ``node_id`` whose location is a segment endpoint to move. The node must already exist.
+    - **new_endpoint_node_name** — ``node_id`` whose location becomes that endpoint. The node must already exist. Every segment end sitting on the old node's location is moved.
     """
     network = copy.deepcopy(input_network)
     nodes = network.get("nodes", [])

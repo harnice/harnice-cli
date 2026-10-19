@@ -73,5 +73,11 @@ def rebuild():
 
 
 def push(path_to_system_rev, system_pn_rev):
+    """Copy this harness instances list into a system revision's harnesses folder.
+
+    **Args:**
+    - `path_to_system_rev`: Directory of the system revision. The instances list is copied to ``{path_to_system_rev}/harnesses/instances.tsv``.
+    - `system_pn_rev`: System part-and-revision label, such as ``"mypart-rev1"``. The file is copied using ``path_to_system_rev``; pass the label of the system revision that directory belongs to.
+    """
     path_to_harness_dir_of_system = os.path.join(path_to_system_rev, "harnesses")
     shutil.copy(fileio.path("instances list"), path_to_harness_dir_of_system)

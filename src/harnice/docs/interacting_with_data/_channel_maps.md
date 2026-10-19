@@ -23,7 +23,7 @@ A list of channels on devices within groups of connected harnesses. Each complet
 
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `channel_map`. Use them as written.*
 ??? info "`channel_map.new()`"
 
@@ -62,6 +62,31 @@ A list of channels on devices within groups of connected harnesses. Each complet
     can share that id (connecting those channels to each other) without
     pairing to a single partner. A channel may join only if its type is, or
     is compatible with, every other member already on that junction.
+    
+    **Args:**
+    - `from_key`: Endpoint to map. ``(device_refdes, channel_id)`` when the channel has one endpoint, or ``(device_refdes, channel_id, repeat_channel_id)`` when it has two. A 3-tuple on a single-endpoint channel is an error, and omitting the repeat on a two-endpoint channel is an error.
+    - `to_key`: Other endpoint of the patch, in the same tuple shape as ``from_key``. Both ends must belong to the same group of connected harnesses. Optional. Omit it, or pass None, when you pass ``multi_ch_junction_key`` instead.
+    - `multi_ch_junction_key`: Junction id, such as ``"jcn1"``, that consumes ``from_key``. Every channel that shares that id is connected, without pairing to one partner. The channel type must be compatible with members already on the junction. Do not pass this together with ``to_key``. Optional.
+
+??? info "`channel_map.force(from_key, to_key)`"
+
+    Map one channel endpoint to another regardless of channel-type compatibility.
+    
+    Same key, group, and face rules as ``map()``. A 1:1 patch only: there is
+    no ``multi_ch_junction_key``. ``map()`` is unchanged and does not record
+    a pending patch.
+    
+    Signal names still pair by name when both channel types list the same
+    set, and ``circuits_list.new()`` compiles those circuits as usual. When
+    the sets differ, the patch is recorded as pending. Call
+    ``circuits_list.force()`` with a from-signal → to-signal dict, and drop
+    every to-side signal you are leaving unwired, before
+    ``circuits_list.new()``. A pending patch still waiting at circuit compile
+    raises ``ValueError``.
+    
+    The circuit's ``from_signal`` is the from-side name. A from-side signal cannot
+    be left unwired. If the from channel has a name the to channel does not,
+    swap the endpoints so that extra name is on the to side, then drop it.
 
 ??? info "`channel_map.compile_hierarchical()`"
 
@@ -90,13 +115,19 @@ A list of channels on devices within groups of connected harnesses. Each complet
 
 ??? info "`channel_map.already_mapped_set_append(key)`"
 
-    Documentation needed.
+    Mark one endpoint as already mapped.
+    
+    **Args:**
+    - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``. Raises if that key is already in the mapped set.
 
 ??? info "`channel_map.already_mapped_set()`"
 
-    Documentation needed.
+    Return the set of endpoint keys already consumed by ``map`` or ``route``.
 
 ??? info "`channel_map.already_mapped(key)`"
 
-    Documentation needed.
+    Return whether an endpoint is already in the mapped-channels set.
+    
+    **Args:**
+    - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``.
 

@@ -19,7 +19,7 @@ Every passthrough channel in the system. Call `new()` to build the map and routi
 
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `passthrough_map`. Use them as written.*
 ??? info "`passthrough_map.new()`"
 
@@ -50,6 +50,14 @@ Every passthrough channel in the system. Call `new()` to build the map and routi
     
     Returns 0 on a real assignment, -1 if an imaginary passthrough-map row was appended
     because ``availables`` was already 0.
+    
+    **Args:**
+    - `to_from_channel_device_refdes`: Device refdes of the mapped channel you are routing.
+    - `to_from_channel_id`: Channel id on that device.
+    - `intended_device_refdes`: Passthrough device to route through. It must belong to the same group of connected harnesses as the mapped channel.
+    - `intended_channel_id`: Specific passthrough channel to use. Optional. Omit it to let ``route`` pick a free channel that matches directionality.
+    - `repeat_channel_id`: Face the from-side arrives on. Optional. Omit it to infer the face.
+    - `satisfaction`: When True, write a satisfaction row (what ``resolve`` does). When False, write a requirement row. Optional.
 
 ??? info "`passthrough_map.resolve()`"
 

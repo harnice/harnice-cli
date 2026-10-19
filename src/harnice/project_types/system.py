@@ -50,7 +50,9 @@ def file_structure():
             "hierarchical_channel_map.tsv": "hierarchical channel map",
             "passthrough.tsv": "passthrough map",
             "context.tsv": "passthrough routing context",
-        }
+            "forced_channels_pending.tsv": "pending forced channels",
+            "forced_signals.tsv": "forced signal map",
+        },
     }
 
 
@@ -125,31 +127,44 @@ def generate_icd():
             icd.extend(_icd_rows_from_unmated_device_connector(connector))
             continue
 
-        connector_key = (connector.get("device_refdes"), connector.get("device_connector"))
+        connector_key = (
+            connector.get("device_refdes"),
+            connector.get("device_connector"),
+        )
 
         for circuit in circuits:
-            if (circuit.get("harness_from_refdes"), circuit.get("harness_from_connector_name")) == connector_key:
-                icd.append({
-                    "channel_id": f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}",
-                    "repeat_channel_id": "",
-                    "signal": circuit.get("signal"),
-                    "connector_id": f"{connector.get('device_refdes')}.{connector.get('device_connector')}",
-                    "cavity": circuit.get("harness_from_cavity"),
-                    "device_connector_mpn": connector.get("device_connector_mpn"),
-                    "harness_connector_mpn": "",
-                    "channel_type": circuit.get("from_channel_type")
-                })
-            if (circuit.get("harness_to_refdes"), circuit.get("harness_to_connector_name")) == connector_key:
-                icd.append({
-                    "channel_id": f"{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}",
-                    "repeat_channel_id": "",
-                    "signal": circuit.get("signal"),
-                    "connector_id": f"{connector.get('device_refdes')}.{connector.get('device_connector')}",
-                    "cavity": circuit.get("harness_to_cavity"),
-                    "device_connector_mpn": connector.get("device_connector_mpn"),
-                    "harness_connector_mpn": "",
-                    "channel_type": circuit.get("to_channel_type")
-                })
+            if (
+                circuit.get("harness_from_refdes"),
+                circuit.get("harness_from_connector_name"),
+            ) == connector_key:
+                icd.append(
+                    {
+                        "channel_id": f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}",
+                        "repeat_channel_id": "",
+                        "signal": circuit.get("from_signal"),
+                        "connector_id": f"{connector.get('device_refdes')}.{connector.get('device_connector')}",
+                        "cavity": circuit.get("harness_from_cavity"),
+                        "device_connector_mpn": connector.get("device_connector_mpn"),
+                        "harness_connector_mpn": "",
+                        "channel_type": circuit.get("from_channel_type"),
+                    }
+                )
+            if (
+                circuit.get("harness_to_refdes"),
+                circuit.get("harness_to_connector_name"),
+            ) == connector_key:
+                icd.append(
+                    {
+                        "channel_id": f"{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}",
+                        "repeat_channel_id": "",
+                        "signal": circuit.get("from_signal"),
+                        "connector_id": f"{connector.get('device_refdes')}.{connector.get('device_connector')}",
+                        "cavity": circuit.get("harness_to_cavity"),
+                        "device_connector_mpn": connector.get("device_connector_mpn"),
+                        "harness_connector_mpn": "",
+                        "channel_type": circuit.get("to_channel_type"),
+                    }
+                )
 
     icd_path = fileio.path("icd")
     os.makedirs(os.path.dirname(icd_path), exist_ok=True)

@@ -100,6 +100,11 @@ def ensure_nodes_exist(input_network, set_of_required_nodes):
     Ensures that every node in the list is present in the network.
 
     Returns the list of required node ids that do not exist.
+
+    ## Args
+
+    - **input_network** — Network dict with a ``"nodes"`` list. Each node needs a ``node_id``. The network is not modified.
+    - **set_of_required_nodes** — Node ids that must already be in the network. The return value is the ids from this list that are missing, in first-seen order.
     """
     existing_ids = [n["node_id"] for n in input_network.get("nodes", [])]
     missing_nodes = []
@@ -122,6 +127,11 @@ def calculate_possible_sub_networks(input_network, set_of_required_nodes):
     There can be zero, one, or many solutions. The output of this function should be a list of network dictionaries that are solutions.
 
     If zero solutions are found, raise an error.
+
+    ## Args
+
+    - **input_network** — Network dict with ``"segments"`` and ``"nodes"``. A segment is connected to a node when they share an endpoint location.
+    - **set_of_required_nodes** — Node ids one subnetwork must connect. Raises if any id is missing from the network, or if no connecting subnetwork exists. Returns a list of network dicts, one per minimal solution.
     """
     segments = input_network.get("segments", [])
     nodes = input_network.get("nodes", [])
@@ -218,6 +228,12 @@ def find_network_with(input_networks, segment_ids=[], node_ids=[]):
      - if segments_allowed is [B, E], both networks will be returned.
      - if segments_allowed is [C], both networks will be returned.
      - if segments_allowed is [F], neither network will be returned and the list will be empty
+
+    ## Args
+
+    - **input_networks** — List of network dicts to filter.
+    - **segment_ids** — Segment ids to look for. A network is kept when it contains any of these. Optional; pass an empty list to ignore segments.
+    - **node_ids** — Node ids to look for. A network is kept when it contains any of these or any of ``segment_ids``. Optional; pass an empty list to ignore nodes. If both lists are empty, nothing matches.
     """
     found_networks = []
     for network in input_networks:
@@ -233,6 +249,10 @@ def find_network_with(input_networks, segment_ids=[], node_ids=[]):
 def save(network):
     """
     Stores a network dict into `fileio.path("chosen network")`.
+
+    ## Args
+
+    - **network** — Network dict to write. Replaces the chosen-network file.
     """
     with open(fileio.path("chosen network"), "w", encoding="utf-8") as f:
         json.dump(network, f, indent=4)

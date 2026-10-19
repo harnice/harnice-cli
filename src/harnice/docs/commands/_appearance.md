@@ -25,7 +25,7 @@ Drafting ink (tables, wirelists, labels, dimension lines) is painted from a **st
 - `outline_color`: 0–1 value
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `appearance`. Use them as written.*
 ??? info "`appearance.parse(val)`"
 

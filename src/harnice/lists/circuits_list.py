@@ -8,7 +8,8 @@ COLUMNS = [
     "harness", #documentation needed
     "harness_chain_index",  # 0-based index into channel map ``chain_of_harnesses`` for this segment
     "circuit_id", #documentation needed
-    "signal", #documentation needed
+    "from_signal",  # from-side signal name; also the name used on passthrough hops
+    "to_signal",  # to-side signal name when circuits_list.force() paired different names; blank when both ends use from_signal
     "harness_from_refdes", #documentation needed
     "harness_from_channel_id", #documentation needed
     "harness_from_connector_name", #documentation needed
@@ -26,6 +27,16 @@ COLUMNS = [
     "multi_ch_junction_id",  # set when the circuit is from_channel.signal → mcj.signal
 ]
 
+FORCED_SIGNAL_COLUMNS = [
+    "from_device_refdes",
+    "from_device_channel_id",
+    "from_repeat_channel_id",
+    "to_device_refdes",
+    "to_device_channel_id",
+    "to_repeat_channel_id",
+    "from_signal",  # name on the from channel; also the circuit's signal
+    "to_signal",  # name on the to channel, used to look up that cavity
+]
 
 def read():
     """Return the circuits list (cached)."""
@@ -43,8 +54,50 @@ def new():
     one circuit per signal: from is ``from_channel.signal``, to is ``mcj.signal``.
     Signal names come from the first channel type seen on that junction id.
 
-    Overwrites any existing circuits list.
+    A patch from ``channel_map.force()`` whose signal names differ must
+    already have been burned down by ``circuits_list.force()``. Those circuits
+    keep the from-side name in ``from_signal`` and look up the to-side cavity under
+    ``to_signal``. Passthrough hops are still looked up under ``from_signal``.
+    Any pending forced patch raises ``ValueError``.
+
+    Clears any existing circuits list.
     """
+    pending = channel_map.read_pending()
+    if pending:
+        labels = []
+        for row in pending:
+            ends = []
+            for prefix in ("from", "to"):
+                refdes = (row.get(f"{prefix}_device_refdes") or "").strip()
+                channel = (row.get(f"{prefix}_device_channel_id") or "").strip()
+                repeat = (row.get(f"{prefix}_repeat_channel_id") or "").strip()
+                if repeat:
+                    ends.append(f"{refdes}.{channel}.{repeat}")
+                else:
+                    ends.append(f"{refdes}.{channel}")
+            labels.append(f"{ends[0]} -> {ends[1]}")
+        raise ValueError(
+            "You force-mapped channels whose signal names do not match, but did not "
+            "indicate how you want the circuits mapped: "
+            + "; ".join(labels)
+            + ". Call circuits_list.force() for each pair before circuits_list.new()."
+        )
+
+    forced_by_key = {}
+    forced_path = fileio.path("forced signal map")
+    if os.path.exists(forced_path):
+        for forced_row in cached_tsv.read(forced_path):
+            forced_key = (
+                (forced_row.get("from_device_refdes") or "").strip(),
+                (forced_row.get("from_device_channel_id") or "").strip(),
+                (forced_row.get("from_repeat_channel_id") or "").strip(),
+            )
+            forced_by_key.setdefault(forced_key, []).append(
+                (
+                    (forced_row.get("from_signal") or "").strip(),
+                    (forced_row.get("to_signal") or "").strip(),
+                )
+            )
     circuits_list = []
     circuit_id = 0
 
@@ -253,7 +306,7 @@ def new():
                     "harness": harness,
                     "harness_chain_index": 0,
                     "circuit_id": circuit_id,
-                    "signal": signal,
+                    "from_signal": signal,
                     "from_channel_type": row.get("from_channel_type"),
                     "to_channel_type": junction_type,
                     "harness_from_refdes": left["refdes"],
@@ -268,6 +321,7 @@ def new():
                     "from_side_device_chname": from_channel_id,
                     "to_side_device_refdes": jid,
                     "to_side_device_chname": signal,
+                    "to_signal": "",
                     "multi_ch_junction_id": jid,
                 }
             )
@@ -289,7 +343,34 @@ def new():
         to_channel_id = row["to_device_channel_id"].strip()
         to_repeat = (row.get("to_repeat_channel_id") or "").strip()
 
-        signals = chtype.signals(row.get("from_channel_type"))
+        from_type = row.get("from_channel_type")
+        to_type = row.get("to_channel_type")
+        
+        # Incompatible channel types are a forced patch.
+        forced = not (
+            chtype.parse(to_type) in chtype.is_or_is_compatible_with(from_type)
+            or chtype.parse(from_type) in chtype.is_or_is_compatible_with(to_type)
+        )
+
+        forced_explicit_signal_map = None
+        if not forced:
+            # Same name on both ends, in from-channel-type order.
+            signal_plan = [
+                (name, name)
+                for name in chtype.signals(from_type)
+            ]
+        else:
+            forced_explicit_signal_map = forced_by_key.get(
+                (from_refdes, from_channel_id, from_repeat)
+            )
+            if forced_explicit_signal_map:
+                signal_plan = forced_explicit_signal_map
+            else:
+                # Matching signal names have no map, so both ends use the from-channel name.
+                signal_plan = [
+                    (name, name)
+                    for name in chtype.signals(from_type)
+                ]
 
         hop_chain = passthrough_chain_from_connectors(
             row.get("chain_of_connectors"),
@@ -318,7 +399,10 @@ def new():
                 "(call passthrough_map.resolve())."
             )
 
-        for signal in signals:
+        for from_signal, paired_to_signal in signal_plan:
+            recorded_to_signal = (
+                paired_to_signal if forced_explicit_signal_map else ""
+            )
             current_refdes = from_refdes
             current_side = None
             current_channel_id = from_channel_id
@@ -343,21 +427,21 @@ def new():
                         left = resolve_endpoint(
                             current_refdes,
                             current_channel_id,
-                            signal,
+                            from_signal,
                             connector_id=current_side,
                         )
                     else:
                         left = resolve_endpoint(
                             current_refdes,
                             current_channel_id,
-                            signal,
+                            from_signal,
                             repeat_channel_id=current_repeat,
                         )
 
                     right = resolve_endpoint(
                         refdes,
                         mapped_channel_id,
-                        signal,
+                        from_signal,
                         connector_id=side_from,
                     )
 
@@ -368,7 +452,8 @@ def new():
                             "circuit_id": circuit_id,
                             "from_channel_type": row.get("from_channel_type"),
                             "to_channel_type": row.get("to_channel_type"),
-                            "signal": signal,
+                            "from_signal": from_signal,
+                            "to_signal": recorded_to_signal,
                             "harness_from_refdes": left["refdes"],
                             "harness_from_channel_id": left["channel_id"],
                             "harness_from_connector_name": left["connector_id"],
@@ -396,21 +481,21 @@ def new():
                         left = resolve_endpoint(
                             current_refdes,
                             current_channel_id,
-                            signal,
+                            from_signal,
                             connector_id=current_side,
                         )
                     else:
                         left = resolve_endpoint(
                             current_refdes,
                             current_channel_id,
-                            signal,
+                            from_signal,
                             repeat_channel_id=current_repeat,
                         )
 
                     right = resolve_endpoint(
                         refdes,
                         to_channel_id,
-                        signal,
+                        paired_to_signal,
                         repeat_channel_id=to_repeat,
                     )
 
@@ -419,7 +504,8 @@ def new():
                             "harness": harness,
                             "harness_chain_index": harness_chain_index,
                             "circuit_id": circuit_id,
-                            "signal": signal,
+                            "from_signal": from_signal,
+                            "to_signal": recorded_to_signal,
                             "from_channel_type": row.get("from_channel_type"),
                             "to_channel_type": row.get("to_channel_type"),
                             "harness_from_refdes": left["refdes"],
@@ -440,3 +526,161 @@ def new():
                     circuit_id += 1
 
     cached_tsv.write(fileio.path("circuits list"), COLUMNS, circuits_list)
+
+
+def force(from_key, signal_pairs, drop=()):
+    """Pair the signals of one pending ``channel_map.force()`` patch.
+
+    ``from_key`` is the same endpoint key passed as the first argument to
+    ``channel_map.force()``. ``signal_pairs`` maps every from-side signal name
+    to a to-side signal name (``{"pos": "live", "neg": "neutral"}``). ``drop``
+    lists every to-side signal left unwired (``drop=["earth"]``).
+
+    The circuit keeps the from-side name. The to-side cavity is looked up
+    under the paired name. A from-side signal cannot be dropped: if the from
+    channel has a signal the to channel does not, swap which endpoint is
+    ``from_key`` so the extra name is on the to side, then drop it.
+
+    Raises ``ValueError`` if ``from_key`` is not pending (the signal names
+    already matched, or ``channel_map.force()`` was not called), or if any
+    from-side name is unpaired or any to-side name is neither paired nor
+    dropped.
+    """
+    if from_key is None or not isinstance(from_key, (tuple, list)) or len(from_key) < 2:
+        raise ValueError("circuits_list.force() requires a from_key")
+    if isinstance(signal_pairs, str) or not isinstance(signal_pairs, dict):
+        raise ValueError(
+            "circuits_list.force() signal_pairs must be a dict of "
+            "from-signal to to-signal"
+        )
+    if isinstance(drop, str):
+        raise ValueError(
+            "circuits_list.force() drop must be a list of to-side signal names"
+        )
+
+    from_key = channel_map.canonical_map_key(from_key)
+    repeat = ""
+    if len(from_key) >= 3:
+        repeat = (from_key[2] or "").strip()
+    wanted = (
+        (from_key[0] or "").strip(),
+        (from_key[1] or "").strip(),
+        repeat,
+    )
+
+    def row_from_key(row):
+        return (
+            (row.get("from_device_refdes") or "").strip(),
+            (row.get("from_device_channel_id") or "").strip(),
+            (row.get("from_repeat_channel_id") or "").strip(),
+        )
+
+    pending_row = None
+    for candidate in channel_map.read_pending():
+        if row_from_key(candidate) == wanted:
+            pending_row = candidate
+            break
+    if pending_row is None:
+        raise ValueError(
+            f"{from_key} is not a pending forced patch. "
+            "channel_map.force() records a patch here only when the two channel "
+            "types list different signal names. Patches with the same signal names "
+            "compile by those names."
+        )
+
+    signal_pairs = {
+        str(name).strip(): value for name, value in signal_pairs.items()
+    }
+    drop_list = [str(name).strip() for name in (drop or [])]
+    if len(drop_list) != len(set(drop_list)):
+        raise ValueError("circuits_list.force() drop lists a signal more than once")
+
+    from_list = [
+        part.strip()
+        for part in (pending_row.get("from_signals") or "").split(",")
+        if part.strip()
+    ]
+    to_list = [
+        part.strip()
+        for part in (pending_row.get("to_signals") or "").split(",")
+        if part.strip()
+    ]
+    from_set = set(from_list)
+    to_set = set(to_list)
+    to_label = ", ".join(to_list) or "none"
+
+    unknown_from = [name for name in signal_pairs if name not in from_set]
+    if unknown_from:
+        raise ValueError(
+            "circuits_list.force() pairs "
+            + ", ".join(repr(str(name).strip()) for name in unknown_from)
+            + ", which are not signals of the from channel ("
+            + (", ".join(from_list) or "none")
+            + ")"
+        )
+    missing_from = [name for name in from_list if name not in signal_pairs]
+    if missing_from:
+        raise ValueError(
+            "circuits_list.force() must pair every from-side signal. Missing "
+            + ", ".join(repr(name) for name in missing_from)
+        )
+
+    seen_to = []
+    normalized_pairs = {}
+    for from_name in from_list:
+        to_name = str(signal_pairs[from_name]).strip()
+        if to_name not in to_set:
+            raise ValueError(
+                f"circuits_list.force() maps {from_name!r} to {to_name!r}, "
+                f"which is not a signal of the to channel ({to_label}). "
+                "From-side signals cannot be dropped."
+            )
+        if to_name in seen_to:
+            raise ValueError(
+                f"circuits_list.force() uses to-side signal {to_name!r} more than once"
+            )
+        seen_to.append(to_name)
+        normalized_pairs[from_name] = to_name
+
+    overlap = [name for name in drop_list if name in seen_to]
+    if overlap:
+        raise ValueError(
+            "circuits_list.force() both pairs and drops "
+            + ", ".join(repr(name) for name in overlap)
+        )
+    unknown_drop = [name for name in drop_list if name not in to_set]
+    if unknown_drop:
+        raise ValueError(
+            "circuits_list.force() drop lists "
+            + ", ".join(repr(name) for name in unknown_drop)
+            + f", which are not signals of the to channel ({to_label})"
+        )
+    drop_set = set(drop_list)
+    unpaired_to = [
+        name for name in to_list if name not in seen_to and name not in drop_set
+    ]
+    if unpaired_to:
+        raise ValueError(
+            "circuits_list.force() must explicitly drop unused to-side signals. "
+            "Missing drop for " + ", ".join(repr(name) for name in unpaired_to)
+        )
+
+    path = fileio.path("forced signal map")
+    existing = cached_tsv.read(path) if os.path.exists(path) else []
+    forced = [row for row in existing if row_from_key(row) != wanted]
+    for from_name in from_list:
+        forced.append(
+            {
+                "from_device_refdes": pending_row.get("from_device_refdes") or "",
+                "from_device_channel_id": pending_row.get("from_device_channel_id") or "",
+                "from_repeat_channel_id": pending_row.get("from_repeat_channel_id") or "",
+                "to_device_refdes": pending_row.get("to_device_refdes") or "",
+                "to_device_channel_id": pending_row.get("to_device_channel_id") or "",
+                "to_repeat_channel_id": pending_row.get("to_repeat_channel_id") or "",
+                "from_signal": from_name,
+                "to_signal": normalized_pairs[from_name],
+            }
+        )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cached_tsv.write(path, FORCED_SIGNAL_COLUMNS, forced)
+    channel_map.drop_pending(from_key)

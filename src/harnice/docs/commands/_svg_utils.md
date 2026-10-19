@@ -1,6 +1,6 @@
 # SVG Utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `svg_utils`. Use them as written.*
 ??? info "`svg_utils.table(layout_dict, format_dict, columns_list, content_list, path_to_svg, contents_group_name)`"
 
@@ -15,20 +15,22 @@
         svg_name
     )
     ```
-    ### Arguments
+    **Arguments**
     
     - `layout_dict` expects a dictionary describing in which direction the table is built
     - `format_dict` expects a dictionary of named styles (drafting ink) for the table.
     - `columns_list` expects a list containing your column header content, width, and formatting rules.
     - `content_list` expects a list containing what is actually presented on your table.
+    - `path_to_svg`: File path the finished SVG table is written to.
+    - `contents_group_name`: Id prefix for the SVG groups that wrap the table. The file contains ``{contents_group_name}-contents-start`` and ``{contents_group_name}-contents-end``.
     
-    ### Returns
+    **Returns**
     
     - A string of SVG primatives in xml format intended to look like a table.
     
     ---
     
-    ## 1. Layout
+    **1. Layout**
     
     The SVG origin (0,0) must exist somewhere in your table. Defining this correctly will help later when tables dynamically update with changing inputs.
     
@@ -40,7 +42,7 @@
     }
     ```
     Both fields are required.
-    ### Origin Corner
+    **Origin Corner**
     
     The origin is defined to be at one of the four corners of the first row `content[0]`. Valid options:
     
@@ -49,7 +51,7 @@
     - `bottom-left`
     - `bottom-right`
     
-    ### Build Direction
+    **Build Direction**
     When building a table, you can choose to build rows downwards (below the previous, positive y in svg coords) or upwards (above the previous, negative y in svg coords). The direction property defines this:
     
     - `down` → rows appear below the previous
@@ -57,7 +59,7 @@
     
     ---
     
-    ## 2. Format
+    **2. Format**
     
     The format dictionary defines the style of the table (drafting ink).
     
@@ -82,7 +84,7 @@
     
     The only reserved key is `globals` which can optionally be used to define fallbacks for any row that does not have a style explicitly called out.
     
-    ### Format Arguments
+    **Format Arguments**
     Any of the following keys can be defined in any of the format dictionaries.
     
     - `font_size` *(number, default=12)* Default font size (px) for all text
@@ -98,16 +100,16 @@
     - `stroke_width` *(number, default=1)* Border width
     - `text_color` *(default=black)* Glyph color (style)
     
-    ### Style Resolution Order
+    **Style Resolution Order**
     If something is defined at the row level, it takes precedent over some parameter defined at the column level, which takes precedent over a definition in key `globals`, if defined. If something is not defined at all, the above defaults will apply.
     
-    ### Color Standard
+    **Color Standard**
     
     Colors are style keys (`fill_color`, `stroke_color`, `text_color`). CSS names are hexified at paint. Convert an instance appearance to those keys at the instance, before calling ``table``.
     
     ---
     
-    ## 3. Columns
+    **3. Columns**
     
     The column argument is a list of dictionaries containing definition of how many columns there are, the order in which they exist, how to reference them, and any applicable formatting.
     
@@ -130,7 +132,7 @@
     ]
     ```
     
-    ### Column Arguments
+    **Column Arguments**
     Each field must have the following required keys:
     
     - `name` *(string)* Used to identify a column when defining contents later. Must be unique.
@@ -142,7 +144,7 @@
     
     ---
     
-    ## 4. Content Structure
+    **4. Content Structure**
     
     The table content will be referenced from information stored in this argument. It is a list (rows) of dictionaries (columns).
     
@@ -197,7 +199,7 @@
     - list[str] → multi-line text where the 0th element prints highest within the cell. Use format key `line_spacing` as needed.
     - dict → custom
     
-    ### Importing a Symbol into a Cell
+    **Importing a Symbol into a Cell**
     
     If you add a dictionary to one of the content cells, content start/end groups will be written into your svg. This will allow the user to generate and/or import symbols into the table using their own logic, without regard for placement into the table.
     
@@ -221,7 +223,7 @@
         artifact_id
     )
     
-    # user import logic
+    **user import logic**
     for symbol in symbols_to_build:
         path_to_symbol = #...
         library_utils.pull(
@@ -325,20 +327,22 @@
         svg_name
     )
     ```
-    ### Arguments
+    **Arguments**
     
     - `layout_dict` expects a dictionary describing in which direction the table is built
     - `format_dict` expects a dictionary of named styles (drafting ink) for the table.
     - `columns_list` expects a list containing your column header content, width, and formatting rules.
     - `content_list` expects a list containing what is actually presented on your table.
+    - `path_to_svg`: File path the finished SVG table is written to.
+    - `contents_group_name`: Id prefix for the SVG groups that wrap the table. The file contains ``{contents_group_name}-contents-start`` and ``{contents_group_name}-contents-end``.
     
-    ### Returns
+    **Returns**
     
     - A string of SVG primatives in xml format intended to look like a table.
     
     ---
     
-    ## 1. Layout
+    **1. Layout**
     
     The SVG origin (0,0) must exist somewhere in your table. Defining this correctly will help later when tables dynamically update with changing inputs.
     
@@ -350,7 +354,7 @@
     }
     ```
     Both fields are required.
-    ### Origin Corner
+    **Origin Corner**
     
     The origin is defined to be at one of the four corners of the first row `content[0]`. Valid options:
     
@@ -359,7 +363,7 @@
     - `bottom-left`
     - `bottom-right`
     
-    ### Build Direction
+    **Build Direction**
     When building a table, you can choose to build rows downwards (below the previous, positive y in svg coords) or upwards (above the previous, negative y in svg coords). The direction property defines this:
     
     - `down` → rows appear below the previous
@@ -367,7 +371,7 @@
     
     ---
     
-    ## 2. Format
+    **2. Format**
     
     The format dictionary defines the style of the table (drafting ink).
     
@@ -392,7 +396,7 @@
     
     The only reserved key is `globals` which can optionally be used to define fallbacks for any row that does not have a style explicitly called out.
     
-    ### Format Arguments
+    **Format Arguments**
     Any of the following keys can be defined in any of the format dictionaries.
     
     - `font_size` *(number, default=12)* Default font size (px) for all text
@@ -408,16 +412,16 @@
     - `stroke_width` *(number, default=1)* Border width
     - `text_color` *(default=black)* Glyph color (style)
     
-    ### Style Resolution Order
+    **Style Resolution Order**
     If something is defined at the row level, it takes precedent over some parameter defined at the column level, which takes precedent over a definition in key `globals`, if defined. If something is not defined at all, the above defaults will apply.
     
-    ### Color Standard
+    **Color Standard**
     
     Colors are style keys (`fill_color`, `stroke_color`, `text_color`). CSS names are hexified at paint. Convert an instance appearance to those keys at the instance, before calling ``table``.
     
     ---
     
-    ## 3. Columns
+    **3. Columns**
     
     The column argument is a list of dictionaries containing definition of how many columns there are, the order in which they exist, how to reference them, and any applicable formatting.
     
@@ -440,7 +444,7 @@
     ]
     ```
     
-    ### Column Arguments
+    **Column Arguments**
     Each field must have the following required keys:
     
     - `name` *(string)* Used to identify a column when defining contents later. Must be unique.
@@ -452,7 +456,7 @@
     
     ---
     
-    ## 4. Content Structure
+    **4. Content Structure**
     
     The table content will be referenced from information stored in this argument. It is a list (rows) of dictionaries (columns).
     
@@ -507,7 +511,7 @@
     - list[str] → multi-line text where the 0th element prints highest within the cell. Use format key `line_spacing` as needed.
     - dict → custom
     
-    ### Importing a Symbol into a Cell
+    **Importing a Symbol into a Cell**
     
     If you add a dictionary to one of the content cells, content start/end groups will be written into your svg. This will allow the user to generate and/or import symbols into the table using their own logic, without regard for placement into the table.
     
@@ -531,7 +535,7 @@
         artifact_id
     )
     
-    # user import logic
+    **user import logic**
     for symbol in symbols_to_build:
         path_to_symbol = #...
         library_utils.pull(
@@ -630,8 +634,8 @@
         from_coords (tuple): Starting (x, y) in inches.
         to_coords (tuple): Ending (x, y) in inches.
         scale (float): Scale factor for arrowhead size and line thickness. Defaults to 1.
-        from_leader (bool): If True, draw an arrowhead at the start. Defaults to False.
-        to_leader (bool): If True, draw an arrowhead at the end. Defaults to True.
+        from_arrowhead (bool): If True, draw an arrowhead at the start. Defaults to False.
+        to_arrowhead (bool): If True, draw an arrowhead at the end. Defaults to True.
         stroke (str): Style color token for the line. Defaults to "black".
         thickness (float): Line thickness in pixels before scaling. Defaults to 1.
     

@@ -353,6 +353,9 @@ def derive(network: dict) -> list[dict]:
     saved row, the spans are reversed so A→B still describes the same layout.
     Before write, endpoints are canonicalized so end A is left of or (when
     vertical) above end B; see :func:`canonicalize_segment_endpoints_for_save`.
+
+    **Args:**
+    - `network`: Network dict with ``"segments"`` and ``"nodes"``, such as a chosen network. Segment ids, end nodes, and lengths come from this dict. ``length_tolerance``, ``angle``, ``angle_constraint``, and ``subdivisions`` already saved for a segment id are kept.
     """
     csv_path = fileio.path("flattened network")
 

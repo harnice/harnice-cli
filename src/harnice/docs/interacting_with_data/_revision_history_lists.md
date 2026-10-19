@@ -33,7 +33,7 @@ A record of every revision of a part, and its release status
 
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `rev_history`. Use them as written.*
 ??? info "`rev_history.overwrite(content_dict)`"
 
@@ -167,6 +167,7 @@ A record of every revision of a part, and its release status
     - `ignore_project_type` (bool):
         - If `True`, the function will raise an error if `state.project_type` is not set first.
         - If `False`, the function will prompt the user to select a project type.
+    - `path`: Revision-history file to create. Optional. Omit it to use the current project's revision history. Raises if that file already exists.
     
     **Returns:**
     

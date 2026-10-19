@@ -26,13 +26,17 @@ A report of what was imported during the most recent build of the current projec
 
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `library_history`. Use them as written.*
 ??? info "`library_history.new()`"
 
-    Documentation needed.
+    Create an empty library-history file, replacing one that already exists.
 
 ??? info "`library_history.append(instance_name, instance_data)`"
 
-    Documentation needed.
+    Record one library import in the library history.
+    
+    **Args:**
+    - `instance_name`: Name for this import. Raises if that name is already in the history.
+    - `instance_data`: Dict of library-history columns (``mpn``, ``item_type``, ``lib_repo``, ``lib_subpath``, and the ``lib_*`` metadata). ``instance_name`` in the dict is replaced by the ``instance_name`` argument. Missing columns are written blank.
 

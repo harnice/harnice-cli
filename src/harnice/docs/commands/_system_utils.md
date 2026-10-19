@@ -1,6 +1,6 @@
 # System Utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `system_utils`. Use them as written.*
 ??? info "`system_utils.mpn_of_device_refdes(refdes)`"
 
@@ -135,7 +135,7 @@
     via ``instances_list.seed_connector_nodes()``.
     
     **Args:**
-    - `system_pn` (str): System part number.
+    - `system_pn` (str): Part number of the system whose harness you are importing.
     - `system_rev` (str): System revision label as used in folder/file names (e.g. ``"rev1"``).
     - `system_lib_repo` (str): Library repository URL as listed in ``repository_locations.csv``.
     - `system_lib_subpath` (str): Path from that library root to the system PN folder.

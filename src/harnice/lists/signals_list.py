@@ -8,14 +8,14 @@ from harnice.project_types import chtype
 signal_documentation_description = "A signal is a physical conductive part inside a connector of a device that facilitiates electrical interface with the outside world. A signal must be part of a channel and live inside a connector."
 
 COLUMNS = [
-    "channel_id",
-    "repeat_channel_id",
-    "channel_type",
-    "signal",
-    "cavity",
-    "connector_id",
-    "device_connector_mpn",
-    "harness_connector_mpn",
+    "channel_id",  # the channel this row belongs to; the same id on every signal of that channel
+    "repeat_channel_id",  # which endpoint, when the channel is a passthrough with two ends; the two repeats must differ; blank when the channel has one endpoint
+    "channel_type",  # channel type string; every signal name it declares must be appended for this endpoint, and the string must parse as a channel type
+    "signal",  # signal name; one of the names declared by channel_type
+    "cavity",  # pin, socket, or stud this signal uses on its connector; required, and unique on that connector
+    "connector_id",  # the connector that holds this signal; every signal of one endpoint uses the same connector
+    "device_connector_mpn",  # manufacturer part number of the device-side connector; set this or harness_connector_mpn, not both, and use the same choice for every row of that connector
+    "harness_connector_mpn",  # manufacturer part number of the harness-side connector; set this or device_connector_mpn, not both
 ]
 
 _REQUIRED_ALWAYS = (
@@ -42,6 +42,16 @@ def append(**kwargs):
 
     Required: channel_id, signal, cavity, connector_id, channel_type, and exactly
     one of device_connector_mpn or harness_connector_mpn.
+
+    **Args:**
+    - `channel_id`: Channel this row belongs to. Use the same id on every signal of that channel.
+    - `channel_type`: Channel type string. Every signal name it declares must be appended for this endpoint, and the string must parse as a channel type.
+    - `signal`: Signal name. It must be one of the names declared by ``channel_type``.
+    - `cavity`: Pin, socket, or stud this signal uses on its connector. Required, and unique on that connector.
+    - `connector_id`: Connector that holds this signal. Every signal of one endpoint must use the same connector.
+    - `repeat_channel_id`: Which endpoint, when the channel is a passthrough with two ends. The two repeats must differ. Leave blank when the channel has one endpoint. Optional.
+    - `device_connector_mpn`: Manufacturer part number of the device-side connector. Set this or ``harness_connector_mpn``, not both, and use the same choice for every row of that connector.
+    - `harness_connector_mpn`: Manufacturer part number of the harness-side connector. Set this or ``device_connector_mpn``, not both.
     """
     signals_path = fileio.path("signals list")
     if not os.path.exists(signals_path):
@@ -97,6 +107,14 @@ def unique_connector_ids_from_directory(directory):
 
 
 def cavity_of_signal(channel_id, signal, path_to_signals_list, repeat_channel_id=""):
+    """Return the cavity a signal uses on one channel endpoint.
+
+    **Args:**
+    - `channel_id`: Channel id of the signal whose cavity you want.
+    - `signal`: Signal name on that channel, such as ``pos`` or ``neg``.
+    - `path_to_signals_list`: Path, or file key, of the signals list to read.
+    - `repeat_channel_id`: Which endpoint when the channel has two. Leave blank to match a single-endpoint channel. Optional.
+    """
     want_repeat = (repeat_channel_id or "").strip()
     for row in read(path_to_signals_list):
         if (row.get("signal") or "").strip() != signal.strip():
@@ -112,7 +130,13 @@ def cavity_of_signal(channel_id, signal, path_to_signals_list, repeat_channel_id
 
 
 def connector_id_of_channel(channel_id, path_to_signals_list, repeat_channel_id=""):
-    """Return ``connector_id`` for a channel endpoint."""
+    """Return ``connector_id`` for a channel endpoint.
+
+    **Args:**
+    - `channel_id`: Channel id whose connector you want.
+    - `path_to_signals_list`: Path, or file key, of the signals list to read. Raises if that file does not exist.
+    - `repeat_channel_id`: Which endpoint when the channel has two. Leave blank to match a single-endpoint channel. Optional.
+    """
     if not os.path.exists(path_to_signals_list):
         raise FileNotFoundError(f"Signals list file not found: {path_to_signals_list}")
     want_repeat = (repeat_channel_id or "").strip()

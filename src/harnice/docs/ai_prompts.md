@@ -13,13 +13,13 @@ Each brief tells the agent that this documentation ships with the `harnice` comm
 
 You'll get better results with an agent on your computer that can run commands, because it can self-verify and correct mistakes by calling `harnice -b` and reading the terminal errors. Open your project's repository in that application (ClaudeCode, Cursor, etc) so the agent can see your project, channel_types.tsv, and other projects as examples. Consider copying your supporting docs into the rev folder (a pinout PDF, an ICD, a spreadsheet, a screenshot, a schematic note, a vendor table, a netlist, or the optional table format) for traceability and for the agent. The build instructions can still hardcode a path to that documentation wherever the file sits.
 
-Without a desktop agent, a web chatbot can write the script and you run the build yourself in the Harnice application. Attach or paste your supporting docs into the prompt. Name the channel types in that same message if you already know them. Attach `channel_types.tsv` and give the library URL, for example: `Channel types are the attached TSV. lib_repo is https://github.com/my-org/my-library.` That URL is the key in `repository_locations.csv`. The TSV does not contain it. At build time Harnice reads `<local path for that URL>/channel_types.tsv`, not the file you uploaded to the chat.
+Without a desktop agent, a web chatbot writes the script and does not pretend it can run Python. It does not ask for your drawn-by name, and it does not ask how to run `harnice -b`. It tells you: it will write the signals list, and you will run it in Harnice, click Build, and paste the error messages back until the list is right. Attach or paste your supporting docs into the prompt. Name the channel types in that same message if you already know them. Attach `channel_types.tsv` and give the library URL, for example: `Channel types are the attached TSV. lib_repo is https://github.com/my-org/my-library.` That URL is the key in `repository_locations.csv`. The TSV does not contain it. At build time Harnice reads `<local path for that URL>/channel_types.tsv`, not the file you uploaded to the chat.
 
 The engineering decisions are yours: which channel type to use, whether a ground is chassis, what a connector plugs into, and the rest. The agent asks for clarification and puts the context for that decision in front of you so you can answer quickly. It does not write `build.py` until you have answered. A blatantly obvious mapping can proceed without that buyoff: if the documentation says `fan_umb_pos` and `fan_umb_neg`, and the channel type is `FAN_UMBILICAL` with signals `pos,neg`, the agent may use that and still write the assumption in a comment. The supporting documentation is a starting point. The agent will tell you about errors or unclear spots it thinks it found.
 
 The file it writes is the build instructions. It does not have to be right on the first try, and a revision is okay. Decisions and assumptions go into the file so the next pass can see how and why the rows got there. A clean `harnice -b` means the file is valid, which is not a reason to keep going until the pinout is perfect.
 
-An agent that can run commands installs the command-line tool if it is missing (`pip install harnice`) and runs `harnice -b` in the revision folder. If pip cannot install it, the agent clones https://github.com/harnice/harnice-cli and, still in the revision folder, runs `python3 /path/to/harnice-cli/src/harnice/__main__.py -b`. Python 3 is enough for a device build. The build reads `drawnby.json` before it runs `build.py`. If that file is missing, the agent asks what your drawn-by name usually is and writes that name with `-AGENT` appended. It reads the traceback, edits `build.py`, and runs the build again until the process exits 0 and the printed row count equals the number of signals it thinks the device has from the documentation, greater than zero. If it cannot run commands, it gives you the script and you run `harnice -b` there, or click **Build** in Harnice.
+An agent that can run commands installs the command-line tool if it is missing (`pip install harnice`) and runs `harnice -b` in the revision folder. If pip cannot install it, the agent clones https://github.com/harnice/harnice-cli and, still in the revision folder, runs `python3 /path/to/harnice-cli/src/harnice/__main__.py -b`. Python 3 is enough for a device build. The build reads `drawnby.json` before it runs `build.py`. If that file is missing, the agent asks what your drawn-by name usually is and writes that name with `-AGENT` appended. It reads the traceback, edits `build.py`, and runs the build again until the process exits 0 and the printed row count equals the number of signals it thinks the device has from the documentation, greater than zero. A web chatbot does none of that. It writes the script, and you click **Build** and paste the errors back.
 
 The signals list page reads `signals.tsv` in that same revision folder. `harnice -b` checks the rows. A header and no data rows still exits 0, so the prompt tells the agent to write the signals out and put `new()` immediately above those lines.
 
@@ -41,8 +41,9 @@ That prints the folder. If the `harnice` command is not on PATH:
 A clone of https://github.com/harnice/harnice-cli keeps the same folder at
 `src/harnice/docs/`, next to `__main__.py`.
 
-Start with `index.md`. A line `{% include-markdown "some/path.md" %}`
-continues in that file, under the same folder.
+Start with `index.md`. An include-markdown directive (opening `{%`,
+the words include-markdown, a quoted path such as "some/path.md",
+closing `%}`) means that file continues the page, under the same folder.
 
 The same pages are at https://harnice.io/ when you can reach the internet.
 
@@ -50,12 +51,34 @@ The same pages are at https://harnice.io/ when you can reach the internet.
 Write Harnice device **build instructions** (`build.py`) from the supporting
 documentation. I may attach or paste it in this chat, or put it in the device
 revision folder. Either way is enough. The output must be a complete, runnable
-script. When the build is run in the revision folder, by you with `harnice -b`
-or with `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` if the
-`harnice` command is not available, or by me if you do not have Python
-access, it must exit 0 and print a signal-row
-count equal to the number of signals you think the device has from the
-documentation. That count is greater than zero.
+script. A finished build exits 0 and prints a signal-row count equal to the
+number of signals you think the device has from the documentation. That count
+is greater than zero.
+
+## Online chatbot or agent
+
+Pick the role that is true, in the first reply, and stay in it.
+
+**Online chatbot.** You cannot run commands on my computer, and you cannot
+run Python. Do not pretend that you can. Do not ask for my drawn-by name.
+Do not ask how to install Harnice, and do not ask how to run `harnice -b`.
+Say this, and then do it:
+
+I am going to write a signals list, and you are going to run it in Harnice,
+click Build, and copy and paste me back the error messages until we get it
+right.
+
+You write `build.py`. I paste it into the build instructions, click Build,
+and paste the error text back to you. You revise the script from that text.
+Do not claim the build exited 0 unless I pasted a result that says so.
+The `harnice -b` and `drawnby.json` instructions later in this prompt are
+not for you.
+
+**Agent on my computer.** You can run a shell in the revision folder. You
+run the build yourself. If `drawnby.json` is missing, ask what my drawn-by
+name usually is, tell me you will append `-AGENT`, and write that file
+before the build. Do not invent the name, and do not ask me to type the
+suffix. Do not ask me to run the build for you.
 
 You are not filling `signals.tsv` by hand. You are writing Python that Harnice
 runs. The signals are `signals_list.append` calls a person can read. The script
@@ -102,14 +125,20 @@ write it in a comment, whether I accepted it or it was blatantly obvious.
 Hiding it is the failure. If a later try shows something wrong, revise from
 those comments. Do not stay blocked on making the first try perfect.
 
-`configuration` can change the signals list between uses of the same device,
-from `config.yaml` or from the system BOM. A different connector is a
-different part number. Assume one signals list unless I say otherwise. If a
-use might add, remove, or retype a signal, ask. If I name the cases, branch
-only on those. Do not invent a mode.
+A configuration is a change in use case, not a change in hardware. The part
+stays the same. The way it is used changes which signals the list describes.
+A digital multimeter is one piece of hardware. The switch setting chooses
+the channel types: voltage, current, resistance, and the rest. The meter
+does not become a different part when the switch moves. A different
+connector, a different cavity, or any other hardware change is a different
+part number, not a configuration.
 
-Also ask what my drawn-by name usually is. Tell me you will append `-AGENT`
-to that name. Do not invent the name, and do not ask me to type the suffix.
+`configuration` is how Harnice stores that use case. It comes from
+`config.yaml` or from the system BOM. Assume one signals list unless I say
+otherwise. If a use might add, remove, or retype a signal while the hardware
+stays the same, ask. If I name the cases, branch only on those. Do not
+invent a mode. An online chatbot does not ask for a drawn-by name. An agent
+asks for that name only as described under "Online chatbot or agent".
 
 When the open questions are answered, write the script. In comments above
 the rows they affect, record the citation, each decision, and each
@@ -138,8 +167,15 @@ No emojis in the script, in comments, in strings, or in your reply.
 
 ## Run the build
 
-Run this after I have answered. Prefer the command-line package. It does
-not include the Harnice window.
+Run this after I have answered.
+
+If you are an online chatbot, you already said you cannot run Python. Keep
+that. Give me `build.py` and wait for the error text I paste back from
+Build. Do not walk me through `pip`, `git clone`, `harnice -b`, or
+`drawnby.json`.
+
+If you are an agent on my computer, run the build yourself. Prefer the
+command-line package. It does not include the Harnice window.
 
     pip install harnice
 
@@ -183,11 +219,13 @@ If you can run a shell command, run it. Read the output.
 - Traceback, or N is 0, or N is some other count, or the line is missing:
   fix `build.py` and run the build again.
 
-Do not stop after writing the file. Do not add `from harnice` imports to
-make the command work. Those names are already in the build script.
+If you are an agent, do not stop after writing the file. Do not add
+`from harnice` imports to make the command work. Those names are already
+in the build script.
 
-If you cannot run a command, say so. Give me the script and tell me to run
-`harnice -b` in the revision folder. Do not claim the build exited 0.
+If you are an online chatbot, you cannot run a command. Give me the script.
+Remind me to click Build in Harnice and paste the error messages back. Do
+not claim the build exited 0. Do not ask me to run `harnice -b`.
 
 
 ## What I was going for
@@ -282,9 +320,11 @@ and the rest of the lists / utils ribbon. You may `import` stdlib (`os`,
 `csv`, `json`, `re`, `xml.etree.ElementTree`, `pathlib`).
 
 `configuration` is a dict Harnice injects (defaults from `config.yaml`, or
-the system BOM answers). Read it only after I have told you a use case that
-changes the signals list. A different connector or a different cavity is a
-new part number.
+the system BOM answers). It records a use case, not a hardware change. A
+digital multimeter keeps the same hardware while the switch setting selects
+voltage, current, or resistance channel types. Read `configuration` only
+after I have named that kind of case. A different connector or a different
+cavity is a new part number.
 
 
 ## The only API you need
@@ -433,12 +473,13 @@ Call this at module level. A `main()` that is never called leaves the
 previous list untouched. `if __name__ == "__main__"` is fine: Harnice runs
 the file as `__main__`.
 
-If I confirmed a use case that changes the list, branch with a plain `if`
-on `configuration` around those appends. Example: SM58 balanced vs
-unbalanced changes channel type, not the XLR part number. If I said the
-list does not change, there is no branch.
+If I confirmed a use case that changes the list while the hardware stays the
+same, branch with a plain `if` on `configuration` around those appends.
+Example: a digital multimeter's switch setting selects voltage, current, or
+resistance channel types. The meter is still the same hardware. If I said
+the list does not change, there is no branch.
 
-After you write it, run `harnice -b` if you can. A traceback is the review.
+After you write it, an agent runs `harnice -b`. A traceback is the review.
 Fix that row. A script that prints `Wrote 0 signal rows.` or omits the line
 is not finished.
 
@@ -446,8 +487,9 @@ Exit 0 means the file is valid. It does not mean the decisions match the
 device. Show me what you wrote, with enough context that I can check it.
 If I say something is wrong, ask and fix it.
 
-If you could not run the command, show me the same thing from the script and
-tell me to run `harnice -b`. Do not invent an exit code.
+If you are an online chatbot, show me the same thing from the script. Tell
+me to click Build in Harnice and paste the error messages back. Do not
+invent an exit code, and do not tell me to run `harnice -b`.
 
 
 ## COMMON FAILURE MODES
@@ -507,12 +549,14 @@ Prevention: copy the URL from my message or from the table I gave you.
 - No emoji. No non-ASCII characters in `print` statements.
 - Output is the full `build.py`. Not a sketch. Not "add your pinout here".
   Not a parser. Not a sidecar table.
-- If you can run commands, you have run `harnice -b`, or
+- If you are an agent, you have run `harnice -b`, or
   `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` when the
   `harnice` command is missing. The process exited 0. The log
   contains `Wrote N signal rows.` where N is the number of signals you
   think the device has from the documentation, and N is greater than 0.
-  If you cannot run commands, you said so and did not invent that result.
+  If you are an online chatbot, you said you cannot run Python, you did not
+  invent that result, you did not ask for a drawn-by name, and you told me
+  to click Build and paste the error messages back.
 - Comments cite the supporting documentation and record each decision and
   assumption. An answer I gave is in the comment. A blatantly obvious mapping
   is in the comment too, with the reason. An absolute path I gave is a
@@ -532,9 +576,9 @@ run `harnice -b` again.
 - [ ] Are all `print()` statements ASCII-only (no checkmarks, crosses, bullets, or fancy quotes)?
 - [ ] Do the comments cite the supporting documentation and record each decision and assumption, including a blatantly obvious mapping and the reason?
 - [ ] Do all channel type tuples use the exact repo URL I provided?
-- [ ] If you can run commands, did `harnice -b` or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` print `Wrote N signal rows.` where N is the number of signals you think the device has from the documentation, and N is greater than 0? If you cannot, did you say so instead of inventing that result?
+- [ ] If you are an agent, did `harnice -b` or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` print `Wrote N signal rows.` where N is the number of signals you think the device has from the documentation, and N is greater than 0? If you are an online chatbot, did you say you cannot run Python, skip the drawn-by question, and tell me to click Build and paste the errors back?
 - [ ] Did you wait until I answered before writing the file, except for a blatantly obvious mapping you recorded in a comment?
-- [ ] Did you ask what my drawn-by name usually is, and if `drawnby.json` was missing, write that name with `-AGENT` appended at the checkout root?
+- [ ] If you are an agent and `drawnby.json` was missing, did you ask what my drawn-by name usually is and write that name with `-AGENT` appended at the checkout root? If you are an online chatbot, did you leave drawn-by alone?
 - [ ] Does the script match the decisions I made, including whether a use case changes the signals list?
 
 
@@ -546,7 +590,7 @@ run `harnice -b` again.
 - [ ] The script prints `Wrote N signal rows.` and `harnice -b` agrees
 - [ ] No invented channel types; company ids use the human's `lib_repo`
 - [ ] The script is straight-line module-level code, with no helper or nested function
-- [ ] `harnice -b` or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` exited 0 with a row count equal to the number of signals you think the device has from the documentation, and that count is greater than 0, or you cannot run commands and you said so
+- [ ] An agent build (`harnice -b`, or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b`) exited 0 with a row count equal to the number of signals you think the device has from the documentation, and that count is greater than 0. An online chatbot did not pretend to run that command. It told me to click Build and paste the errors back
 - [ ] Each decision and assumption is a comment in `build.py`. My answers are there. A blatantly obvious mapping is there too, with the reason
 - [ ] No pin number was averaged. You did not write the script while a question was still open
 - [ ] After the build, or from the script if you could not run it, you showed me what you wrote with enough context to check it
@@ -559,7 +603,7 @@ When I have answered, reply with:
 2. Where the supporting documentation lives: the revision folder, this chat, or the absolute-path constant
 3. One sentence: terminating, passthrough, or mixed
 4. Channel types you used (id, lib_repo, signal names)
-5. How many signal rows the build printed, or that you could not run the build
+5. How many signal rows the build printed. An online chatbot instead says I will click Build and paste the errors back
 6. Anything in the source you could not map (pins you skipped, types you need me to add)
 7. Whether the signals list depends on configuration, and the cases I named
 ````
@@ -590,8 +634,9 @@ That prints the folder. If the `harnice` command is not on PATH:
 A clone of https://github.com/harnice/harnice-cli keeps the same folder at
 `src/harnice/docs/`, next to `__main__.py`.
 
-Start with `index.md`. A line `{% include-markdown "some/path.md" %}`
-continues in that file, under the same folder.
+Start with `index.md`. An include-markdown directive (opening `{%`,
+the words include-markdown, a quoted path such as "some/path.md",
+closing `%}`) means that file continues the page, under the same folder.
 
 The same pages are at https://harnice.io/ when you can reach the internet.
 

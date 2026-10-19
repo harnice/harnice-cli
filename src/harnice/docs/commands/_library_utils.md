@@ -1,6 +1,6 @@
 # Library Utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `library_utils`. Use them as written.*
 ??? info "`library_utils.pull(input_dict, update_instances_list=True, destination_directory=None, record_library_history=True, include_filenames=None, replace_destination=False)`"
 

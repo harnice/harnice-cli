@@ -22,6 +22,20 @@ COLUMNS = [
     "manual_map_channel_python_equiv",  # channel_map.map(...) call that produced this pairing; copy back into build instructions
 ]
 
+# Forced patches whose signal names differ, waiting for circuits_list.force().
+PENDING_COLUMNS = [
+    "from_device_refdes",
+    "from_device_channel_id",
+    "from_repeat_channel_id",
+    "to_device_refdes",
+    "to_device_channel_id",
+    "to_repeat_channel_id",
+    "from_channel_type",
+    "to_channel_type",
+    "from_signals",  # comma-separated, channel-type order
+    "to_signals",  # comma-separated, channel-type order
+]
+
 channel_documentation_description = 'A channel is a set of electrical signals in a device that together transmit or receive information, power, etc. They have "channel_types" which define their attributes and compatibility with other channels, and contain a list of required signals (pos, neg)'
 
 mapped_channel_documentation_description = "A mapped channel is a connection from one channel on a device to another. They define the functional requirement of any harness, and form the basis of which circuits are generated and where they go. The channel map is the list of mapped channels (and any still-unmapped channels). The passthrough map then routes those mapped channels through passthrough devices."
@@ -56,9 +70,7 @@ def _other_key_channel_label(other_key):
 
 def _missing_repeat_message(refdes, channel_id, repeats, other_key=None):
     example = next((r for r in sorted(repeats) if r), "A")
-    msg = (
-        f"Channel {channel_id!r} on {refdes!r} has two endpoints. "
-    )
+    msg = f"Channel {channel_id!r} on {refdes!r} has two endpoints. "
     other = _other_key_channel_label(other_key)
     if other:
         other_channel_id, other_refdes = other
@@ -404,6 +416,15 @@ def new():
     ) as f:
         pass
 
+    clear_pending()
+    # A new channel map invalidates signal pairings from the previous one.
+    # Imported here: circuits_list imports channel_map at module level.
+    from harnice.lists.circuits_list import FORCED_SIGNAL_COLUMNS
+
+    forced_path = fileio.path("forced signal map")
+    os.makedirs(os.path.dirname(forced_path), exist_ok=True)
+    cached_tsv.write(forced_path, FORCED_SIGNAL_COLUMNS, [])
+
     return channel_map
 
 
@@ -455,7 +476,9 @@ def _reject_if_incompatible_with_junction(from_key, junction_id, channels):
             )
 
 
-def _map_into(channels, mapped, from_key, to_key=None, multi_ch_junction_key=""):
+def _map_into(
+    channels, mapped, from_key, to_key=None, multi_ch_junction_key="", python_equiv=None
+):
     """Apply one channel mapping in memory. Mutates ``channels`` and ``mapped``."""
     if str(from_key) in mapped:
         raise ValueError(f"from_key {from_key} already mapped")
@@ -475,10 +498,12 @@ def _map_into(channels, mapped, from_key, to_key=None, multi_ch_junction_key="")
     require_to = bool(to_key and (to_key[0] or to_key[1]))
 
     updated_channels, found_from, found_to = [], False, False
+    mapped_row = None
 
     for row in channels:
         row_from = _key_from_row(row, "from")
         if row_from == from_key:
+            mapped_row = row
             row["to_device_refdes"] = to_key[0] if to_key else ""
             row["to_device_channel_id"] = to_key[1] if to_key else ""
             row["to_repeat_channel_id"] = _repeat_of_key(to_key)
@@ -490,7 +515,7 @@ def _map_into(channels, mapped, from_key, to_key=None, multi_ch_junction_key="")
             found_from = True
 
             if require_to:
-                row["manual_map_channel_python_equiv"] = (
+                row["manual_map_channel_python_equiv"] = python_equiv or (
                     f"channel_map.map({from_key}, {to_key})"
                 )
             elif multi_ch_junction_key:
@@ -516,7 +541,27 @@ def _map_into(channels, mapped, from_key, to_key=None, multi_ch_junction_key="")
         mapped.add(str(to_key))
 
     channels[:] = updated_channels
-    return updated_channels
+    return mapped_row
+
+
+def _apply_mapping(from_key, to_key=None, multi_ch_junction_key="", python_equiv=None):
+    """Write one mapping the way ``map()`` does, and return that channel-map row."""
+    with cached_tsv.edit(fileio.path("channel map"), COLUMNS) as channels:
+        if multi_ch_junction_key:
+            _reject_if_incompatible_with_junction(
+                from_key, multi_ch_junction_key, channels
+            )
+        mapped = already_mapped_set()
+        row = _map_into(
+            channels,
+            mapped,
+            from_key,
+            to_key=to_key,
+            multi_ch_junction_key=multi_ch_junction_key,
+            python_equiv=python_equiv,
+        )
+        _write_mapped_set(mapped)
+        return row
 
 
 def map(from_key, to_key=None, multi_ch_junction_key=""):
@@ -544,6 +589,11 @@ def map(from_key, to_key=None, multi_ch_junction_key=""):
     can share that id (connecting those channels to each other) without
     pairing to a single partner. A channel may join only if its type is, or
     is compatible with, every other member already on that junction.
+
+    **Args:**
+    - `from_key`: Endpoint to map. ``(device_refdes, channel_id)`` when the channel has one endpoint, or ``(device_refdes, channel_id, repeat_channel_id)`` when it has two. A 3-tuple on a single-endpoint channel is an error, and omitting the repeat on a two-endpoint channel is an error.
+    - `to_key`: Other endpoint of the patch, in the same tuple shape as ``from_key``. Both ends must belong to the same group of connected harnesses. Optional. Omit it, or pass None, when you pass ``multi_ch_junction_key`` instead.
+    - `multi_ch_junction_key`: Junction id, such as ``"jcn1"``, that consumes ``from_key``. Every channel that shares that id is connected, without pairing to one partner. The channel type must be compatible with members already on the junction. Do not pass this together with ``to_key``. Optional.
     """
     multi_ch_junction_key = (multi_ch_junction_key or "").strip()
     from_key = canonical_map_key(from_key, other_key=to_key)
@@ -560,24 +610,124 @@ def map(from_key, to_key=None, multi_ch_junction_key=""):
         _reject_if_crossing_onto_mated_face(from_key, to_key)
     else:
         _reject_if_not_same_group(from_key, None)
-    with cached_tsv.edit(fileio.path("channel map"), COLUMNS) as channels:
-        if multi_ch_junction_key:
-            _reject_if_incompatible_with_junction(
-                from_key, multi_ch_junction_key, channels
-            )
-        mapped = already_mapped_set()
-        updated = _map_into(
-            channels,
-            mapped,
+    _apply_mapping(from_key, to_key=to_key, multi_ch_junction_key=multi_ch_junction_key)
+
+
+def force(from_key, to_key):
+    """Map one channel endpoint to another regardless of channel-type compatibility.
+
+    Same key, group, and face rules as ``map()``. A 1:1 patch only: there is
+    no ``multi_ch_junction_key``. ``map()`` is unchanged and does not record
+    a pending patch.
+
+    Signal names still pair by name when both channel types list the same
+    set, and ``circuits_list.new()`` compiles those circuits as usual. When
+    the sets differ, the patch is recorded as pending. Call
+    ``circuits_list.force()`` with a from-signal → to-signal dict, and drop
+    every to-side signal you are leaving unwired, before
+    ``circuits_list.new()``. A pending patch still waiting at circuit compile
+    raises ``ValueError``.
+
+    The circuit's ``from_signal`` is the from-side name. A from-side signal cannot
+    be left unwired. If the from channel has a name the to channel does not,
+    swap the endpoints so that extra name is on the to side, then drop it.
+    """
+    if to_key is None or not isinstance(to_key, (tuple, list)) or len(to_key) < 2:
+        raise ValueError("channel_map.force() requires a to_key")
+    if not (to_key[0] or to_key[1]):
+        raise ValueError("channel_map.force() requires a to_key")
+    from_key = canonical_map_key(from_key, other_key=to_key)
+    to_key = canonical_map_key(to_key, other_key=from_key)
+    if from_key == to_key:
+        raise ValueError(f"from_key and to_key are the same endpoint: {from_key}")
+
+    # Same placement rules as map(): one group of connected harnesses, and a
+    # patch may end on a passthrough face only when that face has no harness.
+    _reject_if_not_same_group(from_key, to_key)
+    _reject_if_crossing_onto_mated_face(from_key, to_key)
+
+    equiv = f"channel_map.force({from_key}, {to_key})"
+    row = _apply_mapping(
+        from_key,
+        to_key,
+        python_equiv=equiv,
+    )
+    from_names = chtype.signals(row.get("from_channel_type") or "")
+    to_names = chtype.signals(row.get("to_channel_type") or "")
+    # Same names compile by name (pos meets pos), in channel-type order or not.
+    # Different names stay pending until circuits_list.force() pairs each
+    # from-side signal to a to-side signal. That pairing is not in this cell.
+    signal_names_match = sorted(from_names) == sorted(to_names)
+    if not signal_names_match:
+        commented = equiv + "  # this line does not include forced circuits"
+        row["manual_map_channel_python_equiv"] = commented
+        with cached_tsv.edit(fileio.path("channel map"), COLUMNS) as channels:
+            for stored in channels:
+                if _key_from_row(stored, "from") == from_key:
+                    stored["manual_map_channel_python_equiv"] = commented
+                    break
+        add_pending(
             from_key,
-            to_key=to_key,
-            multi_ch_junction_key=multi_ch_junction_key,
+            to_key,
+            row.get("from_channel_type") or "",
+            row.get("to_channel_type") or "",
+            from_names,
+            to_names,
         )
-        channels[:] = updated
-        _write_mapped_set(mapped)
+
+
+def _write_pending(rows):
+    path = fileio.path("pending forced channels")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cached_tsv.write(path, PENDING_COLUMNS, rows)
+
+
+def read_pending():
+    """Forced patches whose signal names still need ``circuits_list.force()``."""
+    path = fileio.path("pending forced channels")
+    if not os.path.exists(path):
+        return []
+    return cached_tsv.read(path)
+
+
+def clear_pending():
+    """Drop every forced patch that is still waiting on a signal map."""
+    _write_pending([])
+
+
+def add_pending(
+    from_key, to_key, from_channel_type, to_channel_type, from_names, to_names
+):
+    """Record one forced patch whose signal-name sets differ."""
+    rows = [row for row in read_pending() if _key_from_row(row) != from_key]
+    rows.append(
+        {
+            "from_device_refdes": from_key[0],
+            "from_device_channel_id": from_key[1],
+            "from_repeat_channel_id": _repeat_of_key(from_key),
+            "to_device_refdes": to_key[0],
+            "to_device_channel_id": to_key[1],
+            "to_repeat_channel_id": _repeat_of_key(to_key),
+            "from_channel_type": from_channel_type or "",
+            "to_channel_type": to_channel_type or "",
+            "from_signals": ",".join(from_names),
+            "to_signals": ",".join(to_names),
+        }
+    )
+    _write_pending(rows)
+
+
+def drop_pending(from_key):
+    """Remove one pending forced patch. ``circuits_list.force()`` calls this."""
+    _write_pending([row for row in read_pending() if _key_from_row(row) != from_key])
 
 
 def already_mapped_set_append(key):
+    """Mark one endpoint as already mapped.
+
+    **Args:**
+    - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``. Raises if that key is already in the mapped set.
+    """
     items = already_mapped_set()
     if str(key) in items:
         raise ValueError(f"key {key} already mapped")
@@ -586,6 +736,7 @@ def already_mapped_set_append(key):
 
 
 def already_mapped_set():
+    """Return the set of endpoint keys already consumed by ``map`` or ``route``."""
     if not os.path.exists(fileio.path("mapped channels set")):
         return set()
     with open(fileio.path("mapped channels set"), newline="", encoding="utf-8") as f:
@@ -594,6 +745,11 @@ def already_mapped_set():
 
 
 def already_mapped(key):
+    """Return whether an endpoint is already in the mapped-channels set.
+
+    **Args:**
+    - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``.
+    """
     if str(key) in already_mapped_set():
         return True
     else:
@@ -667,9 +823,7 @@ def map_unmapped_compatibles_alphabetically():
                         to_channel_candidate.get("from_channel_type")
                     )
 
-                    if not (
-                        to_type in compatibles_from or from_type in compatibles_to
-                    ):
+                    if not (to_type in compatibles_from or from_type in compatibles_to):
                         continue
 
                     _map_into(channels, mapped, from_key, to_key)

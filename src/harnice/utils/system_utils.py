@@ -1200,7 +1200,7 @@ def create_instances_from_circuits_list():
         to_side_device = circuit.get("to_side_device_refdes") or ""
         to_side_ch = circuit.get("to_side_device_chname") or ""
         circuit_print_name = (
-            f"{circuit.get('signal') or ''}_of_"
+            f"{circuit.get('from_signal') or ''}_of_"
             f"{from_side_device}.{from_side_ch}<->{to_side_device}.{to_side_ch}"
         )
         channel_print_name = (
@@ -1349,7 +1349,7 @@ def create_instances_from_circuits_list():
             ),
             "this_channel_from_channel_type": circuit.get("from_channel_type"),
             "this_channel_to_channel_type": circuit.get("to_channel_type"),
-            "signal_of_channel_type": circuit.get("signal"),
+            "signal_of_channel_type": circuit.get("from_signal"),
         }
         if is_mcj:
             circuit_instance["multi_ch_junction_id"] = circuit.get(
@@ -1512,7 +1512,7 @@ def import_harness_from_harnice_system(
     via ``instances_list.seed_connector_nodes()``.
 
     **Args:**
-    - `system_pn` (str): System part number.
+    - `system_pn` (str): Part number of the system whose harness you are importing.
     - `system_rev` (str): System revision label as used in folder/file names (e.g. ``"rev1"``).
     - `system_lib_repo` (str): Library repository URL as listed in ``repository_locations.csv``.
     - `system_lib_subpath` (str): Path from that library root to the system PN folder.

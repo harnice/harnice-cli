@@ -164,7 +164,7 @@ Behind the scenes, Harnice stores the current part number and revision number in
 
 
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `fileio`. Use them as written.*
 ??? info "`state.partnumber(format)`"
 

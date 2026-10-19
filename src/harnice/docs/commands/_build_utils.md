@@ -1,6 +1,6 @@
 # Build utilities
 ---
-##Commands:
+##Commands
 *These functions are already available in build instructions as `build_utils`. Use them as written.*
 ??? info "`build_utils.run_macro(macro_part_number, lib_subpath, lib_repo, artifact_id, base_directory=None, rerun=False, **kwargs)`"
 

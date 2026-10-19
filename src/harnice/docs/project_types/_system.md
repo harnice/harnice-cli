@@ -139,6 +139,10 @@ To connect several channels to each other on one multi-channel junction, pass `m
 
 Raises `ValueError` if either key was already mapped, if the endpoints are not in the same group, if a required `to_key` row is missing, if both `to_key` and `multi_ch_junction_key` are passed, or if the joining channel is not compatible with every existing junction member.
 
+#### Force mapping: `channel_map.force(from_key, to_key)`
+
+Maps one endpoint to another with the same group and face rules as `map()`, and does not check channel-type compatibility. `map()` itself is unchanged. When both channel types list the same signal names, circuits compile by those names. When the names differ, the patch stays pending until `circuits_list.force(from_key, signal_pairs, drop=())` pairs every from-side name and explicitly drops every unused to-side name. The circuit keeps the from-side name; the to-side cavity is looked up under the paired name. A from-side signal cannot be dropped. `circuits_list.new()` raises if any pending patch is still waiting.
+
 #### Automatic mapping: `channel_map.map_unmapped_compatibles_alphabetically()`
 
 For each `group_of_connected_harnesses`, rows are sorted alphabetically by device refdes and channel id. Channels with more than one endpoint (passthroughs) are skipped, even if nothing else is left. For each remaining row whose `from_key` is not yet mapped, Harnice scans later rows in the same group of connected harnesses and maps to the **first** candidate whose channel types are mutually compatible: either `to_type` is in `chtype.compatibles(from_type)` or `from_type` is in `chtype.compatibles(to_type)`. This is deterministic but not unique—use manual `channel_map.map()` first for anything that must not follow alphabetical pairing.
@@ -212,7 +216,9 @@ fileio.dirpath("maps")                                   L-- maps/
 fileio.path("channel map")                                   |-- channels.tsv
 fileio.path("hierarchical channel map")                      |-- hierarchical_channel_map.tsv
 fileio.path("passthrough map")                               |-- passthrough.tsv
-fileio.path("passthrough routing context")                   L-- context.tsv
+fileio.path("passthrough routing context")                   |-- context.tsv
+fileio.path("pending forced channels")                       |-- forced_channels_pending.tsv
+fileio.path("forced signal map")                             L-- forced_signals.tsv
 ```
 
 
