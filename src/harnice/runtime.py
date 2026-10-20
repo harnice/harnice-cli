@@ -254,7 +254,7 @@ def user_data_dir():
 
     Source checkouts use that clone's root (or ``HARNICE_ROOT`` if set) so each
     ``serve_console.py`` keeps its own ``repository_locations.csv``. The
-    standalone app uses a per-user Application Support directory.
+    standalone app always uses the OS app-data folder.
     """
     if is_standalone_app():
         if sys.platform == "darwin":
