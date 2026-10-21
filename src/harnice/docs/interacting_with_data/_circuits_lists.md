@@ -3,7 +3,7 @@ A list of every individual electrical connection that must be present in your sy
 
 ---
 ##Columns 
-*Columns are automatically generated when `circuits_list.new()` is called. Additional columns are not supported and may result in an error when parsing.*
+*Columns are automatically generated when `circuits_list.new()` is called. Additional columns are ok but discouraged due to consistency. If you need more columns, use data structures in build instructions.*
 
 | Column | Description |
 |--------|-------------|

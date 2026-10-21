@@ -21,7 +21,7 @@ channel type.
 
 - `channel_type`: Channel type identifier in standard tuple format
     `(channel_type_id, lib_repo)` or any string representation that `parse`
-    can understand (for example `"(5, 'https://github.com/harnice/harnice')"`).
+    can understand (for example `"(5, 'https://github.com/harnice/harnice-general-library')"`).
 
 **Returns**
 

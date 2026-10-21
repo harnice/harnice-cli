@@ -3,7 +3,7 @@ A list of channels on devices within groups of connected harnesses. Each complet
 
 ---
 ##Columns 
-*Columns are automatically generated when `channel_map.new()` is called. Additional columns are not supported and may result in an error when parsing.*
+*Columns are automatically generated when `channel_map.new()` is called. Additional columns are ok but discouraged due to consistency. If you need more columns, use data structures in build instructions.*
 
 | Column | Description |
 |--------|-------------|

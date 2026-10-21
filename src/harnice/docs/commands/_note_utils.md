@@ -2,7 +2,7 @@
 ---
 ##Commands
 *These functions are already available in build instructions as `note_utils`. Use them as written.*
-??? info "`note_utils.new_note(note_type, note_text, note_number=None, bubble_text=None, shape_mpn=None, shape_lib_subpath='library/flagnotes/', shape_lib_repo='https://github.com/harnice/harnice', affectedinstances=None)`"
+??? info "`note_utils.new_note(note_type, note_text, note_number=None, bubble_text=None, shape_mpn=None, shape_lib_subpath='library/flagnotes/', shape_lib_repo='https://github.com/harnice/harnice-general-library', affectedinstances=None)`"
 
     Creates or updates a note instance.
     
@@ -18,7 +18,7 @@
     - `bubble_text`: Text drawn in the bubble (``print_name``). Optional.
     - `shape_mpn`: Library part for the note shape. Optional; defaults to ``note_type``.
     - `shape_lib_subpath`: Library subpath of the shape. Optional; defaults to ``library/flagnotes/``.
-    - `shape_lib_repo`: Library repository URL, or ``"local"``. Optional; defaults to the harnice repository.
+    - `shape_lib_repo`: Library repository URL, or ``"local"``. Optional; defaults to the general library, https://github.com/harnice/harnice-general-library.
     - `affectedinstances`: Instance names this note applies to. Optional on a new note. When a note with the same type and text already exists, both this list and the existing one must be non-empty so they can be merged; an empty list on either side raises.
 
 ??? info "`note_utils.assign_buildnote_numbers()`"

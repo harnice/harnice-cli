@@ -53,7 +53,7 @@ Open **Library locations** in Harnice. Each row maps a library repository URL to
 
 ```csv
 repo_url,local_path
-https://github.com/harnice/harnice,/Users/kenyonshutt/Documents/GitHub/harnice/library_public
+https://github.com/harnice/harnice-general-library,/Users/kenyonshutt/Documents/GitHub/harnice-general-library
 https://github.com/mycompany/our-library,/Users/kenyonshutt/Documents/GitHub/our-library
 ```
 
@@ -84,7 +84,7 @@ Parts are imported from libraries using `library_utils.pull()` in your build ins
 # Import a connector from the library
 library_utils.pull({
     "instance_name": "X1.B.conn",
-    "lib_repo": "https://github.com/harnice/harnice",
+    "lib_repo": "https://github.com/harnice/harnice-general-library",
     "mpn": "D38999_26ZA98PN",
     "item_type": "connector"
 })
@@ -96,7 +96,7 @@ library_utils.pull({
 # Import a specific revision
 library_utils.pull({
     "instance_name": "X1.B.conn",
-    "lib_repo": "https://github.com/harnice/harnice",
+    "lib_repo": "https://github.com/harnice/harnice-general-library",
     "mpn": "D38999_26ZA98PN",
     "item_type": "connector",
     "lib_rev_used_here": "1"  # or "rev1"
@@ -111,7 +111,7 @@ Some libraries organize parts into subdirectories:
 # Import a device from a subdirectory
 library_utils.pull({
     "instance_name": "X1",
-    "lib_repo": "https://github.com/harnice/harnice",
+    "lib_repo": "https://github.com/harnice/harnice-general-library",
     "mpn": "tascam-db25",
     "item_type": "device",
     "lib_subpath": "audio"  # subdirectory under the library root
@@ -165,7 +165,7 @@ When you import a part:
 # Use latest revision (default)
 library_utils.pull({
     "instance_name": "connector-1",
-    "lib_repo": "https://github.com/harnice/harnice",
+    "lib_repo": "https://github.com/harnice/harnice-general-library",
     "mpn": "D38999_26ZA98PN",
     "item_type": "connector"
     # No lib_rev_used_here → uses latest
@@ -174,7 +174,7 @@ library_utils.pull({
 # Pin to specific revision
 library_utils.pull({
     "instance_name": "connector-1",
-    "lib_repo": "https://github.com/harnice/harnice",
+    "lib_repo": "https://github.com/harnice/harnice-general-library",
     "mpn": "D38999_26ZA98PN",
     "item_type": "connector",
     "lib_rev_used_here": "1"  # Always use rev1

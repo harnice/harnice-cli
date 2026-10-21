@@ -15,7 +15,7 @@ from harnice.utils import block_diagram_utils
 
 MACRO_MPN = "subsystem_symbol"
 MACRO_LIB_SUBPATH = "library/macros/system_artifacts"
-MACRO_LIB_REPO = "https://github.com/harnice/harnice"
+MACRO_LIB_REPO = "https://github.com/harnice/harnice-general-library"
 DEFAULT_SCALE = 0.1
 DEFAULT_ARTIFACT_ID = "subsystem-symbol-1"
 

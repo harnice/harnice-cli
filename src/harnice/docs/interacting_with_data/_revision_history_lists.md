@@ -3,7 +3,7 @@ A record of every revision of a part, and its release status
 
 ---
 ##Columns 
-*Columns are automatically generated when `rev_history.new()` is called. Additional columns are not supported and may result in an error when parsing.*
+*Columns are automatically generated when `rev_history.new()` is called. Additional columns are ok but discouraged due to consistency. If you need more columns, use data structures in build instructions.*
 
 | Column | Description |
 |--------|-------------|

@@ -79,7 +79,7 @@ Optional on every field:
 | `channel_type` | a channel-type tuple string | Use `format: channel_type` |
 | `matrix` | | No extra validation keys |
 
-A `channel_type` default is the same `(id, repo)` tuple string used elsewhere, for example `"(1, 'https://github.com/harnice/harnice')"`.
+A `channel_type` default is the same `(id, repo)` tuple string used elsewhere, for example `"(1, 'https://github.com/harnice/harnice-general-library')"`.
 
 #### Validation
 
@@ -176,7 +176,7 @@ Copy a block into `fields:` and change `id`, `label`, and `default`.
   type: channel_type
   label: "Channel type"
   required: true
-  default: "(1, 'https://github.com/harnice/harnice')"
+  default: "(1, 'https://github.com/harnice/harnice-general-library')"
   validation:
     format: channel_type
 

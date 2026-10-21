@@ -52,7 +52,7 @@ From build instructions (or any other Python Harnice is already running):
 build_utils.run_macro(
     "standard_harnice_formboard",              # MPN of the macro in the library
     "library/macros/harness_artifacts",        # path from that library root to the MPN folder
-    "https://github.com/harnice/harnice",      # library repo URL from library_locations.csv
+    "https://github.com/harnice/harnice-general-library",      # library repo URL from library_locations.csv
     artifact_id="formboard-overview",          # unique instance name for *this* run
     scale=0.25,                                # extra kwargs become globals inside the macro
     input_instances=formboard_overview_instances,
@@ -112,7 +112,7 @@ The parent project type (harness, system, …) never has to know the macro's fil
 
 ## Where macros live in a library
 
-Shipped Harnice macros are in this repo under `library/macros/`, grouped by what they produce:
+Shipped Harnice macros are in the [general library](https://github.com/harnice/harnice-general-library) under `library/macros/`, grouped by what they produce:
 
 ```
 library/macros/
@@ -155,7 +155,7 @@ Copy this template into a new `{mpn}/rev1/{mpn}.py` (or into an AI tool) and fil
 # build_utils.run_macro(
 #    "standard_harnice_formboard",
 #    "library/macros/harness_artifacts",
-#    "https://github.com/harnice/harnice",
+#    "https://github.com/harnice/harnice-general-library",
 #    artifact_id="formboard-overview",
 #    scale=scales.get("A"),
 #    input_instances=formboard_overview_instances,
@@ -220,7 +220,7 @@ Add a `{mpn}-revision_history.tsv` next to the rev folder, put the library on `l
 
 ## Shipped macros in the Harnice library
 
-These are the macros that currently ship in this repo. Unless noted, `lib_repo` is `https://github.com/harnice/harnice`. Each one writes under `instance_data/macro/{artifact_id}/`.
+These are the macros that ship in the general library. Unless noted, `lib_repo` is `https://github.com/harnice/harnice-general-library`. Each one writes under `instance_data/macro/{artifact_id}/`.
 
 | MPN | Library folder | Who calls it by default |
 |---|---|---|

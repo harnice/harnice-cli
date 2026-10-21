@@ -8,9 +8,9 @@
 # ---------------------------------------------------------------------------
 
 ch_type_ids = {
-    "in": (1, "https://github.com/harnice/harnice"),
-    "out": (4, "https://github.com/harnice/harnice"),
-    "chassis": (5, "https://github.com/harnice/harnice")
+    "in": (1, "https://github.com/harnice/harnice-general-library"),
+    "out": (4, "https://github.com/harnice/harnice-general-library"),
+    "chassis": (5, "https://github.com/harnice/harnice-general-library")
 }
 
 xlr_pinout = {

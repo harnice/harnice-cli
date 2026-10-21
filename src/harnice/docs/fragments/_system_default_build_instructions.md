@@ -101,25 +101,25 @@
     # color → channel types that should use that color
     channel_type_colors = {
         "#D59A10": [
-            (1, "https://github.com/harnice/harnice"),
-            (2, "https://github.com/harnice/harnice"),
+            (1, "https://github.com/harnice/harnice-general-library"),
+            (2, "https://github.com/harnice/harnice-general-library"),
         ],
         "#4039A1": [
-            (5, "https://github.com/harnice/harnice"),
+            (5, "https://github.com/harnice/harnice-general-library"),
         ],
     }
     
     # channel type → signal → color
     circuit_signal_colors = {
-        (1, "https://github.com/harnice/harnice"): {
+        (1, "https://github.com/harnice/harnice-general-library"): {
             "pos": "#E24B4A",
             "neg": "#2E6B9F",
         },
-        (2, "https://github.com/harnice/harnice"): {
+        (2, "https://github.com/harnice/harnice-general-library"): {
             "pos": "#E24B4A",
             "neg": "#2E6B9F",
         },
-        (5, "https://github.com/harnice/harnice"): {
+        (5, "https://github.com/harnice/harnice-general-library"): {
             "chassis": "#4039A1",
         },
     }
@@ -153,7 +153,7 @@
     #     "twisted": "RH",                  # optional "RH", "LH", or None
     # }
     # example: twisted red/white pos conductor for channel type 1
-    # circuit_signal_colors[(1, "https://github.com/harnice/harnice")]["pos"] = {
+    # circuit_signal_colors[(1, "https://github.com/harnice/harnice-general-library")]["pos"] = {
     #     "base_color": "#E24B4A",
     #     "outline_color": "black",
     #     "parallelstripe": ["white"],
@@ -161,7 +161,7 @@
     # }
     # instances_list.modify(
     #     instance.get("instance_name"),
-    #     {"appearance": circuit_signal_colors[(1, "https://github.com/harnice/harnice")]["pos"]},
+    #     {"appearance": circuit_signal_colors[(1, "https://github.com/harnice/harnice-general-library")]["pos"]},
     # )
     
     # ===========================================================================
@@ -172,12 +172,12 @@
     
     # this_channel_from_channel_type → library cable fields for instances_list.modify
     circuit_cable_mpns = {
-        (1, "https://github.com/harnice/harnice"): {
+        (1, "https://github.com/harnice/harnice-general-library"): {
             "mpn": "M27500-22SB2T23",
             "lib_repo": "https://github.com/harnice/harnice-aerospace-library",
             "lib_subpath": "M27500",
         },
-        (2, "https://github.com/harnice/harnice"): {
+        (2, "https://github.com/harnice/harnice-general-library"): {
             "mpn": "M27500-22SB2T23",
             "lib_repo": "https://github.com/harnice/harnice-aerospace-library",
             "lib_subpath": "M27500",
@@ -229,7 +229,7 @@
     build_utils.run_macro(
         "subsystem_symbol",
         "library/macros/system_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="subsystem-symbol-1",
         scale=scale,
     )
@@ -238,13 +238,13 @@
     build_utils.run_macro(
         "pdf_generator",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="pdf_drawing-1",
         page_setup={
             "pages": [
                 {
                     "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice",
+                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
                     "tblock_lib_subpath": "library/titleblocks/",
                     "page_size_in": [11.0, 8.5],
                     "tblock_anchor": "bottom-right",

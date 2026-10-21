@@ -234,9 +234,15 @@ def validate(path=None, verbose=True):
         if col not in headers:
             cli.warn(f"Signals list is missing optional column '{col}'")
     known = set(COLUMNS)
-    for col in headers:
-        if col and col not in known:
-            cli.warn(f"Signals list has unexpected column '{col}'")
+    extra = [col for col in headers if col and col not in known]
+    if extra:
+        noun = "column" if len(extra) == 1 else "columns"
+        listed = ", ".join(repr(col) for col in extra)
+        cli.warn(
+            f"Signals list has additional {noun} {listed}. "
+            "Additional columns are ok but discouraged due to consistency. "
+            "If you need more columns, use data structures in build instructions."
+        )
 
     for i, row in enumerate(rows, start=2):
         if verbose:

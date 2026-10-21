@@ -64,7 +64,7 @@
     
     **Args:**
     - `lib_repo` (str): Library repository URL to look up (e.g.,
-        `"https://github.com/harnice/harnice"`).
+        `"https://github.com/harnice/harnice-general-library"`).
     - `instance_name` (str, optional): Instance being imported, included in lookup errors.
     - `mpn` (str, optional): Manufacturer part number being imported, included in lookup errors.
     - `lib_subpath` (str, optional): Library subpath being imported, included in lookup errors.

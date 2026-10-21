@@ -597,7 +597,7 @@ def get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None):
 
     **Args:**
     - `lib_repo` (str): Library repository URL to look up (e.g.,
-        `"https://github.com/harnice/harnice"`).
+        `"https://github.com/harnice/harnice-general-library"`).
     - `instance_name` (str, optional): Instance being imported, included in lookup errors.
     - `mpn` (str, optional): Manufacturer part number being imported, included in lookup errors.
     - `lib_subpath` (str, optional): Library subpath being imported, included in lookup errors.
@@ -653,7 +653,7 @@ def get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None):
         with open(csv_path, "w", encoding="utf-8") as f:
             # Normalize the default path to ensure correct separators
             normalized_path = os.path.normpath(default_local_path)
-            f.write(f"https://github.com/harnice/harnice,{normalized_path}\n")
+            f.write(f"https://github.com/harnice/harnice-general-library,{normalized_path}\n")
 
         print(f"[harnice] Created '{csv_path}'")
         print(f"[harnice] Default library-public location: {default_local_path}")

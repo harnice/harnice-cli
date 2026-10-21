@@ -3,7 +3,7 @@ Every passthrough channel in the system. Call `new()` to build the map and routi
 
 ---
 ##Columns 
-*Columns are automatically generated when `passthrough_map.new()` is called. Additional columns are not supported and may result in an error when parsing.*
+*Columns are automatically generated when `passthrough_map.new()` is called. Additional columns are ok but discouraged due to consistency. If you need more columns, use data structures in build instructions.*
 
 | Column | Description |
 |--------|-------------|

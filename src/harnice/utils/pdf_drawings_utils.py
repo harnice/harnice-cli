@@ -28,7 +28,7 @@ _WATERMARK_SKIP_DIRS = {
 
 _BLANK_PAGE = {
     "tblock_mpn": "harnice_tblock",
-    "tblock_lib_repo": "https://github.com/harnice/harnice",
+    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
     "tblock_lib_subpath": "library/titleblocks/",
     "page_size_in": [11.0, 8.5],
     # Titleblock local origin is bottom-right of the artwork (extends -x/-y).

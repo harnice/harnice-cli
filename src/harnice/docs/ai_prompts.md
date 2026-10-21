@@ -214,8 +214,10 @@ If you can run a shell command, run it. Read the output.
 
 - Exit 0 and a line `Wrote N signal rows.` where N is the number of
   signals you think the device has from the documentation, and N is
-  greater than 0: show me the rows. You make that comparison when you
-  read the output.
+  greater than 0: show me the rows, using the signals list columns.
+  Additional columns are ok but discouraged due to consistency. If you
+  need more columns, use data structures in build instructions. You make
+  that comparison when you read the output.
 - Traceback, or N is 0, or N is some other count, or the line is missing:
   fix `build.py` and run the build again.
 
@@ -284,30 +286,36 @@ reason to refuse the appends once I have answered.
 ## Optional: paste this table if you have nothing else
 
 If I do not attach a vendor file, I may paste rows in this shape (tab or
-comma separated). Treat the pasted rows as the supporting documentation.
-Transcribe them into `append` calls, and cite the pasted table in a comment.
-Do not write a parser that reads them back.
+comma separated). These are the signals list columns. Treat the pasted rows
+as the supporting documentation. Transcribe them into `append` calls, and
+cite the pasted table in a comment. Do not write a parser that reads them
+back.
 
-    connector_id	connector_mpn	owned_by	channel_id	repeat_channel_id	signal	cavity	channel_type_id	channel_type_repo
-    J1	XLR3F	device	in1		pos	2	1	https://github.com/harnice/harnice
-    J1	XLR3F	device	in1		neg	3	1	https://github.com/harnice/harnice
-    A	DB25F	harness	ch0	A	pos	24	1	https://github.com/harnice/harnice
-    B	DB25M	harness	ch0	B	pos	24	2	https://github.com/harnice/harnice
+    channel_id	repeat_channel_id	channel_type	signal	cavity	connector_id	device_connector_mpn	harness_connector_mpn
+    in1		(1, 'https://github.com/harnice/harnice-general-library')	pos	2	J1	XLR3F
+    in1		(1, 'https://github.com/harnice/harnice-general-library')	neg	3	J1	XLR3F
+    ch0	A	(1, 'https://github.com/harnice/harnice-general-library')	pos	24	A		DB25F
+    ch0	B	(2, 'https://github.com/harnice/harnice-general-library')	pos	24	B		DB25M
 
 Column meanings:
 
-- `connector_id` — name of the connector on this device (`J1`, `in1`, `A`)
-- `connector_mpn` — manufacturer part number of that connector
-- `owned_by` — `device` if the connector is on the device (use
-  `device_connector_mpn`); `harness` if the harness owns that face (use
-  `harness_connector_mpn`). Passthrough adapters are usually harness-owned.
 - `channel_id` — one electrical channel. Same id on two connectors = a
   passthrough.
 - `repeat_channel_id` — blank for a terminating (one-connector) channel.
   For a passthrough, two distinct values (convention: `A` and `B`).
+- `channel_type` — the Harnice channel type tuple `(id, lib_repo)`
 - `signal` — must be a signal name of that channel type (see below)
 - `cavity` — pin, socket, or stud on that connector. Unique per connector.
-- `channel_type_id` + `channel_type_repo` — the Harnice channel type tuple
+- `connector_id` — name of the connector on this device (`J1`, `in1`, `A`)
+- `device_connector_mpn` — manufacturer part number when the connector is on
+  the device. Set this or `harness_connector_mpn`, not both.
+- `harness_connector_mpn` — manufacturer part number when the harness owns
+  that face. Passthrough adapters are usually harness-owned.
+
+Additional columns are ok but discouraged due to consistency. If you need
+more columns, use data structures in build instructions. If a pasted table
+has some other column, keep that meaning in the script and leave it off
+the signals list. When you show me the rows, use these columns.
 
 
 ## Harnice names already in scope
@@ -367,13 +375,13 @@ chat when the device builds. It reads
 Copy each signal name from that row's `signals` column, character for
 character (`CAN_H`, not `CAN High`, not `pos`). Do not remap those rows onto
 the public table below. Do not pair a company id with
-`https://github.com/harnice/harnice`. That combination looks up the public
+`https://github.com/harnice/harnice-general-library`. That combination looks up the public
 file, finds no such id, `chtype.signals()` returns `[]`, and the signals
 page stays empty after a successful build.
 
 **If no channel-types table is attached,** the only legal types are the
-public ones in Harnice's `channel_types.tsv` (`lib_repo` =
-`https://github.com/harnice/harnice`):
+public ones in the general library's `channel_types.tsv` (`lib_repo` =
+`https://github.com/harnice/harnice-general-library`):
 
 | id | description | direction | signals | typical mate |
 |----|-------------|-----------|---------|--------------|
@@ -415,6 +423,9 @@ read. If the build raises, fix the row it names and run it again.
 - One endpoint lives on exactly one `connector_id`.
 - Exactly one of `device_connector_mpn` / `harness_connector_mpn` per row.
   The same connector id does not mix ownership.
+- An additional column produces a warning. Additional columns are ok but
+  discouraged due to consistency. If you need more columns, use data
+  structures in build instructions.
 - Cavity is never blank. Cavity is unique on a connector.
 - Terminating channel: one endpoint, `repeat_channel_id` blank.
 - Passthrough: same `channel_id` on exactly two connectors, two different
@@ -456,7 +467,7 @@ row-count check. No preflight that raises before `new()`.
         signal="pos",
         cavity="2",
         connector_id="J1",
-        channel_type=(1, "https://github.com/harnice/harnice"),
+        channel_type=(1, "https://github.com/harnice/harnice-general-library"),
         device_connector_mpn="XLR3F",
     )
     signals_list.append(
@@ -464,7 +475,7 @@ row-count check. No preflight that raises before `new()`.
         signal="neg",
         cavity="3",
         connector_id="J1",
-        channel_type=(1, "https://github.com/harnice/harnice"),
+        channel_type=(1, "https://github.com/harnice/harnice-general-library"),
         device_connector_mpn="XLR3F",
     )
     print("Wrote 2 signal rows.")
@@ -535,8 +546,9 @@ Prevention: copy the URL from my message or from the table I gave you.
   reach the internet.
 - No `from harnice` / `import harnice`. Names are already in the namespace.
 - Do not hand-write `signals.tsv`.
+- Additional columns are ok but discouraged due to consistency. If you need more columns, use data structures in build instructions.
 - Do not invent channel type ids.
-- Do not point a company channel-type id at `https://github.com/harnice/harnice`.
+- Do not point a company channel-type id at `https://github.com/harnice/harnice-general-library`.
 - Do not reimplement the build's checks inside `build.py`. `harnice -b` is
   the validator. If the `harnice` command is missing, run
   `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` from the
@@ -572,6 +584,7 @@ Ask yourself these questions. If any answer is no, revise the script and
 run `harnice -b` again.
 
 - [ ] Can a person read the appends and see every signal without reading a checker?
+- [ ] Is extra information kept in data structures in the build instructions? Additional columns are ok but discouraged due to consistency.
 - [ ] Is `signals_list.new()` immediately above those appends, with no preflight between them?
 - [ ] Are all `print()` statements ASCII-only (no checkmarks, crosses, bullets, or fancy quotes)?
 - [ ] Do the comments cite the supporting documentation and record each decision and assumption, including a blatantly obvious mapping and the reason?

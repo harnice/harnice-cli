@@ -374,19 +374,19 @@
     build_utils.run_macro(
         "bom_exporter_bottom_up",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="bom-1",
     )
     build_utils.run_macro(
         "tooling_list_exporter",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="tool_list-1",
     )
     build_utils.run_macro(
         "standard_harnice_formboard",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="formboard-overview",
         dimension=0,
         scale=scales.get("A"),
@@ -395,7 +395,7 @@
     build_utils.run_macro(
         "standard_harnice_formboard",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="formboard-detail",
         scale=scales.get("C"),
         input_instances=formboard_detail_instances,
@@ -403,7 +403,7 @@
     build_utils.run_macro(
         "trace_layout_visualizer",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="conductor_layout-1",
         trace_item_types=["conductor"],
         scale=scales.get("A"),
@@ -411,7 +411,7 @@
     build_utils.run_macro(
         "trace_layout_visualizer",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="cable_layout-1",
         trace_item_types=["cable"],
         scale=scales.get("A"),
@@ -419,14 +419,14 @@
     build_utils.run_macro(
         "circuit_visualizer",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="circuitviz-1",
         input_instances=instances_list.read(),
     )
     build_utils.run_macro(
         "revision_history_table",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="revhistory-1",
     )
     
@@ -441,21 +441,21 @@
     build_utils.run_macro(
         "build_notes_table",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="build_notes_table-1",
         input_instances=build_notes_list_instances,
     )
     build_utils.run_macro(
         "wirelist_exporter",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="wirelist-1",
         input_instances=instances_list.read(),
     )
     build_utils.run_macro(
         "harness_step_builder",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="harness-step-1",
         chosen_network=bundle_network,
         input_instances=instances_list.read(),
@@ -465,13 +465,13 @@
     build_utils.run_macro(
         "pdf_generator",
         "library/macros/harness_artifacts",
-        "https://github.com/harnice/harnice",
+        "https://github.com/harnice/harnice-general-library",
         artifact_id="pdf_drawing-1",
         page_setup={
             "pages": [
                 {
                     "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice",
+                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
                     "tblock_lib_subpath": "library/titleblocks/",
                     "page_size_in": [11.0, 8.5],
                     "tblock_anchor": "bottom-right",
@@ -488,7 +488,7 @@
                 },
                 {
                     "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice",
+                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
                     "tblock_lib_subpath": "library/titleblocks/",
                     "page_size_in": [11.0, 8.5],
                     "tblock_anchor": "bottom-right",
@@ -505,7 +505,7 @@
                 },
                 {
                     "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice",
+                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
                     "tblock_lib_subpath": "library/titleblocks/",
                     "page_size_in": [11.0, 8.5],
                     "tblock_anchor": "bottom-right",
