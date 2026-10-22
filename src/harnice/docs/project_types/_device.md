@@ -64,7 +64,7 @@ When a Device is built in Harnice, here's what happens:
 
         {% include-markdown "fragments/editing_attributes.md" %}
 
-1. Edit the signals list of your new device. To generate `build.py` from a pinout, ICD, or datasheet, use the **Device signals list** brief on [AI Prompts](../ai_prompts.md); put the source file next to `build.py` in the revision folder.
+1. Edit the signals list of your new device. To generate `build.py` from a pinout, ICD, or datasheet, paste the **Device signals list** prompt on [AI Prompts](../ai_prompts.md); put the source file next to `build.py` in the revision folder.
 
     ??? info "Updating a Signals List"
 

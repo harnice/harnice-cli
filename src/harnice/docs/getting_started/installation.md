@@ -37,7 +37,52 @@ Coming online every few weeks is enough to keep the license current indefinitely
 
 Download Harnice for [Mac](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-macOS.dmg) or [Windows](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-windows.zip). On a Mac, open the DMG and drag Harnice into Applications. On Windows, unzip and run `Harnice.exe` (keep the unzipped folder together).
 
-Open Harnice. On first launch it creates the files it needs on this computer (your name and library locations).
+Open Harnice. On first launch it creates the files it needs on this computer (your name and library locations) and opens the setup checklist: your name, git, Inkscape, and the standard libraries. You can open that list again from the gear menu → **Help setting up git, Inkscape, and libraries**. [Inkscape](#inkscape) is only needed to export drawing pages to PDF.
+
+---
+
+## :material-vector-polyline: Inkscape {#inkscape}
+
+PDF drawings are SVG pages that Harnice exports with [Inkscape](https://inkscape.org/release/). The rest of the app works without it. The setup checklist looks for Inkscape and saves the path it finds. **Check** runs that search again.
+
+Harnice looks in this order:
+
+1. A path already saved in `paths/paths.json` on this computer
+2. `inkscape` on `PATH`
+3. The usual install locations:
+    - Mac app: `/Applications/Inkscape.app` and `~/Applications/Inkscape.app`
+    - Homebrew: `/opt/homebrew/bin/inkscape` and `/usr/local/bin/inkscape`
+    - Windows: `C:\Program Files\Inkscape\bin\inkscape.com`, the same folder under `C:\Program Files (x86)`, and a per-user install at `%LOCALAPPDATA%\Programs\Inkscape\bin`
+
+Harnice opened from the Dock or the Start menu has a short `PATH`. A folder that works in your terminal is invisible to the app unless it is one of the locations above, or you save the path as described below.
+
+If nothing is found, the checklist item stays open and links here. **Waive** skips the item for now. A later PDF export still stops until Inkscape is found, and tells you to install it.
+
+### Installed in another folder
+
+Create `paths/paths.json` and set `inkscape` to the executable. Harnice reads that file before it searches anywhere else.
+
+| How you run Harnice | File |
+| --- | --- |
+| Installed Mac app | `~/Library/Application Support/Harnice/paths/paths.json` |
+| Installed Windows app | `%APPDATA%\Harnice\paths\paths.json` |
+| Source checkout | `paths/paths.json` in the repository root |
+
+```json
+{
+  "inkscape": "/Applications/Inkscape.app/Contents/MacOS/inkscape"
+}
+```
+
+On Windows, use the full path to `inkscape.com` or `inkscape.exe`. In JSON, write backslashes twice:
+
+```json
+{
+  "inkscape": "C:\\Program Files\\Inkscape\\bin\\inkscape.com"
+}
+```
+
+Open the checklist and click **Check**, or build a drawing. Harnice keeps that path for the next build. If the file is missing or the path no longer exists, the search above runs again.
 
 ---
 

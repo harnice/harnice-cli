@@ -74,10 +74,11 @@ Here's the basics of how to read a file structure dictionary:
     
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without
-      prompting. If `drawnby.json` is missing, the CLI (`harnice -b`,
-      `--newrev`, `--newpn`) asks for your name when stdin is a terminal and
-      writes it there. The desktop app asks from Settings (gear) → Drawn by…
-      instead. The name is never guessed.
+      prompting. Setup-checklist progress (finished and waived rows) is stored in
+      ``setup_progress.json`` in that same folder. If `drawnby.json` is missing,
+      the CLI (`harnice -b`, `--newrev`, `--newpn`) asks for your name when stdin
+      is a terminal and writes it there. The desktop app asks from Settings
+      (gear) → Drawn by… instead. The name is never guessed.
 
 ??? info "`fileio.dirpath(target_key, structure_dict=None, base_directory=None)`"
 
@@ -213,10 +214,11 @@ Behind the scenes, Harnice stores the current part number and revision number in
     
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without
-      prompting. If `drawnby.json` is missing, the CLI (`harnice -b`,
-      `--newrev`, `--newpn`) asks for your name when stdin is a terminal and
-      writes it there. The desktop app asks from Settings (gear) → Drawn by…
-      instead. The name is never guessed.
+      prompting. Setup-checklist progress (finished and waived rows) is stored in
+      ``setup_progress.json`` in that same folder. If `drawnby.json` is missing,
+      the CLI (`harnice -b`, `--newrev`, `--newpn`) asks for your name when stdin
+      is a terminal and writes it there. The desktop app asks from Settings
+      (gear) → Drawn by… instead. The name is never guessed.
 
 ??? info "`fileio.dirpath(target_key, structure_dict=None, base_directory=None)`"
 

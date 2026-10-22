@@ -9,11 +9,53 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 from contextlib import contextmanager
 
 # ISO 10303-21 requires a time_stamp in FILE_NAME. A fixed value keeps
 # regenerated geometry byte-identical instead of diffing on every build.
 _STEP_TIMESTAMP = "1970-01-01T00:00:00"
+
+
+def _prepare_ocp_dll_search():
+    """Let a frozen Windows app load OpenCascade DLLs that sit beside the exe.
+
+    Python 3.8+ does not search ``PATH`` for extension-module dependencies.
+    Nuitka copies those DLLs next to ``Harnice.exe`` and into ``OCP/``.
+    """
+    if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):
+        return
+    from harnice.runtime import _bundle_dir
+
+    bundled = _bundle_dir()
+    if bundled is None:
+        return
+    for folder in (bundled, bundled / "OCP"):
+        if not folder.is_dir():
+            continue
+        try:
+            os.add_dll_directory(str(folder))
+        except (OSError, ValueError):
+            pass
+
+
+def ocp_import_error():
+    """The ImportError from loading OpenCascade, or None when it loads."""
+    _prepare_ocp_dll_search()
+    try:
+        from OCP.STEPControl import STEPControl_Reader  # noqa: F401
+    except ImportError as exc:
+        return exc
+    return None
+
+
+def ocp_unavailable_message(exc):
+    """Say that STEP could not run, and include the real import error."""
+    detail = str(exc).strip() if exc is not None else ""
+    message = "OpenCascade failed to load, so STEP files cannot be read or written."
+    if detail:
+        return f"{message} {detail}"
+    return message
 
 
 @contextmanager
@@ -802,6 +844,9 @@ def tessellate_step_file(path, deflection_mm=0.5):
     Assembly labels become ``{instance_name}-bodyN`` so a click can name the
     instance and still distinguish multiple solids in one library part.
     """
+    failure = ocp_import_error()
+    if failure is not None:
+        raise ImportError(ocp_unavailable_message(failure)) from failure
     named = _read_named_step_shapes(path)
     if named:
         bodies = []
@@ -850,6 +895,7 @@ def write_assembly_step(path, part_number, bodies, description="harness assembly
     if not bodies:
         raise ValueError("no bodies to write")
 
+    ocp_failure = None
     try:
         named_shapes = []
         for body in bodies:
@@ -865,8 +911,8 @@ def write_assembly_step(path, part_number, bodies, description="harness assembly
             raise ValueError("no bodies to write")
         _ocp_write_shapes(named_shapes, path, part_number)
         return path
-    except ImportError:
-        pass
+    except ImportError as exc:
+        ocp_failure = exc
 
     named_triangles = []
     for body in bodies:
@@ -875,6 +921,8 @@ def write_assembly_step(path, part_number, bodies, description="harness assembly
             continue
         named_triangles.append((body.get("name") or "body", triangles))
     if not named_triangles:
+        if ocp_failure is not None:
+            raise ValueError(ocp_unavailable_message(ocp_failure)) from ocp_failure
         raise ValueError("no triangle bodies to write without OpenCascade")
     return write_step_file_solids(path, part_number, named_triangles, description)
 

@@ -203,6 +203,12 @@ def main():
     # Execute build logic
     # -----------------------------
     rev_history.update_datemodified()
+    # PDF export shells out to Inkscape. Remember a binary found on this
+    # machine so the drawing macro can call it. Absence does not stop a build
+    # that never writes a PDF; the drawing macro reports it when it does.
+    from harnice.utils.inkscape_utils import remember_inkscape
+
+    remember_inkscape()
     try:
         product_module.build()
     except SystemExit as e:
@@ -215,17 +221,38 @@ def main():
             failed = True
         rev_history.update_last_build("failed" if failed else "succeeded")
         raise
-    except Exception:
+    except Exception as exc:
         # Build errors belong in the console, not the GUI "failed to start" alert.
         try:
             rev_history.update_last_build("failed")
         except Exception:
             pass
+        if _missing_inkscape(exc):
+            from harnice.utils.inkscape_utils import inkscape_required_message
+
+            fatal(inkscape_required_message())
         sys.excepthook(*sys.exc_info())
         raise SystemExit(1)
 
     rev_history.update_last_build("succeeded")
     return
+
+
+def _missing_inkscape(exc):
+    """True when a drawing export died because the Inkscape binary is absent.
+
+    Macros copied into a project before the shared lookup still call a
+    hardcoded path and raise ``FileNotFoundError``. Newer macros raise
+    ``InkscapeNotFoundError``. Both should print one install sentence.
+    """
+    from harnice.utils.inkscape_utils import InkscapeNotFoundError
+
+    if isinstance(exc, InkscapeNotFoundError):
+        return True
+    if isinstance(exc, FileNotFoundError):
+        name = str(getattr(exc, "filename", "") or exc)
+        return "inkscape" in name.lower()
+    return False
 
 
 def _docs_tree(path):

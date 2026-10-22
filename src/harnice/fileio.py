@@ -240,6 +240,81 @@ def write_drawnby(name):
     return path
 
 
+_SETUP_PROGRESS_STATES = frozenset({"open", "done", "waived"})
+_SETUP_PROGRESS_TEXT_FIELDS = ("note", "path", "draft")
+
+
+def setup_progress_path():
+    """Absolute path to ``setup_progress.json`` (the file may not exist yet).
+
+    Lives in the Harnice app-data folder, next to ``drawnby.json``.
+    """
+    return os.path.join(harnice_root(), "setup_progress.json")
+
+
+def _setup_progress_text(value, limit=500):
+    text = "" if value is None else str(value).strip()
+    if len(text) > limit:
+        return text[:limit]
+    return text
+
+
+def _normalize_setup_progress(data):
+    """Return ``{"cwd", "items"}`` with only known checklist fields."""
+    empty = {"cwd": "", "items": {}}
+    if not isinstance(data, dict):
+        return empty
+    items = {}
+    raw_items = data.get("items")
+    if isinstance(raw_items, dict):
+        for key, row in raw_items.items():
+            item_id = _setup_progress_text(key, 300)
+            if not item_id or not isinstance(row, dict):
+                continue
+            state = str(row.get("state") or "open").strip().lower()
+            if state not in _SETUP_PROGRESS_STATES:
+                state = "open"
+            cleaned = {"state": state}
+            for field in _SETUP_PROGRESS_TEXT_FIELDS:
+                if field in row:
+                    cleaned[field] = _setup_progress_text(row.get(field))
+            items[item_id] = cleaned
+    return {"cwd": _setup_progress_text(data.get("cwd"), 1000), "items": items}
+
+
+def read_setup_progress():
+    """Return setup-checklist progress from ``setup_progress.json``.
+
+    Missing or unreadable file → ``{"cwd": "", "items": {}}``.
+    """
+    path = setup_progress_path()
+    if not os.path.exists(path):
+        return {"cwd": "", "items": {}}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {"cwd": "", "items": {}}
+    return _normalize_setup_progress(data)
+
+
+def write_setup_progress(data):
+    """Write ``setup_progress.json`` in the app-data folder.
+
+    Unknown fields are dropped. Item ``state`` is ``open``, ``done``, or
+    ``waived``.
+    """
+    cleaned = _normalize_setup_progress(data)
+    path = setup_progress_path()
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cleaned, f, indent=2)
+        f.write("\n")
+    return path
+
+
 def path(target_value, structure_dict=None, base_directory=None):
     """Return the full path to a file identified by its file key.
 
@@ -267,10 +342,11 @@ def path(target_value, structure_dict=None, base_directory=None):
 
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without
-      prompting. If `drawnby.json` is missing, the CLI (`harnice -b`,
-      `--newrev`, `--newpn`) asks for your name when stdin is a terminal and
-      writes it there. The desktop app asks from Settings (gear) → Drawn by…
-      instead. The name is never guessed.
+      prompting. Setup-checklist progress (finished and waived rows) is stored in
+      ``setup_progress.json`` in that same folder. If `drawnby.json` is missing,
+      the CLI (`harnice -b`, `--newrev`, `--newpn`) asks for your name when stdin
+      is a terminal and writes it there. The desktop app asks from Settings
+      (gear) → Drawn by… instead. The name is never guessed.
 
     """
     # FILES NOT DEPENDENT ON PRODUCT TYPE

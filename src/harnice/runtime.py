@@ -250,7 +250,7 @@ def hide_from_dock():
 
 
 def user_data_dir():
-    """Writable Harnice data (console state, repository_locations.csv).
+    """Writable Harnice data (console state, repository_locations.csv, setup progress).
 
     Source checkouts use that clone's root (or ``HARNICE_ROOT`` if set) so each
     ``serve_console.py`` keeps its own ``repository_locations.csv``. The

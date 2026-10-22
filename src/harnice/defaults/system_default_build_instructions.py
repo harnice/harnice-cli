@@ -352,4 +352,19 @@ def connector_chooser():
         # family choosers (D38999, Mighty Mouse, …) are in the connector-choosing
         # examples ribbon — insert them here, then continue if they assign an mpn.
 
-        cli.warn(f"connector_chooser could not find a solution for {instance_name}")
+        # No rule matched. Keep the harness building with a placeholder.
+        # Artwork goes in the general library at
+        # connectors/example/EXAMPLE_CONNECTOR/rev1/drawing.svg.
+        cli.warn(
+            f"connector_chooser could not find a solution for {instance_name}; "
+            "using EXAMPLE_CONNECTOR"
+        )
+        instances_list.modify(
+            instance_name=instance_name,
+            instance_data={
+                "mpn": "EXAMPLE_CONNECTOR",
+                "lib_repo": "https://github.com/harnice/harnice-general-library",
+                "lib_subpath": "connectors/example",
+                "lib_rev_used_here": None,
+            },
+        )

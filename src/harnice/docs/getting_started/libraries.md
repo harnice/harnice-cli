@@ -225,7 +225,7 @@ Contributing parts to the public library benefits everyone! Here's what you can 
 3. Include revision history
 4. Submit a pull request to the Harnice repository
 
-If you are adding a **whole catalog** (every D-sub, every NEMA plug, every portable-cord type), do not hand-draw SKUs. Encode a part family. See [AI Prompts](../ai_prompts.md) for a copy-paste brief based on the aerospace, AV, and accessories libraries.
+If you are adding a **whole catalog** (every D-sub, every NEMA plug, every portable-cord type), do not hand-draw SKUs. Encode a part family. See [AI Prompts](../ai_prompts.md). That prompt points an agent at the part-family skill.
 
 ---
 

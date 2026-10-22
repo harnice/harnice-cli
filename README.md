@@ -21,3 +21,4 @@ That Python needs the libraries named under `dependencies` in `pyproject.toml`.
 Documentation and the AI prompts are in `src/harnice/docs/`.
 `PYTHONPATH=src python -m harnice --docs` prints that path.
 The same pages are at https://harnice.io/.
+Agent skills are in `skills/`. The prompts page points at those files.

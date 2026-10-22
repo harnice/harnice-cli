@@ -1,6 +1,6 @@
 *Harnice defines a signals list to be a table that keeps track of every single signal going into and out of a device, which connector or channel it's part of, which signal names it has, which connector contact number or part number it has.*
 
-To generate `build.py` from a pinout, ICD, datasheet, or spreadsheet, copy the **Device signals list** brief on [AI Prompts](../ai_prompts.md). Put the source file in the device revision folder (next to `build.py`) or give the agent that path.
+To generate `build.py` from a pinout, ICD, datasheet, or spreadsheet, paste the **Device signals list** prompt on [AI Prompts](../ai_prompts.md). Put the source file in the device revision folder (next to `build.py`) or give the agent that path.
 
 1. If your device is very simple (has only a small number of signals), you are free to edit `fileio.path("signals list")` manually. If you choose to do this, delete `fileio.path("build instructions")` before clicking **Build** again, because the script will overwrite the signals list. However, it is recommended that you edit the Python build instructions instead to produce a validated, reproduceable, and portable result.
 2. To edit the build instructions Python file, this quick-start guide should give you an idea of how the default script is set up, and how you might be able to change it to suit your needs. The goal of this file is to make a signals list. Do not be concerned with writing this efficiently, as it will only be ran while building the device.
