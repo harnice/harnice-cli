@@ -574,7 +574,7 @@
     Returns:
         SVG string for the label group element
 
-??? info "`svg_utils.draw_segments_across_paths(input_instances, input_network_2D, stroke_width, segment_spacing, min_label_segment_length=30.0, label_font_size=8, from_node_id_field=None, to_node_id_field=None, trace_group_opacity=None)`"
+??? info "`svg_utils.draw_segments_across_paths(input_instances, input_network_2D, stroke_width, segment_spacing, min_label_segment_length=30.0, label_font_size=8, from_node_id_field=None, to_node_id_field=None, trace_group_opacity=None, endpoint_contacts=None)`"
 
     Maps segment-type instances onto a 2D wire network, offsets parallel paths
     at shared nodes, draws each path and its labels, and returns raw SVG markup.
@@ -614,6 +614,11 @@
             f"{this_harness_to_device_refdes}.{this_harness_to_device_connector_name}"
         trace_group_opacity: optional opacity for each trace ``<g>`` (e.g. ``1`` for fully
             opaque on save). Omitted when ``None`` (default: no ``opacity`` attribute).
+        endpoint_contacts: optional dict filled with each instance's path-end positions
+            in SVG user units (the same point as its end label):
+            ``{instance_name: {node_id: {"x", "y", "tangent", "departs"}}}``.
+            ``tangent`` is the direction of travel in the same degrees ``draw_styled_path``
+            uses. ``departs`` is true at the path start and false at the path end.
     
     Returns:
         str: raw SVG markup for all paths and labels (no <svg> wrapper). Each trace is

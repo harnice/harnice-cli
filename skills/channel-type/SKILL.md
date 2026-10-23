@@ -67,6 +67,13 @@ that contains a comma is quoted. After that quoting is removed, the cells
 - `signals`: comma-separated names, for example `pos,neg`
 - `compatible_channel_types`: one Python tuple, or a list of tuples, which
   `ast.literal_eval` accepts
+- `channel_default_appearance`: optional Python dict literal, one engineering
+  appearance. A channel trace and the channel card use it. Example:
+  `{'base_color': '#D59A10'}`
+- `signal_default_appearances`: optional Python dict literal, signal name to
+  appearance dict. A circuit trace and that signal's bar use the matching
+  name. Example:
+  `{'pos': {'base_color': '#E24B4A'}, 'neg': {'base_color': '#2E6B9F'}}`
 
 ```
 (2, "https://github.com/harnice/harnice-general-library")
@@ -78,9 +85,9 @@ Use the `lib_repo` I gave you, not the URL in the example.
 When the mate row is in the same file, add this new id to that mate's
 `compatible_channel_types` as well. The existing rows name both directions.
 
-Leave `status`, `linked documentation`, and the limit and capacity columns
-blank unless I gave those values. Do not invent a voltage, a current, or a
-datasheet URL.
+Leave `status`, `linked documentation`, the limit and capacity columns, and
+both appearance columns blank unless I gave those values. Do not invent a
+voltage, a current, a datasheet URL, or a color.
 
 
 ## Show me, then wait

@@ -375,4 +375,4 @@ If the placed device has no `<configuration>` child yet, Harnice seeds it from t
 
 ### Showing values on the symbol
 
-In the device **block diagram symbol** editor, add attribute text whose `data-attribute-name` is `REFDES` or a configuration field `id`. On the device symbol, matching field ids preview the field default. On the system diagram, they show that instance's answers (`true` / `false` for booleans, comma-separated lists for multiselect).
+In the device **block diagram symbol** editor, add attribute text whose `data-attribute-name` is `REFDES` or a configuration field `id`. The symbol stores a `{field_id}` placeholder. On the system diagram, matching fields show that instance's answers (`true` / `false` for booleans, comma-separated lists for multiselect).

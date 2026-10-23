@@ -71,6 +71,9 @@ Here's the basics of how to read a file structure dictionary:
     **Returns:** Absolute path to the file (`str`).
     
     **Raises:** `TypeError` if **target_value** is not found in the structure (for non-special keys).
+    The message names the project types that use that file key, and the project
+    type of the revision that is open, so a wrong ``project_type`` in the
+    revision history is visible.
     
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without
@@ -211,6 +214,9 @@ Behind the scenes, Harnice stores the current part number and revision number in
     **Returns:** Absolute path to the file (`str`).
     
     **Raises:** `TypeError` if **target_value** is not found in the structure (for non-special keys).
+    The message names the project types that use that file key, and the project
+    type of the revision that is open, so a wrong ``project_type`` in the
+    revision history is visible.
     
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without

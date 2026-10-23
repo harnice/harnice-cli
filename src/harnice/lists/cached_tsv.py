@@ -47,6 +47,48 @@ def _abspath(path):
     return os.path.abspath(os.fspath(path))
 
 
+def is_file_busy(exc):
+    """True when ``exc`` is another program holding the file, usually Excel.
+
+    macOS privacy denials are ``EPERM`` (errno 1, "Operation not permitted").
+    Those stay a permission error so the console can explain folder access.
+    """
+    if not isinstance(exc, OSError):
+        return False
+    winerror = getattr(exc, "winerror", None)
+    if winerror in (32, 33):
+        return True
+    # EBUSY, ETXTBSY, EAGAIN, EDEADLK — locks and sharing failures.
+    if exc.errno in (11, 16, 26, 35):
+        return True
+    text = str(exc).lower()
+    if (
+        "another process" in text
+        or "sharing violation" in text
+        or "resource busy" in text
+        or "used by another" in text
+    ):
+        return True
+    # Excel's lock on a TSV is Permission denied (errno 13) on Windows and macOS.
+    return isinstance(exc, PermissionError) and exc.errno == 13
+
+
+def file_busy_message(path):
+    """Tell the user to close the file in Excel before Harnice opens the project."""
+    name = os.path.basename(os.fspath(path))
+    return (
+        f"Could not open '{name}' because another program has it open. "
+        "Close the file in Excel, then try again."
+    )
+
+
+def error_text(exc, path):
+    """Return ``exc`` as text, with the Excel guidance when the file is locked."""
+    if isinstance(exc, OSError) and is_file_busy(exc):
+        return file_busy_message(path)
+    return str(exc)
+
+
 def _signature(path):
     stat = os.stat(path)
     return stat.st_mtime_ns, stat.st_size
@@ -66,10 +108,15 @@ def _load(path, *, allow_missing=False):
     if cached is not None and cached["signature"] == signature:
         return cached["fieldnames"], cached["rows"]
 
-    with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        fieldnames = list(reader.fieldnames or [])
-        rows = list(reader)
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            fieldnames = list(reader.fieldnames or [])
+            rows = list(reader)
+    except OSError as exc:
+        if is_file_busy(exc):
+            raise RuntimeError(file_busy_message(path)) from exc
+        raise
     _cache[path] = {
         "signature": signature,
         "fieldnames": fieldnames,
@@ -117,9 +164,11 @@ def _write(path, fieldnames, rows):
             try:
                 os.replace(tmp, path)
                 break
-            except PermissionError:
-                if attempt == 9:
+            except OSError as exc:
+                if not is_file_busy(exc):
                     raise
+                if attempt == 9:
+                    raise RuntimeError(file_busy_message(path)) from exc
                 time.sleep(0.05 * (attempt + 1))
     except Exception:
         try:

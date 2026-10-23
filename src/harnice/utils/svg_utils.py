@@ -1209,22 +1209,81 @@ def _trace_group_open_tag(instance, group_opacity=None):
 _TRACE_CIRCLE_FAN_HALF_ANGLE_DEG = 30.0
 
 
-def _drawn_trace_stroke_px(instance, stroke_width_inches):
-    """SVG stroke width actually used for this instance (rainbow placeholder is 0.01 in)."""
+def _channel_type_default_appearance(item, channel_type, signal):
+    """Appearance from channel_types.tsv for a channel trace or a signal trace."""
+    try:
+        from harnice.project_types import chtype
+
+        if item == "circuit":
+            by_sig = chtype.signal_default_appearances(channel_type)
+            spec = by_sig.get(signal) if signal else None
+            return spec if isinstance(spec, dict) else None
+        if item in ("channel", "harness-channel"):
+            return chtype.channel_default_appearance(channel_type)
+    except Exception:
+        return None
+    return None
+
+
+def _resolved_trace_appearance(instance, cache):
+    """Instance appearance, else the channel-type default for this trace.
+
+    A circuit uses ``signal_default_appearances`` for its signal. A channel
+    trace uses ``channel_default_appearance``. An instance appearance that
+    already has ``base_color`` wins.
+    """
     raw = (instance or {}).get("appearance")
     parsed = appearance.parse(raw) if raw else None
+    if isinstance(parsed, dict) and parsed.get("base_color"):
+        return parsed
+    item = str((instance or {}).get("item_type") or "").strip()
+    channel_type = (
+        (instance or {}).get("this_channel_from_channel_type")
+        or (instance or {}).get("this_channel_to_channel_type")
+        or ""
+    )
+    channel_type = str(channel_type).strip()
+    if not channel_type:
+        return parsed
+    signal = str((instance or {}).get("signal_of_channel_type") or "").strip()
+    key = (item, channel_type, signal if item == "circuit" else "")
+    if key not in cache:
+        cache[key] = _channel_type_default_appearance(item, channel_type, signal)
+    hit = cache[key]
+    if isinstance(hit, dict) and hit.get("base_color"):
+        return hit
+    return parsed
+
+
+def _label_square_colors(parsed, text_color, background_color, outline):
+    """Paint a trace label square from an appearance, or keep the given defaults."""
+    if not isinstance(parsed, dict):
+        return text_color, background_color, outline
+    fill = parsed.get("base_color") or parsed.get("outline_color")
+    if not isinstance(fill, str) or not fill.strip():
+        return text_color, background_color, outline
+    ink = appearance.black_or_white_to_contrast_with_color(fill)
+    stroke = parsed.get("outline_color") or "#000000"
+    return ink, fill, stroke
+
+
+def _drawn_trace_stroke_px(instance, stroke_width_inches, appearance_cache=None):
+    """SVG stroke width actually used for this instance (rainbow placeholder is 0.01 in)."""
+    parsed = _resolved_trace_appearance(
+        instance, appearance_cache if appearance_cache is not None else {}
+    )
     if not parsed or not parsed.get("base_color"):
         return 0.01 * 96
     return float(stroke_width_inches) * 96
 
 
-def _multi_ch_junction_dot_radius(jid, instances, stroke_width_inches):
+def _multi_ch_junction_dot_radius(jid, instances, stroke_width_inches, appearance_cache=None):
     """Dot radius so the circle diameter is 2× the junction traces' stroke width."""
     width = 0.0
     for inst in instances or []:
         if (inst.get("multi_ch_junction_id") or "").strip() != jid:
             continue
-        width = max(width, _drawn_trace_stroke_px(inst, stroke_width_inches))
+        width = max(width, _drawn_trace_stroke_px(inst, stroke_width_inches, appearance_cache))
     if width <= 0:
         width = 0.01 * 96
     return width
@@ -1255,6 +1314,7 @@ def draw_segments_across_paths(
     from_node_id_field=None,
     to_node_id_field=None,
     trace_group_opacity=None,
+    endpoint_contacts=None,
 ):
     """
     Maps segment-type instances onto a 2D wire network, offsets parallel paths
@@ -1295,6 +1355,11 @@ def draw_segments_across_paths(
             f"{this_harness_to_device_refdes}.{this_harness_to_device_connector_name}"
         trace_group_opacity: optional opacity for each trace ``<g>`` (e.g. ``1`` for fully
             opaque on save). Omitted when ``None`` (default: no ``opacity`` attribute).
+        endpoint_contacts: optional dict filled with each instance's path-end positions
+            in SVG user units (the same point as its end label):
+            ``{instance_name: {node_id: {"x", "y", "tangent", "departs"}}}``.
+            ``tangent`` is the direction of travel in the same degrees ``draw_styled_path``
+            uses. ``departs`` is true at the path start and false at the path end.
 
     Returns:
         str: raw SVG markup for all paths and labels (no <svg> wrapper). Each trace is
@@ -1305,6 +1370,7 @@ def draw_segments_across_paths(
         ValueError if a required node or path is not found in the network.
     """
     graph = input_network_2D
+    appearance_cache = {}
 
     # --- Phase 1: BFS path finding ---
     instance_paths = {}
@@ -1731,11 +1797,38 @@ def draw_segments_across_paths(
             cli.warn(f"empty chain for '{inst_name}'")
             continue
 
-        trace_appearance = instance.get("appearance")
+        if endpoint_contacts is not None:
+            contacts = endpoint_contacts.setdefault(inst_name, {})
+            for which, seg_uuid, direction, point, departs in (
+                ("start", path_segments[0], path_directions[0], point_chain[0], True),
+                ("end", path_segments[-1], path_directions[-1], point_chain[-1], False),
+            ):
+                info = graph["segments"][seg_uuid]
+                node_a = info["node_at_end_a"]
+                node_b = info["node_at_end_b"]
+                if direction == "a_to_b":
+                    node_id = node_a if which == "start" else node_b
+                else:
+                    node_id = node_b if which == "start" else node_a
+                contacts[node_id] = {
+                    "x": point["x"],
+                    "y": -point["y"],
+                    "tangent": point.get("tangent", 0.0),
+                    "departs": departs,
+                }
+
+        trace_appearance = _resolved_trace_appearance(instance, appearance_cache)
         trace_group = []
         draw_styled_path(point_chain, stroke_width, trace_appearance, trace_group)
 
-        # Endpoint labels (black box, white text) — skipped if field is absent
+        end_ink, end_fill, end_outline = _label_square_colors(
+            trace_appearance, "white", "black", "black"
+        )
+        mid_ink, mid_fill, mid_outline = _label_square_colors(
+            trace_appearance, "black", "white", "black"
+        )
+
+        # Endpoint labels — skipped if field is absent
         for point, text in zip(
             [point_chain[0], point_chain[-1]],
             [instance.get("print_name_at_end_a"), instance.get("print_name_at_end_b")],
@@ -1747,14 +1840,14 @@ def draw_segments_across_paths(
                         point["y"],
                         point["tangent"],
                         text,
-                        text_color="white",
-                        background_color="black",
-                        outline="black",
+                        text_color=end_ink,
+                        background_color=end_fill,
+                        outline=end_outline,
                         font_size=label_font_size,
                     )
                 )
 
-        # Midpoint labels on long sub-segments (white box, black text) — skipped if field is absent
+        # Midpoint labels on long sub-segments — skipped if field is absent
         print_name = instance.get("print_name")
         if print_name:
             for i in range(len(point_chain) - 1):
@@ -1771,9 +1864,9 @@ def draw_segments_across_paths(
                             (pt_a["y"] + pt_b["y"]) / 2,
                             pt_a["tangent"],
                             print_name,
-                            text_color="black",
-                            background_color="white",
-                            outline="black",
+                            text_color=mid_ink,
+                            background_color=mid_fill,
+                            outline=mid_outline,
                             font_size=label_font_size,
                         )
                     )
@@ -1798,7 +1891,9 @@ def draw_segments_across_paths(
                 f'data-harnice-junction="{esc_jid}" opacity="1">'
             )
             for cx, cy, _cluster_r in dots:
-                r = _multi_ch_junction_dot_radius(jid, input_instances, stroke_width)
+                r = _multi_ch_junction_dot_radius(
+                    jid, input_instances, stroke_width, appearance_cache
+                )
                 sw = max(r * 0.12, 0.04)
                 nchar = max(len(jid), 1)
                 font = min(r * 1.05, (r * 1.7) / (nchar * 0.55))

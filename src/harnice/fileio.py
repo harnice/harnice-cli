@@ -68,6 +68,115 @@ def list_revision_folders(part_dir):
     return found
 
 
+def _parse_revision_history_date(value):
+    """Parse a revision-history date (``M/D/YY``), or return ``None``."""
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%m-%d-%y", "%m-%d-%Y"):
+        try:
+            return datetime.datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _rev_cell_suffix(value):
+    """Revision label from a history cell: ``1``, ``A``, or ``rev1`` → ``1``."""
+    text = "" if value is None else str(value).strip()
+    if len(text) >= 4 and text[:3].lower() == "rev":
+        rest = text[3:].strip()
+        if rest:
+            return rest
+    return text
+
+
+def _folder_for_rev_suffix(folders, suffix):
+    """Return the on-disk revision folder for ``suffix``, if one exists."""
+    if suffix in folders:
+        return folders[suffix]
+    from harnice.lists import rev_history
+
+    for key, path in folders.items():
+        if rev_history._revs_equivalent(key, suffix):
+            return path
+    return None
+
+
+def _most_recent_revision_in_part_folder(part_dir):
+    """Return the latest edited ``rev*`` folder, or ``None`` if this is not a part folder.
+
+    A part folder is a real Harnice project when ``{part}-revision_history.tsv``
+    names this folder in ``pn`` and at least one of those revisions exists on
+    disk. Among those rows, the latest ``datemodified`` wins. A later row wins
+    when dates tie or are blank.
+    """
+    part_name = os.path.basename(part_dir)
+    if not part_name or part_name in (".", ".."):
+        return None
+    history_path = os.path.join(part_dir, f"{part_name}-revision_history.tsv")
+    if not os.path.isfile(history_path):
+        return None
+    folders = list_revision_folders(part_dir)
+    if not folders:
+        return None
+    try:
+        with open(history_path, newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            names = reader.fieldnames
+            if not names:
+                return None
+            reader.fieldnames = [str(name or "").strip() for name in names]
+            required = {"pn", "rev", "project_type"}
+            if not required.issubset(set(reader.fieldnames)):
+                return None
+            rows = list(reader)
+    except (OSError, csv.Error, UnicodeError):
+        return None
+
+    best = None
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        pn = str(row.get("pn") or "").strip()
+        if pn != part_name:
+            continue
+        suffix = _rev_cell_suffix(row.get("rev"))
+        if not suffix:
+            continue
+        rev_folder = _folder_for_rev_suffix(folders, suffix)
+        if not rev_folder:
+            continue
+        edited = _parse_revision_history_date(row.get("datemodified"))
+        # Missing or unreadable dates sort before any real date. Later rows
+        # break ties, including when every date is blank.
+        rank = (edited or datetime.date.min, index)
+        if best is None or rank > best[0]:
+            best = (rank, rev_folder)
+    if best is None:
+        return None
+    return best[1]
+
+
+def resolve_project_open_folder(folder):
+    """Return the revision folder to open for ``folder``.
+
+    A ``rev{rev}`` folder is returned unchanged. A part folder is accepted when
+    ``{part}-revision_history.tsv`` names that folder and lists a revision that
+    exists on disk; the revision with the latest ``datemodified`` is returned.
+
+    Returns ``None`` when ``folder`` is neither a revision folder nor a
+    validated part folder. Building still requires a revision folder; this
+    helper is for opening a project.
+    """
+    if not folder or not os.path.isdir(folder):
+        return None
+    folder = os.path.normpath(os.path.abspath(folder))
+    if revision_folder_parts(folder) is not None:
+        return folder
+    return _most_recent_revision_in_part_folder(folder)
+
+
 def is_revision_folder(path=None):
     """True if ``path`` (default cwd) is a ``rev{N}`` folder."""
     return revision_folder_parts(path) is not None
@@ -315,6 +424,81 @@ def write_setup_progress(data):
     return path
 
 
+def _collect_structure_file_keys(data):
+    """Return every file-key string stored as a value in a file structure."""
+    keys = set()
+    if isinstance(data, dict):
+        for value in data.values():
+            if isinstance(value, str):
+                keys.add(value)
+            else:
+                keys |= _collect_structure_file_keys(value)
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, str):
+                keys.add(item)
+            else:
+                keys |= _collect_structure_file_keys(item)
+    return keys
+
+
+def _project_types_for_file_key(target_value):
+    """Project types whose ``file_structure()`` contains ``target_value``."""
+    import importlib
+
+    from harnice.project_types import available_names
+
+    owners = []
+    for name in available_names():
+        try:
+            mod = importlib.import_module(f"harnice.project_types.{name}")
+            structure = mod.file_structure()
+        except Exception:
+            continue
+        if target_value in _collect_structure_file_keys(structure):
+            owners.append(name)
+    return owners
+
+
+def missing_file_key_message(target_value):
+    """Explain a missing file key, including when another project type owns it.
+
+    ``signals_list.new()`` looks up ``"signals list"``. That key exists only on
+    a device. A system or harness revision hits this instead of a bare
+    "could not find filepath" error.
+    """
+    current = str(getattr(state, "project_type", "") or "").strip()
+    others = [name for name in _project_types_for_file_key(target_value) if name != current]
+    if others:
+        if len(others) == 1:
+            used_by = f"the {others[0]} project type"
+        else:
+            used_by = "these project types: " + ", ".join(others)
+        where = (
+            f"this revision's project type is '{current}'"
+            if current
+            else "this revision has no project type set"
+        )
+        return (
+            f"Could not find filepath of '{target_value}'. "
+            f"That file is used by {used_by}, and {where}. "
+            "Is the project type set correctly? "
+            "Check the project_type column in the revision history."
+        )
+    if current:
+        return (
+            f"Could not find filepath of '{target_value}'. "
+            f"It is not in the '{current}' project type's file structure. "
+            "Is the project type set correctly? "
+            "Check the project_type column in the revision history."
+        )
+    return (
+        f"Could not find filepath of '{target_value}'. "
+        "Is the project type set correctly? "
+        "Check the project_type column in the revision history."
+    )
+
+
 def path(target_value, structure_dict=None, base_directory=None):
     """Return the full path to a file identified by its file key.
 
@@ -339,6 +523,9 @@ def path(target_value, structure_dict=None, base_directory=None):
     **Returns:** Absolute path to the file (`str`).
 
     **Raises:** `TypeError` if **target_value** is not found in the structure (for non-special keys).
+    The message names the project types that use that file key, and the project
+    type of the revision that is open, so a wrong ``project_type`` in the
+    revision history is visible.
 
     **First run**
     - If `repository locations` is missing, Harnice creates an empty CSV without
@@ -392,7 +579,7 @@ def path(target_value, structure_dict=None, base_directory=None):
     path_value = recursive_search(structure_dict, [])
 
     if not path_value:
-        raise TypeError(f"Could not find filepath of '{target_value}'.")
+        raise TypeError(missing_file_key_message(target_value))
     if base_directory in [None, ""]:
         return os.path.join(rev_directory(), *path_value)
     else:
@@ -559,21 +746,27 @@ def verify_revision_structure():
 
     # --- Ensure revision_history entry exists ---
     try:
-        rev_history.info()
-    except ValueError:
-        rev_history.append(next_rev=state.rev)
-    except FileNotFoundError:
-        rev_history.append(next_rev=state.rev)
+        try:
+            rev_history.info()
+        except ValueError:
+            rev_history.append(next_rev=state.rev)
+        except FileNotFoundError:
+            rev_history.append(next_rev=state.rev)
 
-    # --- Status must be blank to proceed ---
-    if rev_history.info(field="status") != "":
-        raise RuntimeError(
-            f"Revision {state.rev} status is not clear. "
-            f"Harnice only builds revisions with a blank status."
-        )
+        # --- Status must be blank to proceed ---
+        if rev_history.info(field="status") != "":
+            raise RuntimeError(
+                f"Revision {state.rev} status is not clear. "
+                f"Harnice only builds revisions with a blank status."
+            )
 
-    print(f"Loaded PN: {state.pn}, Rev: {state.rev}")
-    rev_history.update_library_identity()
+        print(f"Loaded PN: {state.pn}, Rev: {state.rev}")
+        rev_history.update_library_identity()
+    except RuntimeError as exc:
+        if "another program has it open" in str(exc):
+            print(exc)
+            raise SystemExit(1) from None
+        raise
 
     return 0
 

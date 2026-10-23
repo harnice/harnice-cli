@@ -11,6 +11,8 @@ Physical geometry (formboard segments, schematic wires, harness overlays) is plo
 }
 ~~~
 
+The same dict is the optional `channel_default_appearance` cell, and each value inside `signal_default_appearances`, on the channel type's `channel_types.tsv`. See Channel Types. An instance `appearance` that already includes `base_color` is the appearance drawn for that trace.
+
 Drafting ink (tables, wirelists, labels, dimension lines) is painted from a **style** dict: `fill_color`, `stroke_color`, `text_color`. Build that dict at the instance from its parsed appearance.
 
 ### Arguments

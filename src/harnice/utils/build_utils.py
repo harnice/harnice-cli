@@ -320,7 +320,9 @@ def default_contents(filename, replacements=None):
     else:
         path = os.path.join(os.path.dirname(harnice.__file__), "defaults", filename)
 
-    with open(path, "r") as f:
+    # Locale encoding on Windows is cp1252, which turns the template's
+    # arrows and dashes into mojibake inside the new build.py.
+    with open(path, "r", encoding="utf-8") as f:
         content = f.read()
 
     if replacements:

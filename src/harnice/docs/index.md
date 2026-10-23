@@ -100,6 +100,6 @@ Need something bigger? Build a **[Macro](project_types/_macro.md)**: a revision-
 
 - Harnice does not read your mind. If you are receiving results that you don't expect (unless it's a bug), you may need to rethink how you are communicating or organizing your thought process. **This is a feature!** Complete, explicit definition makes your designs easier to understand by both humans and machines alike. 
 
-- Harnice does not invent catalog parts for you. Libraries are still the barrier to entry. The way through is a **part family**: Python that encodes a how-to-order table and emits every legal SKU. The [AI Prompts](ai_prompts.md) page points an agent at the part-family skill in the command-line repository.
+- Harnice does not invent catalog parts for you. Libraries are still the barrier to entry. The way through is a **part family**: Python that encodes a how-to-order table and emits every legal SKU. The [Building with AI](ai_prompts.md) page points at the part-family skill in the command-line repository.
 
-- Harnice does not type your device pinout for you. The same [AI Prompts](ai_prompts.md) page points an agent at the device signals-list skill. Give it an ICD, datasheet, or spreadsheet. 
+- Harnice does not type your device pinout for you. The same [Building with AI](ai_prompts.md) page points at the device signals-list skill. Give it an ICD, datasheet, or spreadsheet. 

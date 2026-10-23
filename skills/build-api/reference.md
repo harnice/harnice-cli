@@ -274,6 +274,8 @@ invent a function that is not on this page.
 
 - `chtype.parse` — Convert stored string into a tuple (chid:int, lib_repo:str). Handles both single tuples and extracts first tuple from lists.
 - `chtype.signals` — Return the list of signal names associated with a specific channel type.
+- `chtype.channel_default_appearance` — Optional default appearance for this channel type's channel trace and card. Blank cell returns None.
+- `chtype.signal_default_appearances` — Optional default appearance for each signal of this channel type. Blank cell returns {}.
 - `chtype.compatibles` — Look up other channel types that are declared as compatible with the given channel type.
 - `chtype.is_or_is_compatible_with` — Return the given channel type plus all channel types declared as compatible with it.
 - `chtype.attribute` — Read any additional column from channel_types.tsv for a given channel type.

@@ -12,6 +12,15 @@
 1. If you find the channel_type you're looking for, temporarily note it as a touple in a notepad somewhere with format `(ch_type_id, universal_library_repository)`. 
 1. If you don't find it, make a new one. It's important to try and reduce the number of channel_types in here to reduce complexity, but it's also important that you adhere to strict and true rules about what is allowed to be mapped to what. Modifications and additions to this document should be taken and reviewed very seriously.
 
+Two optional columns set the default appearance. Both cells are Python dict literals, parsed with `ast.literal_eval`. Leave a cell blank to leave that default unset. Harnice reads the `channel_types.tsv` at the root of the library named by the channel type's `lib_repo`.
+
+- `channel_default_appearance` — one engineering appearance dict. A channel trace (`channel` or `harness-channel`) and the channel card in the connectors view use it. Example: `{'base_color': '#D59A10'}`.
+- `signal_default_appearances` — signal name to appearance dict. A circuit trace uses the entry for its `signal_of_channel_type`, and the connectors view uses that entry for the signal bar. Names match the `signals` column. Example: `{'pos': {'base_color': '#E24B4A'}, 'neg': {'base_color': '#2E6B9F'}}`.
+
+An instance `appearance` that already includes `base_color` is the appearance drawn for that trace. Traces are drawn when the project is built, so a change to these columns shows up on overlays after the next build. The connectors view reads the columns when the page opens. A trace whose resolved appearance has no `base_color` is the rainbow placeholder. A card or bar with no `base_color` keeps the console palette.
+
+The dict is the engineering appearance from the Appearance guide: `base_color`, and optionally `outline_color`, `parallelstripe`, `perpstripe`, and `twisted`. Single quotes match the rows already in the file. The separator is a tab, so a comma inside the literal stays in the cell.
+
 ??? info "`chtype.path(channel_type)`"
 
     Resolve the on-disk path to the `channel_types.tsv` file for a given
@@ -108,6 +117,75 @@
     
     - The `signals` column is expected to be a comma-separated string, for
         example: `"CAN_H, CAN_L, SHIELD"`.
+
+??? info "`chtype.channel_default_appearance(channel_type)`"
+
+    Optional default appearance for this channel type's channel trace and card.
+    
+    Reads ``channel_default_appearance`` from the `channel_types.tsv` at the
+    root of the library named by this channel type's `lib_repo`. The cell is a
+    Python dict literal, parsed with ``ast.literal_eval`` (see `appearance.parse`).
+    Example: ``{'base_color': '#D59A10'}``. A blank cell returns ``None``.
+    
+    A channel trace (``item_type`` ``channel`` or ``harness-channel``) and the
+    channel card in the connectors view use this appearance. A circuit trace uses
+    `signal_default_appearances` for its ``signal_of_channel_type`` instead.
+    
+    An instance ``appearance`` that already includes ``base_color`` is the
+    appearance drawn for that trace. Traces are drawn when the project is built.
+    The connectors view reads this column when the page opens. A trace whose
+    resolved appearance has no ``base_color`` is the rainbow placeholder. A
+    channel card with no ``base_color`` keeps the console palette.
+    
+    The dict is an engineering appearance: ``base_color`` plus any of
+    ``outline_color``, ``parallelstripe``, ``perpstripe``, and ``twisted``.
+    
+    **Args**
+    
+    - `channel_type`: Channel type identifier in standard tuple format
+        `(channel_type_id, lib_repo)` or any string representation that `parse`
+        can understand.
+    
+    **Returns**
+    
+    - `dict` or `None`: Parsed appearance, or ``None`` when the cell is empty
+        or the channel type cannot be found.
+
+??? info "`chtype.signal_default_appearances(channel_type)`"
+
+    Optional default appearance for each signal of this channel type.
+    
+    Reads ``signal_default_appearances`` from the `channel_types.tsv` at the
+    root of the library named by this channel type's `lib_repo`. The cell is a
+    Python dict literal, parsed with ``ast.literal_eval``: signal name to
+    appearance dict. Example:
+    ``{'pos': {'base_color': '#E24B4A'}, 'neg': {'base_color': '#2E6B9F'}}``.
+    A blank cell returns ``{}``. Names that are not themselves dicts are dropped.
+    Signal names match the ``signals`` column.
+    
+    A circuit trace uses the entry for its ``signal_of_channel_type``. The
+    connectors view uses the same entry for that signal's bar. A channel trace
+    uses `channel_default_appearance`.
+    
+    An instance ``appearance`` that already includes ``base_color`` is the
+    appearance drawn for that trace. Traces are drawn when the project is built.
+    The connectors view reads this column when the page opens. A trace whose
+    resolved appearance has no ``base_color`` is the rainbow placeholder. A
+    signal bar with no ``base_color`` keeps the console palette.
+    
+    Each value is an engineering appearance: ``base_color`` plus any of
+    ``outline_color``, ``parallelstripe``, ``perpstripe``, and ``twisted``.
+    
+    **Args**
+    
+    - `channel_type`: Channel type identifier in standard tuple format
+        `(channel_type_id, lib_repo)` or any string representation that `parse`
+        can understand.
+    
+    **Returns**
+    
+    - `dict`: Signal name to appearance dict. Empty when unset or when the
+        channel type cannot be found.
 
 ??? info "`chtype.is_or_is_compatible_with(channel_type)`"
 

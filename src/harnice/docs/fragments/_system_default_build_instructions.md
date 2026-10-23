@@ -4,7 +4,7 @@
     # ===========================================================================
     #                CHANNEL AND PASSTHROUGH MAPPING
     # ===========================================================================
-    # system.build() already called channel_map.new() — one row per channel endpoint.
+    # system.build() already called channel_map.new() - one row per channel endpoint.
     #
     # A patch is two endpoints. Each key is:
     #   (device_refdes, channel_id)                        # one endpoint
@@ -16,7 +16,7 @@
     #
     # channel_map.map(from_key, to_key=None, multi_ch_junction_key="")
     #
-    # endpoint → endpoint:
+    # endpoint -> endpoint:
     # channel_map.map(("MIC1", "out1"), ("PRE1", "in1"))
     #
     # map onto one passthrough face. That face must have no harness, or the
@@ -55,7 +55,7 @@
     channel_map.compile_hierarchical()
     
     # one row per passthrough channel, plus routing context (availables per
-    # group / from→to type / directionality). Dual-mapped passthroughs are omitted.
+    # group / from->to type / directionality). Dual-mapped passthroughs are omitted.
     passthrough_map.new()
     
     # add manual hops here (after new, before resolve).
@@ -75,7 +75,7 @@
     passthrough_map.resolve()
     
     # expand every mapped patch (and its passthrough path) into conductor circuits.
-    # multi-ch junction rows become from_channel.signal → mcj.signal (first type's signals)
+    # multi-ch junction rows become from_channel.signal -> mcj.signal (first type's signals)
     circuits_list.new()
     
     # ===========================================================================
@@ -98,7 +98,11 @@
     # ===========================================================================
     #              ADD APPEARANCES TO CHANNEL TYPES AND CIRCUITS
     # ===========================================================================
-    # color → channel types that should use that color
+    # Channel traces use channel_default_appearance from the channel type's
+    # channel_types.tsv. Circuit traces use signal_default_appearances for
+    # signal_of_channel_type. The maps below write an instance appearance, and
+    # an instance appearance that includes base_color replaces that default.
+    # color -> channel types that should use that color
     channel_type_colors = {
         "#D59A10": [
             (1, "https://github.com/harnice/harnice-general-library"),
@@ -109,7 +113,7 @@
         ],
     }
     
-    # channel type → signal → color
+    # channel type -> signal -> color
     circuit_signal_colors = {
         (1, "https://github.com/harnice/harnice-general-library"): {
             "pos": "#E24B4A",
@@ -170,7 +174,7 @@
     # Write rules at the system level based on system metrics to suggest information that is later consumed by
     # downstream harness projects about what cables to apply onto what conductors.
     
-    # this_channel_from_channel_type → library cable fields for instances_list.modify
+    # this_channel_from_channel_type -> library cable fields for instances_list.modify
     circuit_cable_mpns = {
         (1, "https://github.com/harnice/harnice-general-library"): {
             "mpn": "M27500-22SB2T23",
@@ -184,7 +188,7 @@
         },
     }
     
-    # signal_of_channel_type → cable identifier (must be unique in the cable JSON)
+    # signal_of_channel_type -> cable identifier (must be unique in the cable JSON)
     circuit_cable_identifiers = {
         "pos": "black",
         "neg": "white",
@@ -352,8 +356,8 @@
             #     )
             #     continue
     
-            # family choosers (D38999, Mighty Mouse, …) are in the connector-choosing
-            # examples ribbon — insert them here, then continue if they assign an mpn.
+            # family choosers (D38999, Mighty Mouse, ...) are in the connector-choosing
+            # examples ribbon - insert them here, then continue if they assign an mpn.
     
             # No rule matched. Keep the harness building with a placeholder.
             # Artwork goes in the general library at

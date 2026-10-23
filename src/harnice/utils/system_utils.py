@@ -637,6 +637,21 @@ def block_diagram_harness_overlay_markup(
     ``include_multi_ch_junction_overlays=False`` on the circuit pass so
     channel-level junction overlays are not duplicated under ``circuit_traces``.
 
+    A mapped device passthrough is also stroked straight across the symbol:
+    one ``channel_id`` with two connectors, both faces used as harness-channel
+    ends of the same ``channel_group``, both connector nodes on the diagram.
+    Imaginary passthrough channels (``imaginary-…``) count too; they are not
+    on the device signals list.
+    The stroke runs from that channel's end marker on one face to its marker
+    on the other (the harness trace's contact point, not the connector center),
+    as a spline tangent to the two harness traces. It is dashed at 60% opacity,
+    and it is not added to the harness graph. The crossing is emitted before
+    the harness traces so the dashed stroke paints under their label boxes.
+    Its trace label is
+    ``passthrough-{refdes}.{channel_id}:{channel_group}`` so Analyze highlight
+    matches the harness hops. The crossing has no labels. Circuit instances
+    do not produce crossings.
+
     **Args:**
     - ``instances`` (list): Instance row dicts for ``draw_segments_across_paths``.
     - ``include_multi_ch_junction_overlays`` (bool): When True (default), also
@@ -803,7 +818,13 @@ def block_diagram_harness_overlay_markup(
             if node not in graph.get("nodes", {}):
                 continue
             group = (row.get("group_of_connected_harnesses") or "").strip()
-            groups.setdefault((jid, group), []).append({"key": from_key, "node": node})
+            groups.setdefault((jid, group), []).append(
+                {
+                    "key": from_key,
+                    "node": node,
+                    "channel_type": (row.get("from_channel_type") or "").strip(),
+                }
+            )
         return groups
 
     def multi_ch_junction_node_pairs(spokes, adj):
@@ -828,16 +849,23 @@ def block_diagram_harness_overlay_markup(
                 ch = (key[1] or "").strip()
                 repeat = (key[2] or "").strip() if len(key) >= 3 else ""
                 node_channel[spoke["node"]] = f"{ch}.{repeat}" if repeat else ch
+            channel_type = ""
+            for spoke in spokes:
+                channel_type = (spoke.get("channel_type") or "").strip()
+                if channel_type:
+                    break
             for idx, (a_node, b_node) in enumerate(multi_ch_junction_node_pairs(spokes, adj)):
                 instances.append(
                     {
                         "instance_name": f"multi-ch-junction-{jid}-{idx}",
+                        "item_type": "harness-channel",
                         "multi_ch_junction_id": jid,
                         "from_node_id": a_node,
                         "to_node_id": b_node,
                         "print_name": jid,
                         "print_name_at_end_a": node_channel.get(a_node, ""),
                         "print_name_at_end_b": node_channel.get(b_node, ""),
+                        "this_channel_from_channel_type": channel_type,
                     }
                 )
         return instances
@@ -896,6 +924,7 @@ def block_diagram_harness_overlay_markup(
                     instances.append(
                         {
                             "instance_name": inst_name,
+                            "item_type": "circuit",
                             "multi_ch_junction_id": jid,
                             "harness": owner.get("harness"),
                             "from_node_id": a_node,
@@ -904,6 +933,10 @@ def block_diagram_harness_overlay_markup(
                             "print_name_at_end_a": node_label.get(a_node, ""),
                             "print_name_at_end_b": node_label.get(b_node, ""),
                             "appearance": owner.get("appearance"),
+                            "signal_of_channel_type": sig,
+                            "this_channel_from_channel_type": owner.get(
+                                "this_channel_from_channel_type"
+                            ),
                         }
                     )
         return instances
@@ -953,15 +986,125 @@ def block_diagram_harness_overlay_markup(
     min_lab = max(15.0, span / 80.0)
 
     _stroke_in = 0.5 / 96
-    return svg_utils.draw_segments_across_paths(
+    _spacing = 1.5
+    endpoint_contacts = {}
+    markup = svg_utils.draw_segments_across_paths(
         input_instances=overlay_instances,
         input_network_2D=graph,
         stroke_width=_stroke_in,
-        segment_spacing=1.5,
+        segment_spacing=_spacing,
         min_label_segment_length=min_lab,
         label_font_size=BLOCK_DIAGRAM_TRACE_LABEL_SIZE,
         trace_group_opacity=1,
+        endpoint_contacts=endpoint_contacts,
     )
+    from harnice.lists import signals_list
+
+    passthroughs_by_refdes = {}
+    seen_refdes = set()
+    hop_ends = {}
+    face_hop = {}
+    sample_by_group = {}
+    for inst in instances:
+        if (inst.get("item_type") or "").strip() != "harness-channel":
+            continue
+        group = (inst.get("channel_group") or "").strip()
+        inst_name = inst.get("instance_name") or ""
+        if group and (
+            group not in sample_by_group
+            or (not sample_by_group[group].get("appearance") and inst.get("appearance"))
+        ):
+            sample_by_group[group] = inst
+        for side in ("from", "to"):
+            refdes = (inst.get(f"this_harness_{side}_device_refdes") or "").strip()
+            connector = (inst.get(f"this_harness_{side}_device_connector_name") or "").strip()
+            channel_id = (inst.get(f"this_harness_{side}_device_channel_id") or "").strip()
+            if refdes and refdes not in seen_refdes:
+                seen_refdes.add(refdes)
+                signals_path = placed_signals_list_path(refdes)
+                if signals_path:
+                    found = signals_list.passthrough_channels(signals_path)
+                    if found:
+                        passthroughs_by_refdes[refdes] = found
+            if not group or not refdes or not connector or not channel_id:
+                continue
+            hop_ends.setdefault((group, refdes, channel_id), set()).add(connector)
+            face_hop.setdefault((group, refdes, channel_id, connector), inst_name)
+
+    nodes = graph["nodes"]
+    chunks = []
+    for (group, refdes, channel_id), connectors in sorted(
+        hop_ends.items(),
+        key=lambda item: f"passthrough-{item[0][1]}.{item[0][2]}:{item[0][0]}",
+    ):
+        faces = (passthroughs_by_refdes.get(refdes) or {}).get(channel_id) or {}
+        if len(faces) == 2:
+            face_ids = signals_list.ordered_passthrough_faces(faces.keys())
+        elif channel_id.startswith("imaginary-") and len(connectors) == 2:
+            face_ids = signals_list.ordered_passthrough_faces(connectors)
+        else:
+            continue
+        if len(face_ids) != 2:
+            continue
+        face_a, face_b = face_ids
+        if face_a not in connectors or face_b not in connectors:
+            continue
+        node_a = f"{refdes}.{face_a}"
+        node_b = f"{refdes}.{face_b}"
+        if node_a not in nodes or node_b not in nodes or node_a == node_b:
+            continue
+        if (
+            abs(float(nodes[node_a]["x"]) - float(nodes[node_b]["x"])) < 1e-9
+            and abs(float(nodes[node_a]["y"]) - float(nodes[node_b]["y"])) < 1e-9
+        ):
+            continue
+        hit_a = (endpoint_contacts.get(face_hop.get((group, refdes, channel_id, face_a), "")) or {}).get(node_a)
+        hit_b = (endpoint_contacts.get(face_hop.get((group, refdes, channel_id, face_b), "")) or {}).get(node_b)
+        contact_a = hit_a or {"x": float(nodes[node_a]["x"]), "y": float(nodes[node_a]["y"])}
+        contact_b = hit_b or {"x": float(nodes[node_b]["x"]), "y": float(nodes[node_b]["y"])}
+        if contact_a.get("departs") is True and contact_b.get("departs") is False:
+            contact_a, contact_b = contact_b, contact_a
+        ax, ay = float(contact_a["x"]), float(contact_a["y"])
+        bx, by = float(contact_b["x"]), float(contact_b["y"])
+        if abs(ax - bx) < 1e-9 and abs(ay - by) < 1e-9:
+            continue
+        dx, dy = bx - ax, by - ay
+        if abs(dx) < 1e-12 and abs(dy) < 1e-12:
+            chord = 0.0
+        else:
+            chord = (-math.degrees(math.atan2(dy, dx))) % 360.0
+        trace_group = []
+        svg_utils.draw_styled_path(
+            [
+                {"x": ax, "y": -ay, "tangent": contact_a.get("tangent", chord)},
+                {"x": bx, "y": -by, "tangent": contact_b.get("tangent", chord)},
+            ],
+            _stroke_in,
+            svg_utils._resolved_trace_appearance(sample_by_group[group], {}),
+            trace_group,
+        )
+        # Opacity lives on the stroke so Analyze can still show/hide the group.
+        trace_group = [
+            el.replace("<path ", '<path stroke-dasharray="3 2" stroke-opacity="0.6" ', 1)
+            .replace("<line ", '<line stroke-dasharray="3 2" stroke-opacity="0.6" ', 1)
+            for el in trace_group
+        ]
+        chunks.append(
+            svg_utils._trace_group_open_tag(
+                {"instance_name": f"passthrough-{refdes}.{channel_id}:{group}"},
+                1,
+            )
+            + "\n"
+            + "\n".join(trace_group)
+            + "\n</g>"
+        )
+    crossing = "\n".join(chunk for chunk in chunks if chunk)
+    if not crossing:
+        return markup
+    if not markup:
+        return crossing
+    # Before the harness traces: their label boxes must paint over this stroke.
+    return crossing + "\n" + markup
 
 
 def connector_of_channel(key):

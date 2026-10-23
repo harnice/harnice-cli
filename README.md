@@ -18,7 +18,7 @@ This repository is the Harnice command-line package. From the checkout:
 
 That Python needs the libraries named under `dependencies` in `pyproject.toml`.
 
-Documentation and the AI prompts are in `src/harnice/docs/`.
+Documentation, including Building with AI, is in `src/harnice/docs/`.
 `PYTHONPATH=src python -m harnice --docs` prints that path.
 The same pages are at https://harnice.io/.
-Agent skills are in `skills/`. The prompts page points at those files.
+Agent skills are in `skills/`. The Building with AI page points at those files.
