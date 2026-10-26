@@ -105,7 +105,7 @@ build_utils.run_macro(
 
 `extrude` grows the solid along the plane normal by a distance greater than zero. The sketch stays the face at distance 0. Sketch coordinates can be negative. A rack chassis and a rack enclosure both sit with the faceplate at y = 0 and the body along +Y. The enclosure opening is extruded along +Y through the shell.
 
-The viewer paints six faces of the solid's bounding box. Those names are independent of the datum planes, except where a macro stores an image under a viewer name.
+The viewer paints six faces. Each picture covers the solid on that side of the bounding box. A rectangular body fills the box. A rack chassis is 19 inches across the ears and 17 inches across the rear panel, so the back picture is 17 inches wide and does not include the ears. Those names are independent of the datum planes, except where a macro stores an image under a viewer name.
 
 | Viewer face | Side of the bounding box |
 | --- | --- |

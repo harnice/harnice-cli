@@ -668,10 +668,9 @@ def system_diagram_primitive_inner_svg() -> str:
     for child in list(contents):
         if _skip_primitive_child(child):
             continue
-        chunks.append(ET.tostring(child, encoding="unicode"))
-    inner = "".join(chunks)
-    inner = block_diagram_utils.normalize_block_diagram_svg_ns0_elementtree_artifact(
-        inner
-    )
-    inner = re.sub(r"\sxmlns(:[A-Za-z0-9]+)?=\"[^\"]*\"", "", inner)
-    return inner
+        chunks.append(
+            block_diagram_utils._svg_fragment_preserve_bound_prefixes(
+                ET.tostring(child, encoding="unicode")
+            )
+        )
+    return "".join(chunks)

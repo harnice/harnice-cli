@@ -664,6 +664,35 @@ def read_step_shape(path):
     return shape
 
 
+def shape_vertices(shape):
+    """Cartesian vertices of an OpenCascade shape, in the shape's units."""
+    if shape is None:
+        return []
+    try:
+        from OCP.BRep import BRep_Tool
+        from OCP.TopAbs import TopAbs_VERTEX
+        from OCP.TopExp import TopExp_Explorer
+        from OCP.TopoDS import TopoDS
+    except ImportError:
+        return []
+    point_of = getattr(BRep_Tool, "Pnt_s", None) or getattr(BRep_Tool, "Pnt", None)
+    vertex_of = getattr(TopoDS, "Vertex_s", None) or getattr(TopoDS, "Vertex", None)
+    if point_of is None:
+        return []
+    points = []
+    explorer = TopExp_Explorer(shape, TopAbs_VERTEX)
+    while explorer.More():
+        try:
+            current = explorer.Current()
+            vertex = vertex_of(current) if vertex_of else current
+            pnt = point_of(vertex)
+            points.append((pnt.X(), pnt.Y(), pnt.Z()))
+        except Exception:
+            pass
+        explorer.Next()
+    return points
+
+
 def _ocp_iter_solids(shape):
     from OCP.TopAbs import TopAbs_SOLID
     from OCP.TopExp import TopExp_Explorer

@@ -1,9 +1,10 @@
 """Orthographic line drawing of a system physical assembly.
 
 OpenCascade hidden-line removal projects each device body to its visible
-edges and silhouettes. Face photos are SVG image links on the bounding-box
-face, the same faces the physical-model viewer paints. The PDF export
-embeds those links; this module leaves them as paths.
+edges and silhouettes. Face photos are SVG image links on the same faces
+the physical-model viewer paints. A rectangular body fills its bounding
+box. A rack chassis back is the 17 inch panel, not the 19 inch ears. The
+PDF export embeds those links; this module leaves them as paths.
 
 ``orientation`` is a face name or a viewport rotation. ``(0, 0, 0)`` is the
 front view: look along +Y, +X to the right, +Z up. A dict or a 3-number
@@ -116,8 +117,13 @@ def view_basis(orientation):
     return view, right, up
 
 
-def _face_corners(bounds, face, angle):
-    """Local millimetre corners of one bounding-box face, picture upright."""
+def _face_corners(bounds, face, angle, points=None):
+    """Local millimetre corners of one face, picture upright.
+
+    ``points`` are vertices in the same millimetre frame as ``bounds``. With
+    none, the rectangle is that side of the bounding box. With vertices, it
+    shrinks to the panel that lies on that side.
+    """
 
     def _cross(a, b):
         return (
@@ -136,27 +142,24 @@ def _face_corners(bounds, face, angle):
             for i in range(3)
         )
 
-    xmin, ymin, zmin, xmax, ymax, zmax = bounds
-    cx = (xmin + xmax) / 2.0
-    cy = (ymin + ymax) / 2.0
-    cz = (zmin + zmax) / 2.0
-    sx = max(xmax - xmin, 1e-9)
-    sy = max(ymax - ymin, 1e-9)
-    sz = max(zmax - zmin, 1e-9)
-    if face == "front":
-        center, normal, up, width, height = (cx, ymin, cz), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0), sx, sz
-    elif face == "back":
-        center, normal, up, width, height = (cx, ymax, cz), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), sx, sz
-    elif face == "right":
-        center, normal, up, width, height = (xmax, cy, cz), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), sy, sz
-    elif face == "left":
-        center, normal, up, width, height = (xmin, cy, cz), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0), sy, sz
-    elif face == "top":
-        center, normal, up, width, height = (cx, cy, zmax), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0), sx, sy
-    elif face == "bottom":
-        center, normal, up, width, height = (cx, cy, zmin), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0), sx, sy
-    else:
+    from harnice.utils import physical_body
+
+    scale = 1.0 / 25.4
+    frame = physical_body.face_frame(
+        tuple(value * scale for value in bounds),
+        [
+            (point[0] * scale, point[1] * scale, point[2] * scale)
+            for point in (points or ())
+        ],
+        face,
+    )
+    if frame is None:
         return None
+    center = tuple(value * 25.4 for value in frame["pos"])
+    normal = tuple(frame["normal"])
+    up = tuple(frame["up"])
+    width = frame["w"] * 25.4
+    height = frame["h"] * 25.4
     x_axis = _cross(up, normal)
     y_axis = _cross(normal, x_axis)
     if angle:
@@ -661,9 +664,12 @@ def render_system_drawing(artifact_id, scale=1, orientation="front", hidden_inst
             photos = []
             if bounds is not None:
                 records = physical_body.read_image_records(device["step_path"])
+                vertices = step_utils.shape_vertices(shape)
                 for face, record in records.items():
                     image = physical_body.face_image_path(device["step_path"], face)
-                    corners = _face_corners(bounds, face, record.get("orientation") or 0.0)
+                    corners = _face_corners(
+                        bounds, face, record.get("orientation") or 0.0, vertices
+                    )
                     if not image or corners is None:
                         continue
                     absolute = os.path.realpath(image)

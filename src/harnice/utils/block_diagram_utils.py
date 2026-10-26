@@ -13,7 +13,13 @@ _SVG_NS_FALLBACKS = (
     ("inkscape", "http://www.inkscape.org/namespaces/inkscape"),
     ("sodipodi", "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"),
     ("xlink", "http://www.w3.org/1999/xlink"),
+    ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
+    ("cc", "http://creativecommons.org/ns#"),
+    ("dc", "http://purl.org/dc/elements/1.1/"),
 )
+_SVG_PREFIX_URIS = dict(_SVG_NS_FALLBACKS)
+for _prefix, _uri in _SVG_NS_FALLBACKS:
+    ET.register_namespace(_prefix, _uri)
 
 _SVG_DEVICES_PARENT_GROUP_IDS = frozenset({"devices"})
 
@@ -57,35 +63,161 @@ def _svg_local_tag(tag):
     return tag
 
 
-def _svg_text_ensure_prefixed_namespaces(svg_text):
-    m = re.search(r"<svg\b[^>]*>", svg_text, flags=re.IGNORECASE | re.DOTALL)
-    if not m:
-        return svg_text
-    tag = m.group(0)
-    extras = []
-    for prefix, uri in _SVG_NS_FALLBACKS:
-        if f"xmlns:{prefix}=" in tag:
+def _prefixes_used_in_tags(svg_text):
+    """Prefixes that appear in element or attribute names."""
+    used = set()
+    prefix_re = re.compile(r"(?:</?|\s)([A-Za-z_][\w.-]*):")
+    for match in re.finditer(r"<[^<>]*>", svg_text):
+        tag = match.group(0)
+        if tag.startswith("<?") or tag.startswith("<!"):
             continue
-        used = (
-            re.search(rf"<{re.escape(prefix)}:", svg_text)
-            or re.search(rf'[\s\'"]{re.escape(prefix)}:[A-Za-z]', svg_text)
-        )
-        if used:
-            extras.append(f'xmlns:{prefix}="{uri}"')
-    if not extras:
+        for prefix_match in prefix_re.finditer(tag):
+            prefix = prefix_match.group(1)
+            if prefix not in ("xmlns", "xml"):
+                used.add(prefix)
+    return used
+
+
+def prepare_block_diagram_svg_text(svg_text):
+    """Make saved SVG text legal for ElementTree."""
+    if not svg_text:
         return svg_text
-    new_tag = tag[:-1] + " " + " ".join(extras) + ">"
-    return svg_text[: m.start()] + new_tag + svg_text[m.end() :]
+
+    def replace_entity(match):
+        name = match.group(1)
+        if name in ("amp", "lt", "gt", "quot", "apos"):
+            return match.group(0)
+        return {
+            "nbsp": "\u00a0",
+            "ndash": "\u2013",
+            "mdash": "\u2014",
+            "hellip": "\u2026",
+            "copy": "\u00a9",
+            "reg": "\u00ae",
+            "trade": "\u2122",
+            "times": "\u00d7",
+            "middot": "\u00b7",
+        }.get(name, match.group(0))
+
+    def escape_bare_ampersands(text):
+        # Leave comments and CDATA alone. ``&`` there is already legal XML.
+        entity_re = re.compile(
+            r"&(?:[A-Za-z][A-Za-z0-9]+|#[0-9]+|#x[0-9A-Fa-f]+);|&"
+        )
+        out = []
+        i = 0
+        n = len(text)
+        while i < n:
+            if text.startswith("<!--", i) or text.startswith("<![CDATA[", i):
+                end_token = "-->" if text.startswith("<!--", i) else "]]>"
+                end = text.find(end_token, i + 4)
+                end = n if end < 0 else end + len(end_token)
+                out.append(text[i:end])
+                i = end
+                continue
+            if text[i] != "&":
+                out.append(text[i])
+                i += 1
+                continue
+            token = entity_re.match(text, i).group(0)
+            out.append("&amp;" if token == "&" else token)
+            i += len(token)
+        return "".join(out)
+
+    def ensure_prefixed_namespaces(text):
+        match = re.search(r"<svg\b[^>]*>", text, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            return text
+        tag = match.group(0)
+        extras = []
+        for prefix in sorted(_prefixes_used_in_tags(text)):
+            if ("xmlns:%s=" % prefix) in text:
+                continue
+            uri = _SVG_PREFIX_URIS.get(prefix) or ("https://harnice.io/ns/" + prefix)
+            extras.append('xmlns:%s="%s"' % (prefix, uri))
+        if not extras:
+            return text
+        new_tag = tag[:-1] + " " + " ".join(extras) + ">"
+        return text[: match.start()] + new_tag + text[match.end() :]
+
+    text = svg_text[1:] if svg_text.startswith("\ufeff") else svg_text
+    text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", text)
+    text = re.sub(r"&([A-Za-z][A-Za-z0-9]+);", replace_entity, text)
+    text = escape_bare_ampersands(text)
+    text = normalize_block_diagram_svg_ns0_elementtree_artifact(text)
+    return ensure_prefixed_namespaces(text)
 
 
 def _parse_block_diagram_svg_file(bd_path):
     with open(bd_path, "r", encoding="utf-8") as f:
         text = f.read()
-    return ET.parse(StringIO(_svg_text_ensure_prefixed_namespaces(text)))
+    try:
+        return _parse_block_diagram_svg_string(text)
+    except ET.ParseError as exc:
+        raise ET.ParseError("%s\nin %s" % (exc, bd_path)) from exc
 
 
 def _parse_block_diagram_svg_string(svg_text):
-    return ET.parse(StringIO(_svg_text_ensure_prefixed_namespaces(svg_text)))
+    def format_parse_error(exc, text):
+        message = str(exc)
+        match = re.search(r"line (\d+), column (\d+)", message)
+        if not match:
+            return message
+        line_no = int(match.group(1))
+        column = int(match.group(2))
+        lines = text.splitlines()
+        if not (1 <= line_no <= len(lines)):
+            return message
+        line = lines[line_no - 1]
+        start = max(0, column - 70)
+        end = min(len(line), column + 70)
+        snippet = line[start:end]
+        pointer = " " * max(0, column - 1 - start) + "^"
+        if start:
+            snippet = "…" + snippet
+            pointer = " " + pointer
+        if end < len(line):
+            snippet += "…"
+        return "%s\n%s: %s\n%s" % (message, line_no, snippet, pointer)
+
+    def drop_duplicate_attribute(text, exc):
+        if "duplicate attribute" not in str(exc):
+            return None
+        match = re.search(r"line (\d+), column (\d+)", str(exc))
+        if not match:
+            return None
+        line_no = int(match.group(1))
+        column = int(match.group(2))
+        lines = text.splitlines(keepends=True)
+        if not (1 <= line_no <= len(lines)):
+            return None
+        line = lines[line_no - 1]
+        rest = line[column - 1 :]
+        attr = re.match(
+            r"""\s*([A-Za-z_:][\w:.-]*)\s*=\s*("[^"]*"|'[^']*')""",
+            rest,
+        )
+        if not attr:
+            return None
+        name = attr.group(1)
+        before = line[: column - 1]
+        if not re.search(r"(?:^|[\s<])%s\s*=" % re.escape(name), before):
+            return None
+        lines[line_no - 1] = before + rest[attr.end() :]
+        return "".join(lines)
+
+    prepared = prepare_block_diagram_svg_text(svg_text)
+    try:
+        return ET.parse(StringIO(prepared))
+    except ET.ParseError as exc:
+        repaired = drop_duplicate_attribute(prepared, exc)
+        if repaired and repaired != prepared:
+            try:
+                return ET.parse(StringIO(repaired))
+            except ET.ParseError as again:
+                exc = again
+                prepared = repaired
+        raise ET.ParseError(format_parse_error(exc, prepared)) from exc
 
 
 def _svg_skip_special_markup(text, pos):
@@ -333,12 +465,55 @@ def clone_svg_element(el):
     return ET.fromstring(ET.tostring(el, encoding="unicode"))
 
 
+def _svg_fragment_preserve_bound_prefixes(fragment):
+    """Keep xmlns declarations that a serialized child still needs.
+
+    ElementTree prints ``xmlns:ns1="…"`` and ``ns1:label``. Deleting every
+    xmlns and leaving ``ns1:`` makes the next build fail with an unbound prefix.
+    """
+    if not fragment:
+        return fragment
+    text = normalize_block_diagram_svg_ns0_elementtree_artifact(fragment)
+    xmlns_re = re.compile(r'\sxmlns(?::([A-Za-z_][\w.-]*))?="([^"]*)"')
+    prefix_uri = {}
+    for match in xmlns_re.finditer(text):
+        prefix_uri[match.group(1) or ""] = match.group(2)
+    text = xmlns_re.sub("", text)
+
+    uri_prefix = {}
+    for prefix, uri in _SVG_NS_FALLBACKS:
+        uri_prefix.setdefault(uri, prefix)
+    for prefix, uri in list(prefix_uri.items()):
+        if not prefix:
+            continue
+        wanted = uri_prefix.get(uri)
+        if not wanted or wanted == prefix:
+            continue
+        text = text.replace("<%s:" % prefix, "<%s:" % wanted)
+        text = text.replace("</%s:" % prefix, "</%s:" % wanted)
+        text = text.replace(" %s:" % prefix, " %s:" % wanted)
+        prefix_uri[wanted] = uri
+
+    extras = []
+    for prefix in sorted(_prefixes_used_in_tags(text)):
+        uri = prefix_uri.get(prefix) or _SVG_PREFIX_URIS.get(prefix)
+        if not uri:
+            uri = "https://harnice.io/ns/" + prefix
+        extras.append('xmlns:%s="%s"' % (prefix, uri))
+    if not extras:
+        return text
+    start = re.search(r"<[A-Za-z_][\w.-]*\b", text)
+    if not start:
+        return text
+    return text[: start.end()] + " " + " ".join(extras) + text[start.end() :]
+
+
 def serialize_svg_element_children(parent):
     """Serialize children without reformatting the rest of a document."""
-    parts = [ET.tostring(child, encoding="unicode") for child in list(parent)]
-    inner = "".join(parts)
-    inner = normalize_block_diagram_svg_ns0_elementtree_artifact(inner)
-    return re.sub(r'\sxmlns(?::[A-Za-z0-9]+)?="[^"]*"', "", inner)
+    return "".join(
+        _svg_fragment_preserve_bound_prefixes(ET.tostring(child, encoding="unicode"))
+        for child in list(parent)
+    )
 
 
 def copy_matching_svg_ids(dest_parent, src_parent):

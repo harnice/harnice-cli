@@ -1516,10 +1516,11 @@ def build_trace_overlays_svg_text(rows=None):
     def elem_to_svg_fragment(elem):
         if elem is None:
             return ""
-        raw = ET.tostring(elem, encoding="unicode")
-        raw = re.sub(r'\sxmlns(?::\w+)?="[^"]*"', "", raw)
-        raw = re.sub(r"</?ns0:", lambda m: m.group(0).replace("ns0:", ""), raw)
-        return raw
+        from harnice.utils import block_diagram_utils
+
+        return block_diagram_utils._svg_fragment_preserve_bound_prefixes(
+            ET.tostring(elem, encoding="unicode")
+        )
 
     del rows  # Analyze always uses the written masters, not a live rebuild.
     base_path = fileio.path("flattened network svg")

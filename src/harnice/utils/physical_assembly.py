@@ -722,38 +722,58 @@ def context_markers(revision):
     every fasten mate solved, so a mated device is shown on its connector
     rather than at a stale stored pose. Bounds are the body solid in the
     device frame, in inches, so a harness can draw the pictures and
-    connectors on the source physical model context. A body that cannot be
-    measured still contributes its connectors; ``bounds`` is then None.
+    connectors on the source physical model context. ``faces`` is the
+    rectangle each picture covers, in that same frame. A body that cannot be
+    measured still contributes its connectors; ``bounds`` and ``faces`` are
+    then None.
     """
 
     def _body_bounds_inches(step_path):
-        """Local axis-aligned bounds of one body, in inches, or None."""
-        from harnice.utils import step_utils
+        """Local bounds and face rectangles of one body, in inches.
+
+        Returns ``(bounds, faces)``. ``bounds`` is ``{"min", "max"}``.
+        ``faces`` maps a face name to the frame a picture covers. Both are
+        None when the solid cannot be measured.
+        """
+        from harnice.utils import physical_body, step_utils
 
         shape = step_utils.read_step_shape(step_path)
         if shape is None:
-            return None
+            return None, None
         try:
             from OCP.Bnd import Bnd_Box
             from OCP.BRepBndLib import BRepBndLib
         except ImportError:
-            return None
+            return None, None
         box = Bnd_Box()
         try:
             BRepBndLib.Add_s(shape, box)
         except Exception:
-            return None
+            return None, None
         if box.IsVoid():
-            return None
+            return None, None
         try:
             xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
         except Exception:
-            return None
+            return None, None
         scale = 1.0 / INCH_TO_MM
+        bounds = (
+            xmin * scale, ymin * scale, zmin * scale,
+            xmax * scale, ymax * scale, zmax * scale,
+        )
+        points = [
+            (point[0] * scale, point[1] * scale, point[2] * scale)
+            for point in step_utils.shape_vertices(shape)
+        ]
+        faces = {}
+        for face in physical_body.FACE_NAMES:
+            frame = physical_body.face_frame(bounds, points, face)
+            if frame is not None:
+                faces[face] = frame
         return {
-            "min": [xmin * scale, ymin * scale, zmin * scale],
-            "max": [xmax * scale, ymax * scale, zmax * scale],
-        }
+            "min": [bounds[0], bounds[1], bounds[2]],
+            "max": [bounds[3], bounds[4], bounds[5]],
+        }, faces
 
     revision = os.path.abspath(revision)
     discovered = discover(os.path.join(revision, "instance_data", "device"))
@@ -780,11 +800,13 @@ def context_markers(revision):
                 "beta": float(mate.get("beta") or 0),
                 "gamma": float(mate.get("gamma") or 0),
             })
+        bounds, faces = _body_bounds_inches(device["step_path"])
         devices.append({
             "refdes": refdes,
             "placement": placement,
             "images": _face_images(device["step_path"]),
-            "bounds": _body_bounds_inches(device["step_path"]),
+            "bounds": bounds,
+            "faces": faces,
             "mates": mates,
         })
     return {"devices": devices}
