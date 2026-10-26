@@ -19,6 +19,8 @@ ET.register_namespace("schem", "https://example.com/schema/v1")
 
 def mpn_of_device_refdes(refdes):
     """
+    Use this when a system build needs the manufacturer part number of a device reference designator.
+
     Looks up manufacturer part number information for a device reference designator.
 
     Searches the BOM (Bill of Materials) for a device with the given reference designator
@@ -214,6 +216,8 @@ def _is_real_harness_refdes(h):
 
 def make_connector_list():
     """
+    Use this when a system build needs the system connector list rebuilt from the block diagram. system.build() writes it before the script.
+
     Build the system connector list TSV from the block diagram SVG.
 
     Reads ``fileio.path("block diagram")``, writes ``fileio.path("system connector list")``,
@@ -615,6 +619,30 @@ def make_connector_list():
 BLOCK_DIAGRAM_TRACE_LABEL_SIZE = 0.5
 
 
+def _self_hop_endpoint(endpoint_contacts, inst_name, node_id, channel_id):
+    """One end of a same-connector harness loop, or ``None`` if this hop is not one.
+
+    ``start`` belongs to the from-channel and ``end`` to the to-channel. When
+    those ids are the same, or the caller does not name one of them, the two
+    ends are handed out in order.
+    """
+    bag = endpoint_contacts.get(inst_name) or {}
+    hop = bag.get("__self_hop__")
+    if not isinstance(hop, dict) or hop.get("node") != node_id:
+        return None
+    channel_id = (channel_id or "").strip()
+    from_id = (hop.get("from_channel") or "").strip()
+    to_id = (hop.get("to_channel") or "").strip()
+    if channel_id and from_id != to_id:
+        if channel_id == from_id:
+            return hop.get("start")
+        if channel_id == to_id:
+            return hop.get("end")
+    slot = hop.get("_handout", 0)
+    hop["_handout"] = slot + 1
+    return hop.get("start") if slot % 2 == 0 else hop.get("end")
+
+
 def block_diagram_harness_overlay_markup(
     instances, *, include_multi_ch_junction_overlays=True
 ):
@@ -651,6 +679,11 @@ def block_diagram_harness_overlay_markup(
     ``passthrough-{refdes}.{channel_id}:{channel_group}`` so Analyze highlight
     matches the harness hops. The crossing has no labels. Circuit instances
     do not produce crossings.
+
+    When both ends of a harness channel are the same connector, that hop is
+    drawn as an out-and-back on the harness. The two passthrough channels that
+    share it each land on one end of the loop, so the dashed chords meet two
+    contacts on that face.
 
     **Args:**
     - ``instances`` (list): Instance row dicts for ``draw_segments_across_paths``.
@@ -1058,8 +1091,16 @@ def block_diagram_harness_overlay_markup(
             and abs(float(nodes[node_a]["y"]) - float(nodes[node_b]["y"])) < 1e-9
         ):
             continue
-        hit_a = (endpoint_contacts.get(face_hop.get((group, refdes, channel_id, face_a), "")) or {}).get(node_a)
-        hit_b = (endpoint_contacts.get(face_hop.get((group, refdes, channel_id, face_b), "")) or {}).get(node_b)
+        inst_a = face_hop.get((group, refdes, channel_id, face_a), "")
+        inst_b = face_hop.get((group, refdes, channel_id, face_b), "")
+        hit_a = _self_hop_endpoint(endpoint_contacts, inst_a, node_a, channel_id)
+        if hit_a is None:
+            raw_a = (endpoint_contacts.get(inst_a) or {}).get(node_a)
+            hit_a = raw_a if isinstance(raw_a, dict) and "x" in raw_a else None
+        hit_b = _self_hop_endpoint(endpoint_contacts, inst_b, node_b, channel_id)
+        if hit_b is None:
+            raw_b = (endpoint_contacts.get(inst_b) or {}).get(node_b)
+            hit_b = raw_b if isinstance(raw_b, dict) and "x" in raw_b else None
         contact_a = hit_a or {"x": float(nodes[node_a]["x"]), "y": float(nodes[node_a]["y"])}
         contact_b = hit_b or {"x": float(nodes[node_b]["x"]), "y": float(nodes[node_b]["y"])}
         if contact_a.get("departs") is True and contact_b.get("departs") is False:
@@ -1084,11 +1125,26 @@ def block_diagram_harness_overlay_markup(
             trace_group,
         )
         # Opacity lives on the stroke so Analyze can still show/hide the group.
-        trace_group = [
-            el.replace("<path ", '<path stroke-dasharray="3 2" stroke-opacity="0.6" ', 1)
-            .replace("<line ", '<line stroke-dasharray="3 2" stroke-opacity="0.6" ', 1)
-            for el in trace_group
-        ]
+        # Perpstripe overlays already set stroke-dasharray. A second one is not
+        # well-formed SVG, and the next build cannot parse the diagram.
+        def _dash_crossing(el):
+            if "stroke-dasharray=" in el:
+                if "stroke-opacity=" in el:
+                    return el
+                return el.replace(
+                    "<path ", '<path stroke-opacity="0.6" ', 1
+                ).replace("<line ", '<line stroke-opacity="0.6" ', 1)
+            return el.replace(
+                "<path ",
+                '<path stroke-dasharray="3 2" stroke-opacity="0.6" ',
+                1,
+            ).replace(
+                "<line ",
+                '<line stroke-dasharray="3 2" stroke-opacity="0.6" ',
+                1,
+            )
+
+        trace_group = [_dash_crossing(el) for el in trace_group]
         chunks.append(
             svg_utils._trace_group_open_tag(
                 {"instance_name": f"passthrough-{refdes}.{channel_id}:{group}"},
@@ -1109,6 +1165,8 @@ def block_diagram_harness_overlay_markup(
 
 def connector_of_channel(key):
     """
+    Use this when a system build needs the connector id for one channel endpoint.
+
     Connector id for a channel endpoint.
 
     **Args:**
@@ -1145,6 +1203,8 @@ def connector_of_channel(key):
 
 def find_connector_with_no_circuit(connector_list, circuits_list):
     """
+    Use this when a system build should stop if a connector has no circuit.
+
     Validates that all connectors have associated circuits.
 
     Checks each connector in the connector list to ensure it has at least one
@@ -1213,7 +1273,7 @@ def _import_bom_devices(update_instances_list=True):
     Devices with ``build.py`` are built via ``device.build()``.
     A subsystem import also copies that system's channel map to
     ``instance_data/system/{refdes}/maps/channels.tsv``. That file is the
-    source of truth for ``channel_map.compile_hierarchical()``.
+    source of truth for ``channel_map.flatten()``.
     Called from ``system.build()`` after the BOM is exported from the block diagram.
     """
     bom_rows = fileio.read_tsv("bom")
@@ -1305,6 +1365,8 @@ def _import_bom_devices(update_instances_list=True):
 
 def create_instances_from_circuits_list():
     """
+    Use this when a system build needs connector, cavity, channel, and circuit instances created from the circuits list.
+
     Creates connector, cavity, channel, and circuit instances from the circuits list.
 
     Intended to be called from system build instructions (after ``circuits_list.new()``).
@@ -1632,6 +1694,8 @@ def import_harness_from_harnice_system(
     target_harness,
 ):
     """
+    Use this when a harness that comes from a system needs that system's instances for one harness refdes.
+
     Import harness instances from a system revision's instances list for one harness.
 
     Resolves the system revision folder from ``fileio.path("repository locations")`` as

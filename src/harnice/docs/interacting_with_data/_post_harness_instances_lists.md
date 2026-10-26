@@ -7,6 +7,8 @@ A list of every physical or notional thing, drawing element, or concept that inc
 *These functions are already available in build instructions as `post_harness_instances_list`. Use them as written.*
 ??? info "`post_harness_instances_list.rebuild()`"
 
+    Use this when a system build needs the post-harness instances list rebuilt from the harnesses that were pushed and from system instances those harnesses do not cover.
+    
     Build the 'post harness instances list' by merging instance data from:
       - Every ``instances.tsv`` under the system ``harnesses/`` directory
       - The system-level instances list for harnesses not covered by those files, and for
@@ -16,6 +18,8 @@ A list of every physical or notional thing, drawing element, or concept that inc
 
 ??? info "`post_harness_instances_list.push(path_to_system_rev, system_pn_rev)`"
 
+    Use this when a harness build needs its instances list copied into a system revision's harnesses folder.
+    
     Copy this harness instances list into a system revision's harnesses folder.
     
     **Args:**

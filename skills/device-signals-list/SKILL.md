@@ -154,7 +154,7 @@ Run this after I have answered.
 
 If you are an online chatbot, you already said you cannot run Python. Keep
 that. Give me `build.py` and wait for the error text I paste back from
-Build. Do not walk me through `pip`, `git clone`, `harnice -b`, or
+Build. Do not walk me through `pip`, `uv`, `git clone`, `harnice -b`, or
 `drawnby.json`.
 
 If you are an agent on my computer, run the build yourself. Prefer the
@@ -162,14 +162,19 @@ command-line package. It does not include the Harnice window.
 
     pip install harnice
 
+If pip cannot install Harnice, install it with uv. uv is a package manager.
+Use it when pip cannot write to the environment.
+
+    uv tool install harnice
+
 From the device revision folder (the folder that contains `build.py`,
 usually `rev1/`):
 
     harnice -b
 
-If pip cannot install Harnice, or `harnice` is not on PATH, stop trying to
-install it. Clone the public command-line repo and run its entry file.
-Stay in the revision folder. Do not set PYTHONPATH.
+If neither pip nor uv can install Harnice, or `harnice` is not on PATH,
+stop trying to install it. Clone the public command-line repo and run its
+entry file. Stay in the revision folder. Do not set PYTHONPATH.
 
     git clone https://github.com/harnice/harnice-cli.git
     python3 /path/to/harnice-cli/src/harnice/__main__.py -b
@@ -249,6 +254,9 @@ A device revision folder looks like:
 `fileio.rev_directory()` is that `rev1/` folder (same as `os.getcwd()` during
 build). Extra files are allowed; they are not in the official file structure.
 
+A body for this device is `skills/cad/SKILL.md`. This skill does not write
+`body.step`.
+
 
 ## Supporting documentation — read it now, cite it in comments
 
@@ -307,7 +315,7 @@ Do **not** write `from harnice …`. Build instructions already have:
 
     signals_list, chtype, fileio, state, cli
 
-and the rest of the lists / utils ribbon. You may `import` stdlib (`os`,
+and the other list and util names a build script already has. You may `import` stdlib (`os`,
 `csv`, `json`, `re`, `xml.etree.ElementTree`, `pathlib`).
 
 `configuration` is a dict Harnice injects (defaults from `config.yaml`, or

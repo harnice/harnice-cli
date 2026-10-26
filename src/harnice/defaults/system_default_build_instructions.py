@@ -46,10 +46,12 @@
 channel_map.map_unmapped_compatibles_alphabetically()
 
 # this system's channel map, plus the channel map imported with every child
-# subsystem (recursive). Inside a subsystem, refdes, harness groups, junction
-# ids, and connector/harness chains are prefixed: subsystem.name, or
-# subsystem.subsystem.name. Channel ids are not.
-channel_map.compile_hierarchical()
+# subsystem (recursive). Unmapped rows are omitted. A passthrough with both
+# faces mapped as patch ends becomes one row between the outer devices.
+# Inside a subsystem, refdes,
+# harness groups, junction ids, and connector/harness chains are prefixed:
+# subsystem.name, or subsystem.subsystem.name. Channel ids are not.
+channel_map.flatten()
 
 # one row per passthrough channel, plus routing context (availables per
 # group / from->to type / directionality). Dual-mapped passthroughs are omitted.
@@ -233,6 +235,18 @@ build_utils.run_macro(
     "https://github.com/harnice/harnice-general-library",
     artifact_id="subsystem-symbol-1",
     scale=scale,
+)
+
+# Orthographic drawing of the physical assembly. One view per call.
+# scale here is the drawing scale, not the symbol scale above.
+build_utils.run_macro(
+    "physical_model_drawing",
+    "library/macros/system_artifacts",
+    "https://github.com/harnice/harnice-general-library",
+    artifact_id="physical-1",
+    scale=1,
+    hidden_instances=[],
+    orientation="front",
 )
 
 # Each run_macro call is one PDF file.

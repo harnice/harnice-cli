@@ -648,6 +648,95 @@ def strip_configuration_elements(svg_text: str) -> str:
     return _CONFIGURATION_ELEMENT_RE.sub("", svg_text)
 
 
+_IMAGE_TAG_RE = re.compile(r"<image\b[^>]*>", re.IGNORECASE)
+_IMAGE_HREF_RE = re.compile(
+    r'((?:xlink:)?href\s*=\s*")([^"]*)(")',
+    re.IGNORECASE,
+)
+_RASTER_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
+def rasterize_linked_images(svg_text, svg_directory=None, search_roots=None):
+    """Replace linked raster ``<image href>`` values with embedded image data.
+
+    The sheet SVG keeps the links. Call this on the copy sent to Inkscape so
+    the PDF contains the pixels. A link is resolved against ``svg_directory``,
+    each extra search root, then the revision directory. Missing files and
+    links that are already ``data:`` URIs are left alone.
+    """
+
+    def _raster_data_uri(path):
+        """``data:`` URI for a raster file, or None when it is not a readable image."""
+        import base64
+
+        suffix = os.path.splitext(path)[1].lower()
+        if suffix not in _RASTER_SUFFIXES or not os.path.isfile(path):
+            return None
+        mime = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+        }[suffix]
+        with open(path, "rb") as handle:
+            payload = base64.b64encode(handle.read()).decode("ascii")
+        return f"data:{mime};base64,{payload}"
+
+    def _resolve_image_href(url, roots):
+        """Absolute file for an SVG image link, or '' when none of the roots has it."""
+        from urllib.parse import unquote, urlparse
+
+        text = (url or "").strip()
+        if not text or text.startswith("data:"):
+            return ""
+        if text.startswith("file:"):
+            parsed = urlparse(text)
+            text = unquote(parsed.path)
+        text = os.path.normpath(text)
+        if os.path.isabs(text) and os.path.isfile(text):
+            return text
+        for root in roots:
+            if not root:
+                continue
+            candidate = os.path.normpath(os.path.join(root, text))
+            if os.path.isfile(candidate):
+                return candidate
+        return ""
+
+    if not svg_text or "<image" not in svg_text.lower():
+        return svg_text
+    roots = []
+    if svg_directory:
+        roots.append(svg_directory)
+    for root in search_roots or []:
+        if root and root not in roots:
+            roots.append(root)
+    try:
+        rev = fileio.rev_directory()
+    except Exception:
+        rev = ""
+    if rev and rev not in roots:
+        roots.append(rev)
+
+    def replace_tag(match):
+        tag = match.group(0)
+
+        def replace_href(href_match):
+            url = href_match.group(2)
+            if url.startswith("data:"):
+                return href_match.group(0)
+            path = _resolve_image_href(url, roots)
+            data = _raster_data_uri(path) if path else None
+            if not data:
+                return href_match.group(0)
+            return href_match.group(1) + data + href_match.group(3)
+
+        return _IMAGE_HREF_RE.sub(replace_href, tag)
+
+    return _IMAGE_TAG_RE.sub(replace_tag, svg_text)
+
+
 def extra_project_masters() -> list[dict[str, str]]:
     """Cloneable SVGs that are not ``*-master.svg`` files.
 

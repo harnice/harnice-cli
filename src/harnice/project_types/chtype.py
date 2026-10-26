@@ -14,6 +14,8 @@ def generate_structure():
 
 def path(channel_type):
     """
+Use this when a build needs the path of channel_types.tsv for one channel type's library checkout.
+
 Resolve the on-disk path to the `channel_types.tsv` file for a given
 channel type.
 
@@ -39,6 +41,8 @@ channel type.
 
 def parse(val):
     """
+    Use this when a build has a channel type as stored text and needs the (channel_type_id, lib_repo) pair.
+
     Convert stored string into a tuple (chid:int, lib_repo:str).
     Handles both single tuples and extracts first tuple from lists.
     """
@@ -58,6 +62,8 @@ def parse(val):
 
 def compatibles(channel_type):
     """
+Use this when a system build needs the channel types declared compatible with one channel type, not including that type itself.
+
 Look up other channel types that are declared as compatible with the given
 channel type.
 
@@ -106,6 +112,8 @@ channel type.
 
 def is_or_is_compatible_with(channel_type):
     """
+Use this when a system build is validating or mapping channels and this channel type should count if it is the requested type or listed as compatible with it.
+
 Return the given channel type plus all channel types declared as compatible
 with it.
 
@@ -136,6 +144,8 @@ with it.
 
 def signals(channel_type):
     """
+Use this when a system or device build needs the signal names declared for one channel type.
+
 Return the list of signal names associated with a specific channel type.
 
 **Args**
@@ -167,6 +177,8 @@ Return the list of signal names associated with a specific channel type.
 
 def attribute(channel_type, attribute):
     """
+Use this when a system or device build needs an extra column from channel_types.tsv for one channel type.
+
 Read any additional column from `channel_types.tsv` for a given channel
 type.
 
@@ -214,6 +226,8 @@ def _appearance_from_cell(raw):
 
 def channel_default_appearance(channel_type):
     """
+Use this when a drawing needs the default appearance of one channel type's trace and card.
+
 Optional default appearance for this channel type's channel trace and card.
 
 Reads ``channel_default_appearance`` from the `channel_types.tsv` at the
@@ -251,6 +265,8 @@ The dict is an engineering appearance: ``base_color`` plus any of
 
 def signal_default_appearances(channel_type):
     """
+Use this when a drawing needs the default appearance of each signal on one channel type.
+
 Optional default appearance for each signal of this channel type.
 
 Reads ``signal_default_appearances`` from the `channel_types.tsv` at the

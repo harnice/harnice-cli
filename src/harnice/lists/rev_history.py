@@ -46,7 +46,14 @@ COLUMNS = [
 
 
 def read(path=None):
-    """Return a revision history (cached)."""
+    """
+    Use this when a build needs every row of a revision history.
+
+    Return every row of a revision history.
+
+    ``path`` defaults to ``fileio.path("revision history")``. Cells come
+    back as strings. ``info`` parses ``affectedinstances`` into a list.
+    """
     if path is None:
         path = fileio.path("revision history")
     return cached_tsv.read(path)
@@ -54,6 +61,8 @@ def read(path=None):
 
 def overwrite(content_dict):
     """
+Use this when a build needs to change columns on the revision-history row for the revision that is open. state.rev is the token this matches.
+
 Overwrite a revision history entry.
 
 **Arguments:**
@@ -142,6 +151,8 @@ The function will update the revision history file as referenced by the current 
 
 def info(rev=None, path=None, field=None, all=False):
     """
+    Use this when a build needs one field from a revision-history row, such as the description of the revision that is open.
+
     Get information about a revision history entry.
 
     **Arguments:**
@@ -222,6 +233,8 @@ def info(rev=None, path=None, field=None, all=False):
 
 def initial_release_exists():
     """
+    Use this when a build needs to know whether this part's revision history already has an initial release.
+
     Check if an initial release exists.
 
     **Arguments:**
@@ -244,6 +257,8 @@ def initial_release_exists():
 
 def initial_release_desc():
     """
+    Use this when a build needs the description recorded on this part's initial release.
+
     Get the description of the initial release.
 
     **Arguments:**
@@ -261,6 +276,8 @@ def initial_release_desc():
 
 def update_datemodified():
     """
+    Use this when a build needs datemodified on the open revision set to today.
+
     Update the `datemodified` field of the current revision with today's date.
 
     Called when the project is built (console **Build** or ``harnice -b``), not
@@ -297,6 +314,8 @@ def update_datemodified():
 
 def update_last_build(result):
     """
+    Use this when the runner records whether the build of the open revision succeeded or failed. It runs after the script. A build script does not call this.
+
     Set ``last_build`` on the current revision to ``"succeeded"`` or ``"failed"``.
 
     Called when the project is built (console **Build** or ``harnice -b``).
@@ -356,6 +375,8 @@ def update_library_identity():
 
 def new(ignore_project_type=False, path=None):
     """
+    Use this when a build needs a new revision-history file created for the part that is open.
+
     Create a new revision history file.
 
     **Arguments:**
@@ -482,6 +503,8 @@ def create_initial(
 
 def append(next_rev=None):
     """
+    Use this when a build needs a new row on the revision history of the part that is open.
+
     Append a new revision history entry to the current revision history file.
 
     If the revision history file does not exist, the function will create it.
@@ -618,6 +641,8 @@ def append(next_rev=None):
 
 def part_family_append(content_dict, rev_history_path):
     """
+    Use this when a part-family script needs to add or update a row in that family's revision history.
+
     Append a new revision history entry to the part family revision history file.
 
     Intended to be called by part family scripts only.

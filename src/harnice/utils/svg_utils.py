@@ -7,6 +7,8 @@ from harnice.utils import appearance
 
 def add_entire_svg_file_contents_to_group(filepath, new_group_name):
     """
+    Use this when a build that is writing an SVG needs the contents of another SVG file wrapped in a new group.
+
     Wraps the entire contents of an SVG file in a new group element.
 
     Reads an SVG file, extracts its inner content (everything between `<svg>` tags),
@@ -64,6 +66,8 @@ def find_and_replace_svg_group(
     destination_group_name,
 ):
     """
+    Use this when a build that is writing an SVG needs one group's contents copied from another file, replacing that group.
+
     Copies SVG group content from one file to another, replacing existing group content.
 
     Extracts the content between group markers in a source SVG file and replaces
@@ -137,6 +141,8 @@ def find_and_replace_svg_group(
 
 def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_group):
     """
+    Use this when a build that is writing an SVG needs a styled spline added to the current group.
+
     Adds a styled spline path to the local group.
     Call as if you were appending any other element to an svg group.
 
@@ -394,6 +400,8 @@ def draw_filleted_styled_path(
     points, stroke_width_inches, appearance_dict, local_group
 ):
     """
+    Use this when a build that is writing an SVG needs a path through corner points with a fillet at each interior corner.
+
     Draws a path through a list of corner points, inserting a circular fillet
     at each interior point, and appends a single SVG <path> element to
     local_group.
@@ -510,6 +518,8 @@ def table(
     contents_group_name,
 ):
     """
+    Use this when a build that is writing an SVG needs a table.
+
     This function is called when the user needs to build a general SVG table.
     ```python
     svg_utils.table(
@@ -1111,6 +1121,8 @@ def label_svg(
     font_weight="normal",
 ):
     """
+    Use this when a build that is writing an SVG needs a text label in a box, aligned to a wire.
+
     Generate an SVG label: text in a rectangular box, aligned to a wire tangent.
 
     Args:
@@ -1304,6 +1316,315 @@ def _trace_lateral_offsets(num_on_seg, segment_spacing):
     ]
 
 
+def _trace_span_tangent(p, q):
+    """Travel direction in the same degrees ``draw_styled_path`` uses.
+
+    Graph Y grows downward. The stored point chain flips Y, so the angle is negated.
+    """
+    dx = q["x"] - p["x"]
+    dy = q["y"] - p["y"]
+    if abs(dx) < 1e-12 and abs(dy) < 1e-12:
+        return 0.0
+    return (-math.degrees(math.atan2(dy, dx))) % 360.0
+
+
+def _trace_endpoint_contact(point, departs):
+    """Path-chain point (Y already flipped) → contact in graph/SVG user units."""
+    return {
+        "x": point["x"],
+        "y": -point["y"],
+        "tangent": point.get("tangent", 0.0),
+        "departs": departs,
+    }
+
+
+def _is_wire_junction_node(node_id):
+    return str(node_id).startswith("wirejunction-")
+
+
+def _node_is_self_hop_free(node_id, connector_node_ids):
+    """A loopback may turn around on a wire junction or a non-connector harness node.
+
+    Block diagrams name the free ends ``wirejunction-``. A harness stub such as
+    ``far`` is free when the caller passes the connector-node ids, so the walk
+    still stops at the next connector.
+    """
+    if _is_wire_junction_node(node_id):
+        return True
+    if connector_node_ids:
+        return node_id not in connector_node_ids
+    return False
+
+
+def _self_hop_outbound(graph, node_id, connector_node_ids=None):
+    """Segment path from a connector out to the farthest free wire end.
+
+    Walks wire junctions, and harness nodes that are not in
+    ``connector_node_ids``, so the turnaround stops before another connector.
+    Returns ``(segments, directions)`` from ``node_id`` toward that end, or
+    ``None`` when the connector has no free stub.
+    """
+    adj = {}
+    for seg_uuid, info in (graph.get("segments") or {}).items():
+        a = info.get("node_at_end_a")
+        b = info.get("node_at_end_b")
+        if not a or not b or a == b:
+            continue
+        a_free = _node_is_self_hop_free(a, connector_node_ids)
+        b_free = _node_is_self_hop_free(b, connector_node_ids)
+        if a == node_id and b_free:
+            adj.setdefault(a, []).append((b, seg_uuid, "a_to_b"))
+        elif b == node_id and a_free:
+            adj.setdefault(b, []).append((a, seg_uuid, "b_to_a"))
+        elif a_free and b_free:
+            adj.setdefault(a, []).append((b, seg_uuid, "a_to_b"))
+            adj.setdefault(b, []).append((a, seg_uuid, "b_to_a"))
+    if node_id not in adj:
+        return None
+
+    parent = {node_id: None}
+    order = [node_id]
+    queue = [node_id]
+    while queue:
+        cur = queue.pop(0)
+        for nxt, seg, direction in adj.get(cur, []):
+            if nxt in parent:
+                continue
+            parent[nxt] = (cur, seg, direction)
+            order.append(nxt)
+            queue.append(nxt)
+
+    leaves = []
+    for node in order:
+        if node == node_id:
+            continue
+        if len(adj.get(node, [])) <= 1:
+            leaves.append(node)
+    candidates = leaves or [node for node in order if node != node_id]
+    if not candidates:
+        return None
+
+    def hops(node):
+        n = 0
+        cur = node
+        while parent.get(cur):
+            cur = parent[cur][0]
+            n += 1
+        return n
+
+    far = max(candidates, key=lambda node: (hops(node), str(node)))
+    segs = []
+    dirs = []
+    cur = far
+    while parent.get(cur):
+        prev, seg, direction = parent[cur]
+        segs.append(seg)
+        dirs.append(direction)
+        cur = prev
+    segs.reverse()
+    dirs.reverse()
+    if not segs:
+        return None
+    return segs, dirs
+
+
+def _self_hop_fallback_direction(graph, node_id):
+    """Unit vector into the largest gap between wires already on this node."""
+    node = graph["nodes"][node_id]
+    angles = []
+    for info in (graph.get("segments") or {}).values():
+        a = info.get("node_at_end_a")
+        b = info.get("node_at_end_b")
+        if a == node_id:
+            other = b
+        elif b == node_id:
+            other = a
+        else:
+            continue
+        if not other or other == node_id or other not in graph["nodes"]:
+            continue
+        other_xy = graph["nodes"][other]
+        angles.append(
+            math.atan2(other_xy["y"] - node["y"], other_xy["x"] - node["x"])
+        )
+    if not angles:
+        return (1.0, 0.0)
+    angles.sort()
+    best_gap = -1.0
+    best_mid = 0.0
+    for i, angle in enumerate(angles):
+        nxt = angles[(i + 1) % len(angles)]
+        gap = (nxt - angle) % (2.0 * math.pi)
+        if gap > best_gap:
+            best_gap = gap
+            best_mid = angle + gap / 2.0
+    return (math.cos(best_mid), math.sin(best_mid))
+
+
+def _self_hop_local_point_chain(graph, node_id, segment_spacing):
+    """Short out-and-back when the connector has no free harness stub.
+
+    Two contacts sit on the connector, ``segment_spacing`` apart, and the U
+    leaves them along the open side of the node.
+    """
+    node = graph["nodes"][node_id]
+    ux, uy = _self_hop_fallback_direction(graph, node_id)
+    px, py = -uy, ux
+    half = float(segment_spacing) / 2.0
+    length = max(8.0, 4.0 * float(segment_spacing))
+    ox, oy = float(node["x"]), float(node["y"])
+    out_tangent = _trace_span_tangent({"x": 0.0, "y": 0.0}, {"x": ux, "y": uy})
+    back_tangent = (out_tangent + 180.0) % 360.0
+
+    def pt(gx, gy, tangent):
+        return {"x": gx, "y": -gy, "tangent": tangent}
+
+    sx, sy = ox + px * half, oy + py * half
+    ex, ey = ox - px * half, oy - py * half
+    return [
+        pt(sx, sy, out_tangent),
+        pt(sx + ux * length, sy + uy * length, out_tangent),
+        pt(ex + ux * length, ey + uy * length, back_tangent),
+        pt(ex, ey, back_tangent),
+    ]
+
+
+def _reverse_trace_chain(chain):
+    """Same points, opposite travel, so a lane can be the outbound leg."""
+    flipped = []
+    for point in reversed(chain):
+        flipped.append(
+            {
+                **point,
+                "tangent": (point.get("tangent", 0.0) + 180.0) % 360.0,
+            }
+        )
+    return flipped
+
+
+def _peer_face_for_self_hop(instances, endpoint_contacts, hop_instance, channel_id, node_id):
+    """``(other_node_id, contact)`` where ``channel_id`` already landed on this device's other face."""
+    if not endpoint_contacts or not channel_id:
+        return None
+    group = (hop_instance.get("channel_group") or "").strip()
+    refdes = str(node_id).split(".", 1)[0]
+    prefix = refdes + "."
+    for inst in instances:
+        if inst is hop_instance:
+            continue
+        if group and (inst.get("channel_group") or "").strip() != group:
+            continue
+        bag = endpoint_contacts.get(inst.get("instance_name")) or {}
+        from_conn = (
+            f"{(inst.get('this_harness_from_device_refdes') or '').strip()}."
+            f"{(inst.get('this_harness_from_device_connector_name') or '').strip()}"
+        )
+        to_conn = (
+            f"{(inst.get('this_harness_to_device_refdes') or '').strip()}."
+            f"{(inst.get('this_harness_to_device_connector_name') or '').strip()}"
+        )
+        for nid, contact in bag.items():
+            if nid in ("__self_hop__", node_id):
+                continue
+            if not isinstance(contact, dict) or "x" not in contact:
+                continue
+            if not str(nid).startswith(prefix):
+                continue
+            if nid == from_conn:
+                end_channel = (inst.get("this_harness_from_device_channel_id") or "").strip()
+            elif nid == to_conn:
+                end_channel = (inst.get("this_harness_to_device_channel_id") or "").strip()
+            else:
+                continue
+            if end_channel == channel_id:
+                return nid, contact
+    return None
+
+
+def _orient_self_hop_chains(out_chain, back_chain, node_xy, other_node_xy, other_contact):
+    """Put the outbound leg on the same side of the disconnect as the other face's contact."""
+    if not out_chain or not back_chain or not other_contact or not other_node_xy:
+        return out_chain + back_chain
+    vx = other_node_xy[0] - node_xy[0]
+    vy = other_node_xy[1] - node_xy[1]
+    if abs(vx) < 1e-9 and abs(vy) < 1e-9:
+        return out_chain + back_chain
+    px, py = -vy, vx
+
+    def side(x, y):
+        return (x - node_xy[0]) * px + (y - node_xy[1]) * py
+
+    out_pt = out_chain[0]
+    out_side = side(out_pt["x"], -out_pt["y"])
+    other_side = side(other_contact["x"], other_contact["y"])
+    if out_side * other_side >= 0:
+        return out_chain + back_chain
+    return _reverse_trace_chain(back_chain) + _reverse_trace_chain(out_chain)
+
+
+def _assemble_trace_point_chain(
+    graph, points_to_pass_through, path_segments, path_directions, inst_name
+):
+    """Offset point chain for one already-routed path, in ``draw_styled_path`` space."""
+    point_chain = []
+    for seg_uuid, direction in zip(path_segments, path_directions):
+        seg_info = graph["segments"][seg_uuid]
+        node_a_id = seg_info["node_at_end_a"]
+        node_b_id = seg_info["node_at_end_b"]
+        waypoints = list(seg_info.get("waypoints") or [])
+        if direction == "a_to_b":
+            ordered_nodes = [node_a_id, node_b_id]
+            midpoints = waypoints
+        else:
+            ordered_nodes = [node_b_id, node_a_id]
+            midpoints = list(reversed(waypoints))
+
+        start_id, end_id = ordered_nodes
+        geom = [graph["nodes"][start_id]] + midpoints + [graph["nodes"][end_id]]
+        tangents = [
+            _trace_span_tangent(geom[i], geom[i + 1]) for i in range(len(geom) - 1)
+        ] or [0.0]
+        tangents.append(tangents[-1])
+
+        def append_node_contact(nid, tangent):
+            try:
+                pt = points_to_pass_through[nid][seg_uuid][inst_name]
+            except KeyError:
+                # Missing on purpose for segments internal to a merged circle.
+                return
+            point_chain.append(
+                {
+                    "x": pt["x"],
+                    "y": pt["y"],
+                    "tangent": tangent,
+                    "seg_uuid": seg_uuid,
+                }
+            )
+
+        append_node_contact(start_id, tangents[0])
+        for mid_index, waypoint in enumerate(midpoints):
+            # Two coincident points so the spline drawer keeps each span
+            # straight. One tangent cannot enter and leave a corner.
+            point_chain.append(
+                {
+                    "x": waypoint["x"],
+                    "y": -waypoint["y"],
+                    "tangent": tangents[mid_index],
+                    "seg_uuid": seg_uuid,
+                }
+            )
+            point_chain.append(
+                {
+                    "x": waypoint["x"],
+                    "y": -waypoint["y"],
+                    "tangent": tangents[mid_index + 1],
+                    "seg_uuid": seg_uuid,
+                }
+            )
+        append_node_contact(end_id, tangents[len(midpoints)])
+    return point_chain
+
+
 def draw_segments_across_paths(
     input_instances,
     input_network_2D,
@@ -1315,8 +1636,11 @@ def draw_segments_across_paths(
     to_node_id_field=None,
     trace_group_opacity=None,
     endpoint_contacts=None,
+    connector_node_ids=None,
 ):
     """
+    Use this when a build that is writing an SVG needs segment instances drawn along a 2D wire network, with parallel paths offset.
+
     Maps segment-type instances onto a 2D wire network, offsets parallel paths
     at shared nodes, draws each path and its labels, and returns raw SVG markup.
 
@@ -1360,6 +1684,16 @@ def draw_segments_across_paths(
             ``{instance_name: {node_id: {"x", "y", "tangent", "departs"}}}``.
             ``tangent`` is the direction of travel in the same degrees ``draw_styled_path``
             uses. ``departs`` is true at the path start and false at the path end.
+        connector_node_ids: optional set of harness connector-node ids. A same-node
+            trace turns around on nodes outside that set (the generated ``far``
+            stub) as well as on ``wirejunction-`` nodes, so two loopbacks on one
+            connector take separate lanes. With the set omitted, only
+            ``wirejunction-`` nodes are free ends.
+            A trace whose ends are the same node is drawn out along the free harness
+            stub and back on the next lane (a short local U when that connector has
+            no stub). Both contacts are kept: the node entry is the outbound
+            contact, and ``__self_hop__`` holds ``start`` (from-channel) and
+            ``end`` (to-channel).
 
     Returns:
         str: raw SVG markup for all paths and labels (no <svg> wrapper). Each trace is
@@ -1374,6 +1708,10 @@ def draw_segments_across_paths(
 
     # --- Phase 1: BFS path finding ---
     instance_paths = {}
+    # Same-node hops are drawn as an out-and-back. The two lanes are extra paths
+    # so the offsetter spaces them; they are not drawn as their own traces.
+    self_hops = {}
+    extra_lane_names = []
 
     for instance in input_instances:
         inst_name = instance.get("instance_name")
@@ -1406,6 +1744,45 @@ def draw_segments_across_paths(
             raise ValueError(
                 f"To node '{to_node_id}' not found in graph for '{inst_name}'"
             )
+
+        if from_node_id == to_node_id:
+            outbound = _self_hop_outbound(
+                graph, from_node_id, connector_node_ids=connector_node_ids
+            )
+            plan = {
+                "node": from_node_id,
+                "from_channel": (
+                    instance.get("this_harness_from_device_channel_id") or ""
+                ).strip(),
+                "to_channel": (
+                    instance.get("this_harness_to_device_channel_id") or ""
+                ).strip(),
+                "synthetic": outbound is None,
+            }
+            if outbound:
+                out_segs, out_dirs = outbound
+                out_name = f"{inst_name}#loop-out"
+                back_name = f"{inst_name}#loop-back"
+                instance_paths[out_name] = {
+                    "path_segments": out_segs,
+                    "path_directions": out_dirs,
+                }
+                instance_paths[back_name] = {
+                    "path_segments": list(reversed(out_segs)),
+                    "path_directions": [
+                        "b_to_a" if direction == "a_to_b" else "a_to_b"
+                        for direction in reversed(out_dirs)
+                    ],
+                }
+                extra_lane_names.extend((out_name, back_name))
+                plan["out_name"] = out_name
+                plan["back_name"] = back_name
+            self_hops[inst_name] = plan
+            instance_paths[inst_name] = {
+                "path_segments": [],
+                "path_directions": [],
+            }
+            continue
 
         queue = [(from_node_id, [])]
         visited = {from_node_id}
@@ -1497,14 +1874,14 @@ def draw_segments_across_paths(
         seg_half_width = {}
         any_trace = False
         for seg_uuid in node_segments:
-            instances_using_segment = [
-                instance.get("instance_name")
-                for instance in input_instances
-                if seg_uuid
-                in instance_paths.get(instance.get("instance_name"), {}).get(
-                    "path_segments", []
-                )
-            ]
+            instances_using_segment = []
+            for instance in input_instances:
+                name = instance.get("instance_name")
+                if seg_uuid in instance_paths.get(name, {}).get("path_segments", []):
+                    instances_using_segment.append(name)
+            for name in extra_lane_names:
+                if seg_uuid in instance_paths.get(name, {}).get("path_segments", []):
+                    instances_using_segment.append(name)
             if not instances_using_segment:
                 seg_instances[seg_uuid] = []
                 seg_half_width[seg_uuid] = 0.0
@@ -1717,87 +2094,96 @@ def draw_segments_across_paths(
     # --- Phase 3: Assemble point chains, draw paths and labels ---
     svg_elements = []
 
-    for instance in input_instances:
+    # Ordinary hops first so a same-connector loop can sit on the same side
+    # of the disconnect as the contact already landed on the other face.
+    draw_order = [
+        inst for inst in input_instances if inst.get("instance_name") not in self_hops
+    ] + [
+        inst for inst in input_instances if inst.get("instance_name") in self_hops
+    ]
+    for instance in draw_order:
         inst_name = instance.get("instance_name")
         path_info = instance_paths.get(inst_name, {})
         path_segments = path_info.get("path_segments", [])
         path_directions = path_info.get("path_directions", [])
 
-        if not path_segments:
-            continue
-
-        point_chain = []
-
-        for seg_uuid, direction in zip(path_segments, path_directions):
-            seg_info = graph["segments"][seg_uuid]
-            node_a_id = seg_info["node_at_end_a"]
-            node_b_id = seg_info["node_at_end_b"]
-
-            waypoints = list(seg_info.get("waypoints") or [])
-            if direction == "a_to_b":
-                ordered_nodes = [node_a_id, node_b_id]
-                midpoints = waypoints
+        hop = self_hops.get(inst_name)
+        if hop is not None:
+            if hop.get("synthetic"):
+                point_chain = _self_hop_local_point_chain(
+                    graph, hop["node"], segment_spacing
+                )
             else:
-                ordered_nodes = [node_b_id, node_a_id]
-                midpoints = list(reversed(waypoints))
-
-            def tangent_between(p, q):
-                dx = q["x"] - p["x"]
-                dy = q["y"] - p["y"]
-                if abs(dx) < 1e-12 and abs(dy) < 1e-12:
-                    return 0.0
-                # Negate because Y is flipped when stored in points_to_pass_through
-                return (-math.degrees(math.atan2(dy, dx))) % 360.0
-
-            start_id, end_id = ordered_nodes
-            geom = [graph["nodes"][start_id]] + midpoints + [graph["nodes"][end_id]]
-            tangents = [
-                tangent_between(geom[i], geom[i + 1]) for i in range(len(geom) - 1)
-            ] or [0.0]
-            tangents.append(tangents[-1])
-
-            def append_node_contact(nid, tangent):
-                try:
-                    pt = points_to_pass_through[nid][seg_uuid][inst_name]
-                except KeyError:
-                    # Missing on purpose for segments internal to a merged circle.
-                    return
-                point_chain.append(
-                    {
-                        "x": pt["x"],
-                        "y": pt["y"],
-                        "tangent": tangent,
-                        "seg_uuid": seg_uuid,
-                    }
+                out_info = instance_paths.get(hop["out_name"], {})
+                back_info = instance_paths.get(hop["back_name"], {})
+                out_chain = _assemble_trace_point_chain(
+                    graph,
+                    points_to_pass_through,
+                    out_info.get("path_segments", []),
+                    out_info.get("path_directions", []),
+                    hop["out_name"],
                 )
-
-            append_node_contact(start_id, tangents[0])
-            for mid_index, waypoint in enumerate(midpoints):
-                # Two coincident points so the spline drawer keeps each span
-                # straight. One tangent cannot enter and leave a corner.
-                point_chain.append(
-                    {
-                        "x": waypoint["x"],
-                        "y": -waypoint["y"],
-                        "tangent": tangents[mid_index],
-                        "seg_uuid": seg_uuid,
-                    }
+                back_chain = _assemble_trace_point_chain(
+                    graph,
+                    points_to_pass_through,
+                    back_info.get("path_segments", []),
+                    back_info.get("path_directions", []),
+                    hop["back_name"],
                 )
-                point_chain.append(
-                    {
-                        "x": waypoint["x"],
-                        "y": -waypoint["y"],
-                        "tangent": tangents[mid_index + 1],
-                        "seg_uuid": seg_uuid,
-                    }
-                )
-            append_node_contact(end_id, tangents[len(midpoints)])
+                if out_chain and back_chain:
+                    # Joining the lanes with their own tangents is the U at the
+                    # free end: outbound keeps going, the return comes back.
+                    peer = _peer_face_for_self_hop(
+                        input_instances,
+                        endpoint_contacts,
+                        instance,
+                        hop.get("from_channel") or "",
+                        hop["node"],
+                    )
+                    if peer and peer[0] in graph["nodes"]:
+                        node_xy = graph["nodes"][hop["node"]]
+                        other_xy = graph["nodes"][peer[0]]
+                        point_chain = _orient_self_hop_chains(
+                            out_chain,
+                            back_chain,
+                            (node_xy["x"], node_xy["y"]),
+                            (other_xy["x"], other_xy["y"]),
+                            peer[1],
+                        )
+                    else:
+                        point_chain = out_chain + back_chain
+                else:
+                    point_chain = _self_hop_local_point_chain(
+                        graph, hop["node"], segment_spacing
+                    )
+        else:
+            if not path_segments:
+                continue
+            point_chain = _assemble_trace_point_chain(
+                graph,
+                points_to_pass_through,
+                path_segments,
+                path_directions,
+                inst_name,
+            )
 
         if not point_chain:
             cli.warn(f"empty chain for '{inst_name}'")
             continue
 
-        if endpoint_contacts is not None:
+        if endpoint_contacts is not None and hop is not None:
+            contacts = endpoint_contacts.setdefault(inst_name, {})
+            start = _trace_endpoint_contact(point_chain[0], True)
+            end = _trace_endpoint_contact(point_chain[-1], False)
+            contacts[hop["node"]] = start
+            contacts["__self_hop__"] = {
+                "node": hop["node"],
+                "from_channel": hop.get("from_channel") or "",
+                "to_channel": hop.get("to_channel") or "",
+                "start": start,
+                "end": end,
+            }
+        elif endpoint_contacts is not None:
             contacts = endpoint_contacts.setdefault(inst_name, {})
             for which, seg_uuid, direction, point, departs in (
                 ("start", path_segments[0], path_directions[0], point_chain[0], True),
@@ -1928,6 +2314,8 @@ def draw_clean_line(
     thickness=1,
 ):
     """
+    Use this when a build that is writing an SVG needs a line between two instance locations.
+
     Generates SVG markup for a line connecting two instance locations, with optional arrowheads.
 
     Coordinates are given in inches and converted to pixels (96 dpi) with Y-axis

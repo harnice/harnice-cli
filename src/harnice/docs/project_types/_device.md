@@ -26,10 +26,13 @@ fileio.dirpath("part_directory")          |-- yourpn/
 fileio.path("revision history")               |-- revhistory.csv
 fileio.dirpath("rev_directory")               L-- your rev/
 fileio.path("build instructions")                 |-- build.py
+fileio.path("library history")                    |-- libhist.tsv
 fileio.path("signals list")                       |-- signals.tsv
 fileio.path("attributes")                         |-- attributes.json
 fileio.path("block diagram symbol")               |-- symbol.svg
-fileio.path("configuration setup")                L-- config.yaml
+fileio.path("configuration setup")                |-- config.yaml
+fileio.path("body")                               |-- body.step
+fileio.dirpath("body_images")                     L-- body_images/
 ```
 
 
@@ -42,6 +45,16 @@ When a Device is built in Harnice, here's what happens:
 1. Harnice runs the build instructions if it's found in the device directory.
 1. The signals list is validated and verified.
 1. A block diagram symbol SVG that can represent this device in a system block diagram is generated or updated based on the signals list.
+1. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate connector with that same id.
+
+---
+
+## Physical model
+
+A device body is `fileio.path("body")` (`body.step`). Mate connectors live in `attributes.json` under `mate_connectors`. How to write the solid, place mates, paste a face picture, and arrange devices in a system is [CAD](../cad.md).
+
+Open **physical model** to move mate connectors on the solid the build wrote, and to paste a picture on a face. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate with that same id. A device with no `mate_connectors` still builds. Opening the page writes that key and puts any missing required mate at the origin.
+
 
 ---
 
@@ -69,6 +82,8 @@ When a Device is built in Harnice, here's what happens:
     ??? info "Updating a Signals List"
 
         {% include-markdown "fragments/how-to-update-signals-list.md" %}
+
+1. Give the device a body when it should show up in a system assembly. Paste the **CAD** prompt on [Building with AI](../ai_prompts.md), or follow [CAD](../cad.md).
 
 1. Work on your block diagram symbol.
 

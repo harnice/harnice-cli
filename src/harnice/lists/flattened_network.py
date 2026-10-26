@@ -17,14 +17,14 @@ from harnice.utils.bundle_network_utils import (
 )
 
 COLUMNS = [
-    "segment_id",
-    "node_at_end_a",
-    "node_at_end_b",
-    "length",
-    "length_tolerance",
-    "angle",
-    "angle_constraint",
-    "subdivisions",
+    "segment_id",  # id of the 3D segment this row flattens
+    "node_at_end_a",  # node id at end A after derive; A is the left end, or the upper end when the segment is vertical
+    "node_at_end_b",  # node id at end B
+    "length",  # arc length of the 3D curve, recomputed on every derive
+    "length_tolerance",  # kept from the previous row with this segment_id; not edited on the 2D page
+    "angle",  # heading in degrees from end A to the first bend; 0 is +X and console Y points down
+    "angle_constraint",  # match name for that first heading; blank means the heading is independent
+    "subdivisions",  # JSON list of {percent, angle, constraint}; percent is in (0, 100) where the next heading starts
 ]
 
 
@@ -35,6 +35,10 @@ def spline_points(segment: dict, steps: int = 32) -> list[tuple[float, float, fl
     - If ``spline_control_points`` is empty: ``[end_a, end_b]``.
     - Otherwise: a degree-(N-1) Bezier through ``[end_a, *control_points, end_b]``,
       sampled at ``steps`` intervals (endpoints included).
+
+    The 3D page stores each control point as an offset from end A, and adds
+    end A when it draws. This sampler places each stored triple in that
+    polygon as written, in the same coordinate space as the two ends.
     """
 
     def control_polygon():
@@ -68,30 +72,32 @@ def spline_points(segment: dict, steps: int = 32) -> list[tuple[float, float, fl
     return [bezier_point(pts, i / steps) for i in range(steps + 1)]
 
 
-def _norm_angle_deg(angle):
-    if angle in ("", None):
-        return 0.0
-    try:
-        n = float(angle)
-    except (TypeError, ValueError):
-        return 0.0
-    if not math.isfinite(n):
-        return 0.0
-    return ((n % 360.0) + 360.0) % 360.0
+def oriented_spline_points(segment, start_location=None, direction="ab", steps=32):
+    """
+    Sample a chosen-network segment so the polyline leaves ``start_location``.
 
-
-def _ends_reversed(a, b, prev_a, prev_b):
-    a = (a or "").strip()
-    b = (b or "").strip()
-    prev_a = (prev_a or "").strip()
-    prev_b = (prev_b or "").strip()
-    if not a or not b or not prev_a or not prev_b:
-        return False
-    return a == prev_b and b == prev_a
-
-
-def _constraint_key(value):
-    return (value or "").strip()
+    Hop directions are ``ab`` / ``ba`` on the segment instance. Flattening may
+    swap that instance's end A and end B so the 2D layout reads left to right,
+    while ``location_at_end_a`` / ``location_at_end_b`` stay in solver order.
+    Pass the 3D location of the node this hop leaves. The sample is reversed
+    when its first point is not that location. With no start location, ``ba``
+    reverses the stored geometry.
+    """
+    pts = list(spline_points(segment, steps=steps))
+    if len(pts) < 2:
+        return pts
+    if start_location not in ("", None):
+        start = _point3(start_location)
+        if not (
+            abs(pts[0][0] - start[0]) <= 1e-6
+            and abs(pts[0][1] - start[1]) <= 1e-6
+            and abs(pts[0][2] - start[2]) <= 1e-6
+        ):
+            pts.reverse()
+        return pts
+    if direction == "ba":
+        pts.reverse()
+    return pts
 
 
 def parse_subdivisions(value):
@@ -103,6 +109,18 @@ def parse_subdivisions(value):
     The stretch from A to the first station uses the row's ``angle``. An empty
     value means the segment is one straight stretch.
     """
+
+    def norm_angle_deg(angle):
+        if angle in ("", None):
+            return 0.0
+        try:
+            n = float(angle)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(n):
+            return 0.0
+        return ((n % 360.0) + 360.0) % 360.0
+
     if value in ("", None):
         return []
     raw = value
@@ -131,8 +149,8 @@ def parse_subdivisions(value):
         parsed.append(
             {
                 "percent": key,
-                "angle": _norm_angle_deg(item.get("angle")),
-                "constraint": _constraint_key(item.get("constraint")),
+                "angle": norm_angle_deg(item.get("angle")),
+                "constraint": (item.get("constraint") or "").strip(),
             }
         )
     parsed.sort(key=lambda station: station["percent"])
@@ -141,13 +159,25 @@ def parse_subdivisions(value):
 
 def encode_subdivisions(stations):
     """JSON cell for ``subdivisions``. Empty when the segment is straight."""
+
+    def norm_angle_deg(angle):
+        if angle in ("", None):
+            return 0.0
+        try:
+            n = float(angle)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(n):
+            return 0.0
+        return ((n % 360.0) + 360.0) % 360.0
+
     if not stations:
         return ""
     payload = [
         {
             "percent": round(float(station["percent"]), 6),
-            "angle": round(_norm_angle_deg(station.get("angle")), 6),
-            "constraint": _constraint_key(station.get("constraint")),
+            "angle": round(norm_angle_deg(station.get("angle")), 6),
+            "constraint": (station.get("constraint") or "").strip(),
         }
         for station in stations
     ]
@@ -161,12 +191,24 @@ def spans_of(row):
     Each span is ``{"fraction", "angle", "constraint"}``. Fractions sum to 1.
     Span 0 is the row's ``angle``; each later span starts at a subdivision.
     """
+
+    def norm_angle_deg(angle):
+        if angle in ("", None):
+            return 0.0
+        try:
+            n = float(angle)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(n):
+            return 0.0
+        return ((n % 360.0) + 360.0) % 360.0
+
     stations = parse_subdivisions(row.get("subdivisions"))
     cuts = [0.0] + [station["percent"] for station in stations] + [100.0]
-    angles = [_norm_angle_deg(row.get("angle"))] + [
+    angles = [norm_angle_deg(row.get("angle"))] + [
         station["angle"] for station in stations
     ]
-    constraints = [_constraint_key(row.get("angle_constraint"))] + [
+    constraints = [(row.get("angle_constraint") or "").strip()] + [
         station["constraint"] for station in stations
     ]
     return [
@@ -181,10 +223,22 @@ def spans_of(row):
 
 def write_spans(row, spans):
     """Write spans back onto ``angle``, ``angle_constraint``, and ``subdivisions``."""
+
+    def norm_angle_deg(angle):
+        if angle in ("", None):
+            return 0.0
+        try:
+            n = float(angle)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(n):
+            return 0.0
+        return ((n % 360.0) + 360.0) % 360.0
+
     if not spans:
         return row
-    row["angle"] = round(_norm_angle_deg(spans[0]["angle"]), 6)
-    row["angle_constraint"] = _constraint_key(spans[0]["constraint"])
+    row["angle"] = round(norm_angle_deg(spans[0]["angle"]), 6)
+    row["angle_constraint"] = (spans[0]["constraint"] or "").strip()
     stations = []
     covered = 0.0
     for index, span in enumerate(spans[:-1]):
@@ -193,8 +247,8 @@ def write_spans(row, spans):
         stations.append(
             {
                 "percent": round(covered, 6),
-                "angle": round(_norm_angle_deg(nxt["angle"]), 6),
-                "constraint": _constraint_key(nxt["constraint"]),
+                "angle": round(norm_angle_deg(nxt["angle"]), 6),
+                "constraint": (nxt["constraint"] or "").strip(),
             }
         )
     row["subdivisions"] = encode_subdivisions(stations)
@@ -306,9 +360,21 @@ def canonicalize_segment_endpoints_for_save(rows):
     members of a key are set back to one shared angle. Mutates ``rows`` in
     place and returns them.
     """
+
+    def norm_angle_deg(angle):
+        if angle in ("", None):
+            return 0.0
+        try:
+            n = float(angle)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(n):
+            return 0.0
+        return ((n % 360.0) + 360.0) % 360.0
+
     enforce_angle_constraints(rows)
     for row in rows:
-        ang = _norm_angle_deg(row.get("angle"))
+        ang = norm_angle_deg(row.get("angle"))
         if 90.0 <= ang < 270.0:
             row["node_at_end_a"], row["node_at_end_b"] = (
                 row.get("node_at_end_b"),
@@ -342,20 +408,37 @@ def spline_length(segment: dict) -> float:
 
 def derive(network: dict) -> list[dict]:
     """
-    Builds the flattened network CSV from a JSON network dict.
+    Use this when a harness build needs networks/flat.csv, and the node and segment instances, updated from the chosen network. Skip it when the project does not need the flat drawing.
 
-    The network is the authority on which rows exist and on segment_id,
-    node_at_end_a, node_at_end_b, and length. length_tolerance, angle,
-    angle_constraint, and subdivisions are user-entered fields preserved from
-    the existing CSV, keyed on segment_id. ``angle`` is the heading from end A
-    to the first subdivision; each subdivision is a percent of length where a
-    new heading takes over. If the 3D ends come back swapped versus the last
-    saved row, the spans are reversed so A→B still describes the same layout.
-    Before write, endpoints are canonicalized so end A is left of or (when
-    vertical) above end B; see :func:`canonicalize_segment_endpoints_for_save`.
+    Build the flattened-network CSV from a chosen network, and update the node and segment instances to match.
+
+    The network decides which rows exist and sets ``segment_id``,
+    ``node_at_end_a``, ``node_at_end_b``, and ``length``. ``length`` is the
+    3D curve length. The 3D page stores each ``spline_control_points`` triple
+    as an offset from end A. ``spline_length`` places those stored triples in
+    the Bezier polygon with the two ends and does not add end A.
+
+    ``length_tolerance``, ``angle``, ``angle_constraint``, and
+    ``subdivisions`` already saved for a ``segment_id`` are kept. ``angle``
+    is the heading from end A to the first bend. Each subdivision is a
+    percent of length where the next heading starts. When the 3D ends come
+    back swapped versus the saved row, those spans are reversed so the
+    drawing stays. A first heading in ``[90, 270)`` swaps the CSV ends and
+    adds 180° to each heading, so A is left of B, or above B when the
+    segment is vertical.
+
+    On the instances list, each node receives ``2d_translate`` ``{x, y}``,
+    parent ``origin`` / ``origin``, ``absolute_rotation``, and
+    ``3d_translate`` from the network node. A node id with no instance is
+    created as ``item_type`` ``"node"``. Each segment is created or updated
+    as ``item_type`` ``"segment"``, parented to end A on ``"origin"``, with
+    ``length`` rounded to 2 digits.
 
     **Args:**
-    - `network`: Network dict with ``"segments"`` and ``"nodes"``, such as a chosen network. Segment ids, end nodes, and lengths come from this dict. ``length_tolerance``, ``angle``, ``angle_constraint``, and ``subdivisions`` already saved for a segment id are kept.
+    - `network`: Network dict with ``"segments"`` and ``"nodes"``, such as a chosen network.
+
+    **Returns:**
+    - `list`: The flattened rows that were written.
     """
     csv_path = fileio.path("flattened network")
 
@@ -390,9 +473,19 @@ def derive(network: dict) -> list[dict]:
             "angle_constraint": prev.get("angle_constraint", "") if prev_angle != "" else "",
             "subdivisions": prev.get("subdivisions", "") if prev_angle != "" else "",
         }
-        if prev_angle != "" and _ends_reversed(
-            node_a, node_b, prev.get("node_at_end_a"), prev.get("node_at_end_b")
-        ):
+        prev_a = (prev.get("node_at_end_a") or "").strip()
+        prev_b = (prev.get("node_at_end_b") or "").strip()
+        node_a_name = (node_a or "").strip()
+        node_b_name = (node_b or "").strip()
+        ends_reversed = (
+            node_a_name
+            and node_b_name
+            and prev_a
+            and prev_b
+            and node_a_name == prev_b
+            and node_b_name == prev_a
+        )
+        if prev_angle != "" and ends_reversed:
             reverse_spans(held)
         rows.append(
             {
@@ -525,38 +618,6 @@ def derive(network: dict) -> list[dict]:
     return rows
 
 
-def _node_of_endpoint(instance, endpoint_column):
-    """Resolve one end of a segment-based instance to a network node.
-
-    Cavities and other connector-group members resolve to the ``node`` in that
-    group. If the endpoint is already a ``node`` instance (for example a
-    flattened-network node), it is used as-is.
-    """
-    endpoint = instance.get(endpoint_column)
-    if endpoint in ["", None]:
-        raise ValueError(
-            f"Instance '{instance.get('instance_name')}' has no {endpoint_column}."
-        )
-    if instances_list.attribute_of(endpoint, "item_type") == "node":
-        return endpoint
-    if instances_list.attribute_of(endpoint, "location_type") != "node":
-        raise ValueError(
-            f"While mapping '{instance.get('instance_name')}' to segments, "
-            f"location type of '{endpoint}' is not a node."
-        )
-
-    connector_group = instances_list.attribute_of(endpoint, "connector_group")
-    node = instances_list.instance_in_connector_group_with_item_type(
-        connector_group, "node"
-    )
-    if node == 0:
-        raise ValueError(
-            f"No 'node' type item found in connector group '{connector_group}' "
-            f"while mapping '{instance.get('instance_name')}' to segments."
-        )
-    return node.get("instance_name")
-
-
 def write_mapped_segment_instances(instance, segment_steps):
     """
     Creates one ``{item_type}-segment`` instance per hop in ``segment_steps``.
@@ -626,6 +687,8 @@ def write_mapped_segment_instances(instance, segment_steps):
 
 def map_instance_to_segments(instance):
     """
+    Use this when cable routing needs one instance split into a segment instance for each segment between its ends. A harness script calls cable_utils.map_cables_and_conductors_to_segments instead.
+
     Maps a segment-based instance across multiple segments using pathfinding.
 
     Takes an instance that spans between two nodes and creates segment-specific
@@ -636,7 +699,10 @@ def map_instance_to_segments(instance):
 
     **Note:** Cavity endpoints are resolved to the ``node`` in the same connector
     group. If ``node_at_end_a`` / ``node_at_end_b`` are already ``item_type=="node"``
-    instances, they are used directly.
+    instances, they are used directly. When both ends resolve to the same node,
+    the instance is a loopback: it is mapped out and back on the free stub
+    leaving that connector, and each hop's ``length`` is twice the segment
+    length.
 
     **Args:**
 
@@ -648,37 +714,93 @@ def map_instance_to_segments(instance):
     - `ValueError`: If the instance is not segment-based, if endpoints are missing,
         if endpoints are not nodes, or if no path is found between the nodes.
     """
+
+    def node_of_endpoint(endpoint_column):
+        """Resolve one end of a segment-based instance to a network node.
+
+        Cavities and other connector-group members resolve to the ``node`` in that
+        group. If the endpoint is already a ``node`` instance (for example a
+        flattened-network node), it is used as-is.
+        """
+        endpoint = instance.get(endpoint_column)
+        if endpoint in ["", None]:
+            raise ValueError(
+                f"Instance '{instance.get('instance_name')}' has no {endpoint_column}."
+            )
+        if instances_list.attribute_of(endpoint, "item_type") == "node":
+            return endpoint
+        if instances_list.attribute_of(endpoint, "location_type") != "node":
+            raise ValueError(
+                f"While mapping '{instance.get('instance_name')}' to segments, "
+                f"location type of '{endpoint}' is not a node."
+            )
+
+        connector_group = instances_list.attribute_of(endpoint, "connector_group")
+        node = instances_list.instance_in_connector_group_with_item_type(
+            connector_group, "node"
+        )
+        if node == 0:
+            raise ValueError(
+                f"No 'node' type item found in connector group '{connector_group}' "
+                f"while mapping '{instance.get('instance_name')}' to segments."
+            )
+        return node.get("instance_name")
+
     if instance.get("location_type") != "segment":
         raise ValueError(
             f"You're trying to map a non segment-based instance "
             f"'{instance.get('instance_name')}' across segments."
         )
 
-    start_node = _node_of_endpoint(instance, "node_at_end_a")
-    end_node = _node_of_endpoint(instance, "node_at_end_b")
+    start_node = node_of_endpoint("node_at_end_a")
+    end_node = node_of_endpoint("node_at_end_b")
 
     graph = {}
     segment_lookup = {}  # frozenset({node_a, node_b}) -> segment name
     seg_endpoints = {}  # segment name -> (node_a, node_b) in stored orientation
-    for seg in instances_list.read():
-        if seg.get("item_type") != "segment":
+    connector_nodes = set()
+    for row in instances_list.read():
+        if (
+            row.get("item_type") == "node"
+            and row.get("connector_group") not in ("", None)
+            and row.get("instance_name") not in ("", None)
+        ):
+            connector_nodes.add(row.get("instance_name"))
+        if row.get("item_type") != "segment":
             continue
-        a = seg.get("node_at_end_a")
-        b = seg.get("node_at_end_b")
+        a = row.get("node_at_end_a")
+        b = row.get("node_at_end_b")
         if not a or not b:
             continue
+        name = row.get("instance_name")
         graph.setdefault(a, set()).add(b)
         graph.setdefault(b, set()).add(a)
-        segment_lookup[frozenset([a, b])] = seg.get("instance_name")
-        seg_endpoints[seg.get("instance_name")] = (a, b)
+        segment_lookup[frozenset([a, b])] = name
+        seg_endpoints[name] = (a, b)
+
+    loopback = start_node == end_node
+    if loopback:
+        stub_graph = {}
+        for seg_name, (a, b) in seg_endpoints.items():
+            if not a or not b or a == b or not seg_name:
+                continue
+            if a in connector_nodes and b in connector_nodes:
+                continue
+            if (a == start_node or a not in connector_nodes) and (
+                b == start_node or b not in connector_nodes
+            ):
+                stub_graph.setdefault(a, set()).add(b)
+                stub_graph.setdefault(b, set()).add(a)
+        graph = stub_graph
 
     # BFS recording, for each visited node, the edge it was reached through.
+    # A loopback keeps walking the free stub; the target is chosen afterwards.
     pred = {}  # node -> (previous node, segment name, direction)
     visited = {start_node}
     queue = deque([start_node])
     while queue:
         u = queue.popleft()
-        if u == end_node:
+        if not loopback and u == end_node:
             break
         for v in graph.get(u, []):
             if v in visited:
@@ -691,7 +813,25 @@ def map_instance_to_segments(instance):
             visited.add(v)
             queue.append(v)
 
-    if end_node not in pred and start_node != end_node:
+    if loopback:
+        leaves = [
+            node
+            for node in visited
+            if node != start_node and len(graph.get(node, ())) <= 1
+        ]
+        candidates = leaves or [node for node in visited if node != start_node]
+        if not candidates:
+            return
+        hop_count = {}
+        for node in candidates:
+            count = 0
+            cur = node
+            while cur in pred:
+                cur = pred[cur][0]
+                count += 1
+            hop_count[node] = count
+        end_node = max(candidates, key=lambda node: (hop_count[node], str(node)))
+    elif end_node not in pred and start_node != end_node:
         raise ValueError(f"No segment path found between {start_node} and {end_node}")
 
     segment_steps = []
@@ -703,29 +843,15 @@ def map_instance_to_segments(instance):
     segment_steps.reverse()
 
     write_mapped_segment_instances(instance, segment_steps)
-
-
-def _2d_translate_of(instance):
-    def float_or_none(value):
-        if value in ("", None):
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    td = _as_dict(instance.get("2d_translate"))
-    if td:
-        return (
-            float_or_none(td.get("x")),
-            float_or_none(td.get("y")),
-            float_or_none(td.get("rotate")),
-        )
-    return (
-        float_or_none(instance.get("translate_x")),
-        float_or_none(instance.get("translate_y")),
-        float_or_none(instance.get("rotate_csys")),
-    )
+    if loopback:
+        for seg_name, _direction in segment_steps:
+            base = instances_list.attribute_of(seg_name, "length")
+            if base in ("", None):
+                continue
+            instances_list.modify(
+                f"{instance.get('instance_name')}.{seg_name}",
+                {"length": float(base) * 2},
+            )
 
 
 def calculate_location(lookup_instance, instances):
@@ -753,6 +879,29 @@ def calculate_location(lookup_instance, instances):
         ValueError: If parent coordinate system information is missing or invalid, or
             if parent instances cannot be found in the instances list.
     """
+
+    def translate_2d(instance):
+        def float_or_none(value):
+            if value in ("", None):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        td = _as_dict(instance.get("2d_translate"))
+        if td:
+            return (
+                float_or_none(td.get("x")),
+                float_or_none(td.get("y")),
+                float_or_none(td.get("rotate")),
+            )
+        return (
+            float_or_none(instance.get("translate_x")),
+            float_or_none(instance.get("translate_y")),
+            float_or_none(instance.get("rotate_csys")),
+        )
+
     chain = _csys_chain(lookup_instance, instances)
 
     x_pos = 0.0
@@ -792,7 +941,7 @@ def calculate_location(lookup_instance, instances):
             math.radians(angle_old)
         )
 
-        tx, ty, rotate = _2d_translate_of(chainlink)
+        tx, ty, rotate = translate_2d(chainlink)
         if tx is not None:
             x_pos += tx
         if ty is not None:
@@ -913,8 +1062,40 @@ def prepare_analyze_trace_instances(item_type, network_node_ids=None):
     """
     Collect ``conductor`` or ``cable`` instances with ends resolved to network nodes.
 
-    Resolves cavity endpoints via ``_node_of_endpoint`` (same as ``map_instance_to_segments``).
+    Resolves cavity endpoints the same way as ``map_instance_to_segments``.
     """
+
+    def node_of_endpoint(instance, endpoint_column):
+        """Resolve one end of a segment-based instance to a network node.
+
+        Cavities and other connector-group members resolve to the ``node`` in that
+        group. If the endpoint is already a ``node`` instance (for example a
+        flattened-network node), it is used as-is.
+        """
+        endpoint = instance.get(endpoint_column)
+        if endpoint in ["", None]:
+            raise ValueError(
+                f"Instance '{instance.get('instance_name')}' has no {endpoint_column}."
+            )
+        if instances_list.attribute_of(endpoint, "item_type") == "node":
+            return endpoint
+        if instances_list.attribute_of(endpoint, "location_type") != "node":
+            raise ValueError(
+                f"While mapping '{instance.get('instance_name')}' to segments, "
+                f"location type of '{endpoint}' is not a node."
+            )
+
+        connector_group = instances_list.attribute_of(endpoint, "connector_group")
+        node = instances_list.instance_in_connector_group_with_item_type(
+            connector_group, "node"
+        )
+        if node == 0:
+            raise ValueError(
+                f"No 'node' type item found in connector group '{connector_group}' "
+                f"while mapping '{instance.get('instance_name')}' to segments."
+            )
+        return node.get("instance_name")
+
     out = []
     for instance in instances_list.read():
         if instance.get("item_type") != item_type:
@@ -922,8 +1103,8 @@ def prepare_analyze_trace_instances(item_type, network_node_ids=None):
         if instance.get("location_type") != "segment":
             continue
         try:
-            start = _node_of_endpoint(instance, "node_at_end_a")
-            end = _node_of_endpoint(instance, "node_at_end_b")
+            start = node_of_endpoint(instance, "node_at_end_a")
+            end = node_of_endpoint(instance, "node_at_end_b")
         except ValueError:
             continue
         if network_node_ids is not None and (
@@ -1039,37 +1220,14 @@ def trace_layer_markup(
         from_node_id_field="node_at_end_a",
         to_node_id_field="node_at_end_b",
         trace_group_opacity=1,
+        connector_node_ids={
+            row.get("instance_name")
+            for row in instances_list.read()
+            if row.get("item_type") == "node"
+            and row.get("connector_group") not in ("", None)
+            and row.get("instance_name") not in ("", None)
+        },
     )
-
-
-def _polyline_midpoint(points):
-    """Point halfway along a polyline of ``{"x", "y"}`` vertices."""
-    if not points:
-        return {"x": 0.0, "y": 0.0}
-    if len(points) == 1:
-        return {"x": points[0]["x"], "y": points[0]["y"]}
-    lengths = []
-    total = 0.0
-    for i in range(len(points) - 1):
-        dist = math.hypot(
-            points[i + 1]["x"] - points[i]["x"],
-            points[i + 1]["y"] - points[i]["y"],
-        )
-        lengths.append(dist)
-        total += dist
-    if total <= 0.0:
-        return {"x": points[0]["x"], "y": points[0]["y"]}
-    half = total / 2.0
-    covered = 0.0
-    for i, dist in enumerate(lengths):
-        if covered + dist >= half:
-            t = 0.0 if dist == 0.0 else (half - covered) / dist
-            return {
-                "x": points[i]["x"] + (points[i + 1]["x"] - points[i]["x"]) * t,
-                "y": points[i]["y"] + (points[i + 1]["y"] - points[i]["y"]) * t,
-            }
-        covered += dist
-    return {"x": points[-1]["x"], "y": points[-1]["y"]}
 
 
 def overlay_view_box(network):
@@ -1090,44 +1248,43 @@ def overlay_view_box(network):
     return min_x, min_y, width, height
 
 
-def _overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
-    """
-    SVG holding a single flat layer group, for Analyze only.
-
-    There is intentionally no ``-contents-start`` / ``-contents-end`` wrapper: that
-    pair is what marks a file as a placeable PDF master, and these overlays are laid
-    out at :data:`CONSOLE_LAYOUT_SCALE` rather than in 96 dpi drawing space, so they
-    must never land on a sheet next to a formboard.
-    """
-
-    def indent_markup(markup, spaces):
-        raw = (markup or "").strip()
-        if not raw:
-            return ""
-        pad = " " * spaces
-        return "\n".join(
-            pad + line if line.strip() else "" for line in raw.split("\n")
-        )
-
-    parts = [
-        '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
-        (
-            f'<svg xmlns="http://www.w3.org/2000/svg" '
-            f'width="{width:.3f}" height="{height:.3f}" '
-            f'viewBox="{min_x:.3f} {min_y:.3f} {width:.3f} {height:.3f}">'
-        ),
-        f'  <g id="{layer_group_id}">',
-    ]
-    if inner_markup.strip():
-        parts.append(indent_markup(inner_markup, 4))
-    parts.append("  </g>")
-    parts.append("</svg>")
-    parts.append("")
-    return "\n".join(parts)
-
-
 def build_flattened_network_master_svg_text(rows=None):
     """Network skeleton overlay (nodes, edges, labels) — no conductor/cable traces."""
+
+    def overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
+        """
+        SVG holding a single flat layer group, for Analyze only.
+
+        There is intentionally no ``-contents-start`` / ``-contents-end`` wrapper: that
+        pair is what marks a file as a placeable PDF master, and these overlays are laid
+        out at console scale rather than in 96 dpi drawing space, so they must never
+        land on a sheet next to a formboard.
+        """
+
+        def indent_markup(markup, spaces):
+            raw = (markup or "").strip()
+            if not raw:
+                return ""
+            pad = " " * spaces
+            return "\n".join(
+                pad + line if line.strip() else "" for line in raw.split("\n")
+            )
+
+        parts = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+            (
+                f'<svg xmlns="http://www.w3.org/2000/svg" '
+                f'width="{width:.3f}" height="{height:.3f}" '
+                f'viewBox="{min_x:.3f} {min_y:.3f} {width:.3f} {height:.3f}">'
+            ),
+            f'  <g id="{layer_group_id}">',
+        ]
+        if inner_markup.strip():
+            parts.append(indent_markup(inner_markup, 4))
+        parts.append("  </g>")
+        parts.append("</svg>")
+        parts.append("")
+        return "\n".join(parts)
 
     def xml_escape(text):
         return (
@@ -1139,6 +1296,35 @@ def build_flattened_network_master_svg_text(rows=None):
         )
 
     def base_network_markup(network):
+        def polyline_midpoint(points):
+            """Point halfway along a polyline of ``{"x", "y"}`` vertices."""
+            if not points:
+                return {"x": 0.0, "y": 0.0}
+            if len(points) == 1:
+                return {"x": points[0]["x"], "y": points[0]["y"]}
+            lengths = []
+            total = 0.0
+            for i in range(len(points) - 1):
+                dist = math.hypot(
+                    points[i + 1]["x"] - points[i]["x"],
+                    points[i + 1]["y"] - points[i]["y"],
+                )
+                lengths.append(dist)
+                total += dist
+            if total <= 0.0:
+                return {"x": points[0]["x"], "y": points[0]["y"]}
+            half = total / 2.0
+            covered = 0.0
+            for i, dist in enumerate(lengths):
+                if covered + dist >= half:
+                    t = 0.0 if dist == 0.0 else (half - covered) / dist
+                    return {
+                        "x": points[i]["x"] + (points[i + 1]["x"] - points[i]["x"]) * t,
+                        "y": points[i]["y"] + (points[i + 1]["y"] - points[i]["y"]) * t,
+                    }
+                covered += dist
+            return {"x": points[-1]["x"], "y": points[-1]["y"]}
+
         lines = []
         for seg_id, seg in network.get("segments", {}).items():
             na = network["nodes"].get(seg.get("node_at_end_a"))
@@ -1153,7 +1339,7 @@ def build_flattened_network_master_svg_text(rows=None):
                 f'stroke="#3a6ea5" stroke-width="1.8" stroke-linecap="round" '
                 f'stroke-linejoin="round" opacity="0.35"/>'
             )
-            mid = _polyline_midpoint(path)
+            mid = polyline_midpoint(path)
             mx, my = mid["x"], mid["y"]
             lines.append(
                 f'<text x="{mx:.3f}" y="{my - 9:.3f}" text-anchor="middle" '
@@ -1178,7 +1364,7 @@ def build_flattened_network_master_svg_text(rows=None):
         rows = read_rows()
     network = build_console_network_2d(rows)
     min_x, min_y, width, height = overlay_view_box(network)
-    return _overlay_svg_text(
+    return overlay_svg_text(
         FLATTENED_BASE_GROUP_ID,
         base_network_markup(network),
         min_x,
@@ -1190,11 +1376,47 @@ def build_flattened_network_master_svg_text(rows=None):
 
 def build_circuits_overlay_master_svg_text(rows=None):
     """Conductor-trace overlay only (no network skeleton)."""
+
+    def overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
+        """
+        SVG holding a single flat layer group, for Analyze only.
+
+        There is intentionally no ``-contents-start`` / ``-contents-end`` wrapper: that
+        pair is what marks a file as a placeable PDF master, and these overlays are laid
+        out at console scale rather than in 96 dpi drawing space, so they must never
+        land on a sheet next to a formboard.
+        """
+
+        def indent_markup(markup, spaces):
+            raw = (markup or "").strip()
+            if not raw:
+                return ""
+            pad = " " * spaces
+            return "\n".join(
+                pad + line if line.strip() else "" for line in raw.split("\n")
+            )
+
+        parts = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+            (
+                f'<svg xmlns="http://www.w3.org/2000/svg" '
+                f'width="{width:.3f}" height="{height:.3f}" '
+                f'viewBox="{min_x:.3f} {min_y:.3f} {width:.3f} {height:.3f}">'
+            ),
+            f'  <g id="{layer_group_id}">',
+        ]
+        if inner_markup.strip():
+            parts.append(indent_markup(inner_markup, 4))
+        parts.append("  </g>")
+        parts.append("</svg>")
+        parts.append("")
+        return "\n".join(parts)
+
     if rows is None:
         rows = read_rows()
     network = build_console_network_2d(rows)
     min_x, min_y, width, height = overlay_view_box(network)
-    return _overlay_svg_text(
+    return overlay_svg_text(
         CONDUCTOR_TRACES_GROUP_ID,
         trace_layer_markup(network, "conductor"),
         min_x,
@@ -1206,11 +1428,47 @@ def build_circuits_overlay_master_svg_text(rows=None):
 
 def build_cable_overlay_master_svg_text(rows=None):
     """Cable-trace overlay only (no network skeleton)."""
+
+    def overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
+        """
+        SVG holding a single flat layer group, for Analyze only.
+
+        There is intentionally no ``-contents-start`` / ``-contents-end`` wrapper: that
+        pair is what marks a file as a placeable PDF master, and these overlays are laid
+        out at console scale rather than in 96 dpi drawing space, so they must never
+        land on a sheet next to a formboard.
+        """
+
+        def indent_markup(markup, spaces):
+            raw = (markup or "").strip()
+            if not raw:
+                return ""
+            pad = " " * spaces
+            return "\n".join(
+                pad + line if line.strip() else "" for line in raw.split("\n")
+            )
+
+        parts = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+            (
+                f'<svg xmlns="http://www.w3.org/2000/svg" '
+                f'width="{width:.3f}" height="{height:.3f}" '
+                f'viewBox="{min_x:.3f} {min_y:.3f} {width:.3f} {height:.3f}">'
+            ),
+            f'  <g id="{layer_group_id}">',
+        ]
+        if inner_markup.strip():
+            parts.append(indent_markup(inner_markup, 4))
+        parts.append("  </g>")
+        parts.append("</svg>")
+        parts.append("")
+        return "\n".join(parts)
+
     if rows is None:
         rows = read_rows()
     network = build_console_network_2d(rows)
     min_x, min_y, width, height = overlay_view_box(network)
-    return _overlay_svg_text(
+    return overlay_svg_text(
         CABLE_TRACES_GROUP_ID,
         trace_layer_markup(network, "cable"),
         min_x,
@@ -1334,17 +1592,72 @@ def build_trace_overlays_svg_text(rows=None):
     return "\n".join(parts)
 
 
+TRACE_OVERLAYS_FILENAME = "trace_overlays.svg"
+# Served bytes for Analyze. Invalidated when Build rewrites the masters.
+_trace_overlays_cache = {"key": None, "text": ""}
+
+
+def trace_overlays_svg_path():
+    """Combined Analyze SVG written next to the three overlay masters."""
+    return os.path.join(
+        os.path.dirname(fileio.path("flattened network svg")),
+        TRACE_OVERLAYS_FILENAME,
+    )
+
+
+def read_trace_overlays_svg_text():
+    """
+    Analyze drawing as one SVG.
+
+    Build writes ``trace_overlays.svg``. A later open reads that file. If it is
+    missing or older than the masters, compose once and keep the text until the
+    masters change. The view does not re-parse the three SVGs on every request.
+    """
+
+    def file_mtime(path):
+        try:
+            return os.path.getmtime(path) if path and os.path.isfile(path) else 0
+        except OSError:
+            return 0
+
+    composed = trace_overlays_svg_path()
+    masters = [
+        fileio.path("flattened network svg"),
+        fileio.path("circuits overlay"),
+        fileio.path("cable overlay"),
+    ]
+    key = (file_mtime(composed), tuple(file_mtime(path) for path in masters))
+    if _trace_overlays_cache["key"] == key and _trace_overlays_cache["text"]:
+        return _trace_overlays_cache["text"]
+    text = ""
+    composed_mtime, master_mtimes = key
+    newest_master = max(master_mtimes) if master_mtimes else 0
+    if composed_mtime and composed_mtime >= newest_master:
+        try:
+            with open(composed, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            text = ""
+    if not text:
+        text = build_trace_overlays_svg_text()
+    _trace_overlays_cache["key"] = key
+    _trace_overlays_cache["text"] = text
+    return text
+
+
 def write_trace_overlays_svg(rows=None):
     """
     Write the Analyze overlays: network skeleton + conductor traces + cable traces.
 
-    Call at the end of harness build. Analyze loads these same files via
-    :func:`build_trace_overlays_svg_text`. These are not PDF masters — see
-    :func:`_overlay_svg_text`.
+    Call at the end of harness build. Also writes the combined ``trace_overlays.svg``
+    that Analyze serves directly. These are not PDF masters: they have no
+    contents-start/end wrapper and are laid out at console scale.
     """
     if rows is None:
         rows = read_rows()
     os.makedirs(fileio.dirpath("generated_svgs"), exist_ok=True)
+    _trace_overlays_cache["key"] = None
+    _trace_overlays_cache["text"] = ""
 
     base_path = fileio.path("flattened network svg")
     with open(base_path, "w", encoding="utf-8") as f:
@@ -1358,8 +1671,13 @@ def write_trace_overlays_svg(rows=None):
     with open(cable_path, "w", encoding="utf-8") as f:
         f.write(build_cable_overlay_master_svg_text(rows=rows))
 
+    composed_path = trace_overlays_svg_path()
+    with open(composed_path, "w", encoding="utf-8") as f:
+        f.write(build_trace_overlays_svg_text())
+
     return {
         "flattened network svg": base_path,
         "circuits overlay": circuits_path,
         "cable overlay": cable_path,
+        "trace overlays": composed_path,
     }

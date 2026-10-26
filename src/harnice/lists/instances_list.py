@@ -10,7 +10,7 @@ COLUMNS = [
     "bom_line_number",  # if this instance represents a physical procurable good, it gets assigned a line number on a bill of materials
     "mfg",  # manufacturer of this instance
     "mpn",  # manufacturer part number
-    "item_type",  # what this instance is: connector, backshell, cable, conductor, node, segment, note, macro, and so on
+    "item_type",  # what this instance is: harness_connector, backshell, cable, conductor, node, segment, note, flagnote, macro, and so on
     "location_type",  # node or segment; a node is a point, a segment is a length between nodes
     "segment_group",  # the group of segments that this instance is part of
     "segment_order",  # the sequential id of this item in its segment group
@@ -18,24 +18,24 @@ COLUMNS = [
     "channel_group",  # other instances associated with this one because they are part of the same channel will share this value
     "circuit_id",  # which signal this component is electrically connected to
     "circuit_port_number",  # the sequential id of this item in its signal chain
-    "node_at_end_a",  # derived from formboard definition
-    "node_at_end_b",  # derived from formboard definition
+    "node_at_end_a",  # end A: a node id on a segment, or a cavity instance name on a conductor
+    "node_at_end_b",  # end B: a node id on a segment, or a cavity instance name on a conductor
     "print_name_at_end_a",  # human-readable name of this instance if needed, associated with 'node_at_end_a'
     "print_name_at_end_b",  # human-readable name of this instance if needed, associated with 'node_at_end_b'
     "parent_csys_instance_name",  # the other instance upon which this instance's location is based
     "parent_csys_outputcsys_name",  # the specific output coordinate system of the parent that this instance's location is based
     "2d_translate",  # dict {x, y, rotate} in the parent CSYS; used by flattened drawings
     "3d_translate",  # 6DOF dict {x, y, z, alpha, beta, gamma}; α about X, γ about Z, used by STEP
-    "absolute_rotation",  # manual add, not nominally used unless it's a flagnote, segment, or node
+    "absolute_rotation",  # drawing heading in degrees; derive writes it on nodes and segments, flagnotes use 0
     "csys_children",  # imported csys children from library attributes file
     "cable_group",  # other instances associated with this one because they are part of the same cable will share this value
     "cable_identifier",  # which conductor in that cable this instance is assigned to (unique within the cable)
-    "length",  # derived from formboard definition, the length of a segment
-    "length_tolerance",  # derived from formboard definition, the tolerance on the length of a segment
+    "length",  # segment arc length from derive, or the routed length of a conductor or cable
+    "length_tolerance",  # tolerance kept from the flattened CSV when derive rewrites a segment
     "diameter",  # apparent diameter of a segment, used when the segment is drawn
     "appearance",  # see harnice.utils.appearance for details
     "device_configuration",  # compact JSON of filled configuration-setup answers (from BOM)
-    "note_type",  # build_note, rev_note, etc
+    "note_type",  # build_note, rev_change_callout, bom_item, part_name, and other note kinds
     "note_number",  # if there is a counter involved (rev, bom, build_note, etc)
     "note_parent",  # the instance the note applies to. typically don't use this in the instances list, just note_utils
     "note_text",  # the content of the note
@@ -79,12 +79,22 @@ COLUMNS = [
 
 
 def read():
-    """Return the current instances list (cached)."""
+    """
+    Use this when a harness or system build needs every row of the instances list in the revision that is open.
+
+    Return every row of the instances list.
+
+    The file is ``fileio.path("instances list")``. Cells come back as
+    strings. ``attribute_of`` parses a cell that starts with ``[`` or ``{``.
+    """
     return cached_tsv.read(fileio.path("instances list"))
 
 
 def new_instance(instance_name, instance_data, ignore_duplicates=False):
-    """Add a new instance to the instances list.
+    """
+    Use this when a harness or system build needs one new item added to the instances list.
+
+    Add a new instance to the instances list.
 
     ## Usage
     `new_instance(instance_name, instance_data, ignore_duplicates=False)`
@@ -133,7 +143,10 @@ def new_instance(instance_name, instance_data, ignore_duplicates=False):
 
 
 def modify(instance_name, instance_data):
-    """Update columns for an existing instance by name.
+    """
+    Use this when a harness or system build needs to change columns on an item already in the instances list.
+
+    Update columns for an existing instance by name.
 
     ## Args
     - `instance_name`: The unique name of the instance to modify.
@@ -154,7 +167,10 @@ def modify(instance_name, instance_data):
 
 
 def remove_instance(instance_to_delete):
-    """Remove one instance from the instances list.
+    """
+    Use this when a harness or system build needs one item removed from the instances list.
+
+    Remove one instance from the instances list.
 
     ## Args
     - `instance_to_delete`: Instance row dict (or any dict) whose `instance_name` key identifies the instance to remove. Matching is done by `instance_name` only.
@@ -168,12 +184,19 @@ def remove_instance(instance_to_delete):
 
 
 def new():
-    """Create a new empty instances list file with only the standard header (COLUMNS). Overwrites existing file if present."""
+    """
+    Use this when the project build is starting the instances list. Harness and system builds call this before the script and replace the file. A build script does not call it again.
+
+    Create a new empty instances list file with only the standard header (COLUMNS). Overwrites existing file if present.
+    """
     cached_tsv.write(fileio.path("instances list"), COLUMNS, [])
 
 
 def assign_bom_line_numbers():
-    """Assign sequential BOM line numbers to instances that have `bom_line_number` set to "True".
+    """
+    Use this when a harness or system build needs sequential BOM line numbers on instances whose bom_line_number cell is "True".
+
+    Assign sequential BOM line numbers to instances that have `bom_line_number` set to "True".
 
     Groups by MPN and assigns the same line number to all instances sharing an MPN. Requires every such instance to have a non-empty `mpn`. Line numbers are assigned in order of first occurrence of each MPN.
 
@@ -202,7 +225,10 @@ def assign_bom_line_numbers():
 
 
 def attribute_of(target_instance, attribute):
-    """Return the value of one column for a single instance.
+    """
+    Use this when a harness or system build needs one column of one item in the instances list.
+
+    Return the value of one column for a single instance.
 
         String values that look like Python literals (list or dict, e.g. starting with `[` or `{`) are parsed with `ast.literal_eval` and the parsed value is returned; otherwise the raw string is returned.
 
@@ -227,7 +253,10 @@ def attribute_of(target_instance, attribute):
 
 
 def instance_in_connector_group_with_item_type(connector_group, item_type):
-    """Return the single instance in a connector group with the given item type.
+    """
+    Use this when a harness build needs the single connector, backshell, or other item type in one connector group.
+
+    Return the single instance in a connector group with the given item type.
 
     ## Args
     - `connector_group`: The `connector_group` value to match.
@@ -261,6 +290,8 @@ def instance_in_connector_group_with_item_type(connector_group, item_type):
 
 def seed_connector_nodes():
     """
+    Use this when a harness build needs a node instance for each connector group, with that group's connectors parented to the node.
+
     Creates a node instance for each connector group and parents each connector to it.
 
     Intended for harness build instructions after connectors exist (for example after
@@ -303,7 +334,10 @@ def seed_connector_nodes():
 
 
 def raise_error_on_unassigned_connectors(how_to_fix=None):
-    """Raise if any ``harness_connector`` instance has no ``mpn`` assigned.
+    """
+    Use this when a harness build should stop because a harness connector still has no manufacturer part number.
+
+    Raise if any ``harness_connector`` instance has no ``mpn`` assigned.
 
     Call this after connector assignment (parent ``connector_chooser`` and any
     local rules) and before ``library_utils.pull``.
@@ -345,7 +379,10 @@ def raise_error_on_unassigned_connectors(how_to_fix=None):
 
 
 def list_of_uniques(attribute):
-    """Return a list of unique non-empty values for one column across all instances.
+    """
+    Use this when a harness or system build needs the distinct non-empty values in one column of the instances list.
+
+    Return a list of unique non-empty values for one column across all instances.
 
     ## Args
     - `attribute`: The column name to collect (e.g. `"harness"`, `"item_type"`).

@@ -7,6 +7,8 @@ from harnice.lists import instances_list
 
 def rebuild():
     """
+    Use this when a system build needs the post-harness instances list rebuilt from the harnesses that were pushed and from system instances those harnesses do not cover.
+
     Build the 'post harness instances list' by merging instance data from:
       - Every ``instances.tsv`` under the system ``harnesses/`` directory
       - The system-level instances list for harnesses not covered by those files, and for
@@ -73,7 +75,10 @@ def rebuild():
 
 
 def push(path_to_system_rev, system_pn_rev):
-    """Copy this harness instances list into a system revision's harnesses folder.
+    """
+    Use this when a harness build needs its instances list copied into a system revision's harnesses folder.
+
+    Copy this harness instances list into a system revision's harnesses folder.
 
     **Args:**
     - `path_to_system_rev`: Directory of the system revision. The instances list is copied to ``{path_to_system_rev}/harnesses/instances.tsv``.

@@ -9,6 +9,7 @@ from pathlib import Path
 _COMPILED = "__compiled__" in globals()
 
 # Public download / release notes (harnice.io points here, not the source repo).
+HARNICE_APP_RELEASES_REPO = "https://github.com/harnice/harnice-app-releases"
 HARNICE_APP_RELEASES_LATEST = (
     "https://github.com/harnice/harnice-app-releases/releases/latest"
 )

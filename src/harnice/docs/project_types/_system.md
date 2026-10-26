@@ -75,7 +75,7 @@ After Harnice exports a BOM and system connector list from your block diagram SV
 
 1. **Before build instructions:** `channel_map.new()` runs automatically during `system.build()`. It reads the system connector list and each device's signals list, and writes one channel-map row per channel endpoint `(device_refdes, channel_id[, repeat_channel_id])`.
 
-1. **In build instructions (typical order):** map channels → `channel_map.compile_hierarchical()` → `passthrough_map.new()` → optional `route()` hops → `passthrough_map.resolve()` → build the circuits list.
+1. **In build instructions (typical order):** map channels → `channel_map.flatten()` → `passthrough_map.new()` → optional `route()` hops → `passthrough_map.resolve()` → build the circuits list.
 
 1. **After mapping:** `circuits_list.new()` expands every mapped channel pair (and its passthrough path) into individual conductor circuits. A multi-channel junction row (no `to_*` partner) becomes one circuit per signal: from is `from_channel.signal`, to is `mcj.signal`. Signal names come from the first channel type seen on that junction id.
 
@@ -87,7 +87,7 @@ The default system build instructions follow this pattern:
 # channel_map.map(("MIC1", "out1"), ("X1", "ch0", "A"))
 
 channel_map.map_unmapped_compatibles_alphabetically()
-channel_map.compile_hierarchical()
+channel_map.flatten()
 
 passthrough_map.new()
 
@@ -147,11 +147,13 @@ Maps one endpoint to another with the same group and face rules as `map()`, and 
 
 For each `group_of_connected_harnesses`, rows are sorted alphabetically by device refdes and channel id. Channels with more than one endpoint (passthroughs) are skipped, even if nothing else is left. For each remaining row whose `from_key` is not yet mapped, Harnice scans later rows in the same group of connected harnesses and maps to the **first** candidate whose channel types are mutually compatible: either `to_type` is in `chtype.compatibles(from_type)` or `from_type` is in `chtype.compatibles(to_type)`. This is deterministic but not unique—use manual `channel_map.map()` first for anything that must not follow alphabetical pairing.
 
-#### Hierarchical channel map: `channel_map.compile_hierarchical()`
+#### Flattened channel map: `channel_map.flatten()`
 
-Writes `maps/hierarchical_channel_map.tsv` with the same columns as the channel map. The sheet starts with this system's channel map, then appends the channel map imported with each child subsystem, and repeats that walk through every nested subsystem. Those imported channel maps are the source of truth — this does not rebuild a subsystem's mappings.
+Writes `maps/channel_map_flattened.tsv` with the same columns as the channel map. The sheet starts with this system's channel map, then appends the channel map imported with each child subsystem, and repeats that walk through every nested subsystem. Those imported channel maps are the source of truth for which endpoints were mapped. This does not re-run channel mapping inside the subsystem.
 
-Rows from a subsystem prefix that subsystem's instance name onto `group_of_connected_harnesses`, `from_device_refdes`, `to_device_refdes`, `multi_ch_junction_id`, `chain_of_connectors`, and `chain_of_harnesses`. Each entry in a list is prefixed (`AMP.H1+AMP.H2`, `AMP.MIC3.J1;AMP.X1.A`). Nested subsystems accumulate prefixes (`AMP.PRE.MIC1`). `manual_map_channel_python_equiv` is left blank. Channel ids, repeat ids, and channel types are copied unchanged. This system's own rows are not prefixed. Call it after `map_unmapped_compatibles_alphabetically()`. It snapshots the channel map as it stands at the call.
+Before those prefixes are applied, a passthrough channel whose two faces are both mapped patch ends is folded into one row between the outer endpoints. The lexicographically smaller outer endpoint is the from side. `chain_of_connectors` records the disconnect between them. `chain_of_harnesses` on that row is left blank. A chain of dual-mapped disconnects folds to the two outer devices. A channel with only one face mapped stays as that one patch. A row that already joins the two faces is left unchanged. Rows with no partner and no multi-channel junction are omitted. A junction row is kept. The flat channel map is not rewritten.
+
+Rows from a subsystem prefix that subsystem's instance name onto `group_of_connected_harnesses`, `from_device_refdes`, `to_device_refdes`, `multi_ch_junction_id`, `chain_of_connectors`, and `chain_of_harnesses`. Each entry in a list is prefixed (`AMP.H1+AMP.H2`, `AMP.MIC3.J1;AMP.X1.A`). Nested subsystems accumulate prefixes (`AMP.PRE.MIC1`). `from_repeat_channel_id`, `to_repeat_channel_id`, and `manual_map_channel_python_equiv` are omitted. `from_channel_type_description` and `to_channel_type_description` sit beside the channel type columns and are the `description` from that type's `channel_types.tsv`. Channel ids and channel types are copied unchanged. This system's own rows are not prefixed. Call it after `map_unmapped_compatibles_alphabetically()`. It snapshots the channel map as it stands at the call.
 
 #### Channel-map columns filled later
 
@@ -190,6 +192,13 @@ Completes passthrough routing for each mapped channel (optional user `route()` w
 - Both endpoints of a `map()`, and any `route()` hop, must be in the same group of connected harnesses.
 
 
+---
+
+## Physical model
+
+Open **physical model** on a system to pose every placed device that has a `body.step`. Poses and fasten mates are `physical.json` (`fileio.path("physical assembly")`). The page rewrites `assembly.step` from that file. How the mates solve, and how a device gets a body, is [CAD](../cad.md).
+
+
 ## File Structure
 
 Reference the files in your project by calling `fileio.path("file key")` from your script. They'll automatically use this structure:
@@ -203,6 +212,10 @@ fileio.path("build instructions")                        |-- build.py
 fileio.path("instances list")                            |-- instances.tsv
 fileio.path("block diagram")                             |-- blockdiagram.svg
 fileio.path("icd")                                       |-- signals.tsv
+fileio.path("physical assembly")                         |-- physical.json
+fileio.path("assembly")                                  |-- assembly.step
+fileio.path("available network")                         |-- available_network.json
+fileio.dirpath("contexts")                               |-- contexts/
 fileio.dirpath("instance_data")                          |-- instance_data/
 fileio.dirpath("harnesses")                              |-- harnesses/
 fileio.dirpath("lists")                                  |-- lists/
@@ -214,7 +227,7 @@ fileio.path("mapped channels set")                       |   |-- mapped.tsv
 fileio.path("library history")                           |   L-- libhist.tsv
 fileio.dirpath("maps")                                   L-- maps/
 fileio.path("channel map")                                   |-- channels.tsv
-fileio.path("hierarchical channel map")                      |-- hierarchical_channel_map.tsv
+fileio.path("flattened channel map")                         |-- channel_map_flattened.tsv
 fileio.path("passthrough map")                               |-- passthrough.tsv
 fileio.path("passthrough routing context")                   |-- context.tsv
 fileio.path("pending forced channels")                       |-- forced_channels_pending.tsv

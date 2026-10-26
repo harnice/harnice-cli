@@ -31,7 +31,10 @@ def _colored(text, color):
 
 
 def warn(message):
-    """Print ``Warning: {message}`` to stdout in yellow.
+    """
+    Use this when a build should tell the user about a problem and continue. Raising an exception stops the build.
+
+    Print ``Warning: {message}`` to stdout in yellow.
 
     **Args:**
     - `message`: Warning text (the ``Warning:`` prefix is added).
@@ -171,6 +174,7 @@ def main():
     fileio.verify_revision_structure()
     _ensure_drawnby()
     item_type = rev_history.info(field="project_type")
+    state.set_project_type(item_type)
 
     # -----------------------------
     # Load project type module

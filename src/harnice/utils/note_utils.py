@@ -17,6 +17,8 @@ def new_note(
     affectedinstances=None,
 ):
     """
+    Use this when a harness build needs a note instance created or updated.
+
     Creates or updates a note instance.
 
     Behavior:
@@ -122,6 +124,8 @@ def new_note(
 
 def assign_buildnote_numbers():
     """
+    Use this when a harness build needs sequential numbers written onto the build-note instances.
+
     Assigns sequential numbers to build note instances.
 
     Iterates through all note instances in the instances list and assigns sequential
@@ -141,6 +145,8 @@ def assign_buildnote_numbers():
 
 def make_rev_history_notes(rev):
     """
+    Use this when a harness build needs revision-change callout notes taken from one revision-history row.
+
     Creates revision change callout notes based on revision history.
 
     Creates a revision change callout note for a given revision, linking it to
@@ -168,6 +174,8 @@ def make_rev_history_notes(rev):
 
 def make_bom_flagnote(affected_instance, output_csys_name):
     """
+    Use this when a harness drawing needs the flagnote dict for one instance's BOM line.
+
     Creates a BOM item flagnote dictionary for an instance.
 
     Creates a flagnote configuration dictionary that displays the BOM line number
@@ -180,7 +188,7 @@ def make_bom_flagnote(affected_instance, output_csys_name):
         flagnote should be positioned.
 
     **Returns:**
-    - `dict`: A flagnote instance dictionary ready to be added to the instances list.
+    - `dict`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``.
     """
     return {
         "harness": state.harness,
@@ -202,6 +210,8 @@ def make_bom_flagnote(affected_instance, output_csys_name):
 
 def make_part_name_flagnote(affected_instance, output_csys_name):
     """
+    Use this when a harness drawing needs the flagnote dict that prints one instance's part name.
+
     Creates a part name flagnote dictionary for an instance.
 
     Creates a flagnote configuration dictionary that displays the print name
@@ -215,7 +225,7 @@ def make_part_name_flagnote(affected_instance, output_csys_name):
         flagnote should be positioned.
 
     **Returns:**
-    - `dict`: A flagnote instance dictionary ready to be added to the instances list.
+    - `dict`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``.
     """
     print_name = (affected_instance.get("print_name") or "").strip() or (
         affected_instance.get("instance_name") or ""
@@ -240,6 +250,8 @@ def make_part_name_flagnote(affected_instance, output_csys_name):
 
 def make_buildnote_flagnote(note_instance, affected_instance, output_csys_name):
     """
+    Use this when a harness drawing needs the flagnote dict that points a build note at one instance.
+
     Creates a build note flagnote dictionary linking a note to an instance.
 
     Creates a flagnote configuration dictionary that displays a build note on
@@ -253,7 +265,7 @@ def make_buildnote_flagnote(note_instance, affected_instance, output_csys_name):
         flagnote should be positioned.
 
     **Returns:**
-    - `dict`: A flagnote instance dictionary ready to be added to the instances list.
+    - `dict`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``.
     """
     return {
         "harness": state.harness,
@@ -275,6 +287,8 @@ def make_buildnote_flagnote(note_instance, affected_instance, output_csys_name):
 
 def make_rev_change_flagnote(note_instance, affected_instance, output_csys_name):
     """
+    Use this when a harness drawing needs the flagnote dict that points a revision-change callout at one instance.
+
     Creates a revision change callout flagnote dictionary linking a note to an instance.
 
     Creates a flagnote configuration dictionary that displays a revision change
@@ -288,7 +302,7 @@ def make_rev_change_flagnote(note_instance, affected_instance, output_csys_name)
         flagnote should be positioned.
 
     **Returns:**
-    - `dict`: A flagnote instance dictionary ready to be added to the instances list.
+    - `dict`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``.
     """
     return {
         "harness": state.harness,
@@ -310,6 +324,8 @@ def make_rev_change_flagnote(note_instance, affected_instance, output_csys_name)
 
 def parse_note_instance(instance):
     """
+    Use this when a harness build needs note_affected_instances on a note row as a Python list.
+
     Return a full copy of `instance`, but with note_affected_instances
     parsed into a real Python list (or left alone if blank).
 
@@ -335,6 +351,8 @@ def parse_note_instance(instance):
 
 def get_lib_build_notes(instance):
     """
+    Use this when a harness build needs the build notes a library part stored on one instance.
+
     Returns list of build_notes for this instance from the TSV row.
     Safely parses with ast.literal_eval.
     Always returns a Python list.
@@ -362,6 +380,8 @@ def get_lib_build_notes(instance):
 
 def get_lib_tools(instance):
     """
+    Use this when a harness build needs the tools a library part stored on one instance.
+
     Returns list of tools for this instance from the TSV row.
     Safely parses with ast.literal_eval.
     Always returns a Python list.
@@ -389,6 +409,8 @@ def get_lib_tools(instance):
 
 def combine_notes(keep_note_text, merge_note_texts, note_type=None):
     """
+    Use this when a harness build needs several notes folded into one note that lists every instance they covered.
+
     Combines multiple notes by merging their affected instances into one note.
 
     Merges one or more notes into a single note by combining their affected instances

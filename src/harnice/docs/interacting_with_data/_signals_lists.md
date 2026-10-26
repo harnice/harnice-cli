@@ -34,12 +34,22 @@ Signals lists are usually repetative, long, and deterministic. Harnice helps you
 ---
 ##Commands
 *These functions are already available in build instructions as `signals_list`. Use them as written.*
+??? info "`signals_list.read(path_to_signals_list=None)`"
+
+    Use this when a device or system build needs the rows of a signals list: a path, a file key, or the signals list of the revision that is open.
+    
+    Return signals-list rows from a path, file key, or the current project list.
+
 ??? info "`signals_list.new()`"
 
+    Use this when a device build is starting the signals list and should replace the file that is already there.
+    
     Create a signals TSV at fileio.path("signals list") with only the header row.
 
 ??? info "`signals_list.append(**kwargs)`"
 
+    Use this when a device build needs one signal added to the signals list.
+    
     Append one signal row. Missing optional fields are written as empty strings.
     
     Required: channel_id, signal, cavity, connector_id, channel_type, and exactly
@@ -57,6 +67,8 @@ Signals lists are usually repetative, long, and deterministic. Harnice helps you
 
 ??? info "`signals_list.cavity_of_signal(channel_id, signal, path_to_signals_list, repeat_channel_id='')`"
 
+    Use this when a build needs the cavity one signal uses on a channel endpoint.
+    
     Return the cavity a signal uses on one channel endpoint.
     
     **Args:**
@@ -67,6 +79,8 @@ Signals lists are usually repetative, long, and deterministic. Harnice helps you
 
 ??? info "`signals_list.connector_id_of_channel(channel_id, path_to_signals_list, repeat_channel_id='')`"
 
+    Use this when a build needs the connector id of one channel in a signals list.
+    
     Return ``connector_id`` for a channel endpoint.
     
     **Args:**

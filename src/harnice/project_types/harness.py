@@ -174,7 +174,9 @@ def file_structure():
             "available.json": "available network",
             "entities.json": "chosen entity list",
             # Reference CAD dropped in from the file browser. .step/.stp files
-            # are drawn on the available and chosen network 3D pages.
+            # are drawn on the available and chosen network 3D pages. A harness
+            # whose source system has a physical model also draws that
+            # assembly.step, without copying it into this folder.
             "contexts": {},
         },
         "generated_svgs": {

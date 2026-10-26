@@ -1,23 +1,112 @@
 import copy
 import json
 import math
+import re
 
 from harnice import fileio
 
 
+def _connector_ids(node):
+    """Connector ids a mating-connector node stands for, in stored order."""
+    mates = node.get("mates")
+    if isinstance(mates, list) and mates:
+        ids = []
+        for mate in mates:
+            if isinstance(mate, dict) and mate.get("device") and mate.get("mate"):
+                ids.append(f"{mate['device']}.{mate['mate']}")
+        if ids:
+            return ids
+    mate = node.get("mate")
+    if isinstance(mate, dict) and mate.get("device") and mate.get("mate"):
+        return [f"{mate['device']}.{mate['mate']}"]
+    node_id = str(node.get("node_id") or "")
+    if node_id.startswith("{") and node_id.endswith("}") and "+" in node_id:
+        return [part for part in node_id[1:-1].split("+") if part]
+    return []
+
+
+def _is_mate_node(node):
+    return bool(_connector_ids(node))
+
+
+def _coalesce_coincident_mate_nodes(nodes, near):
+    """One node per point shared by mating connectors. Other nodes stay put."""
+
+    def _node_id_key(text):
+        return [
+            int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r"(\d+)", str(text))
+        ]
+
+    def _combined_node_id(ids):
+        ordered = sorted(set(ids), key=_node_id_key)
+        if len(ordered) <= 1:
+            return ordered[0] if ordered else ""
+        return "{" + "+".join(ordered) + "}"
+
+    kept = []
+    clusters = []
+    for node in nodes:
+        if not _is_mate_node(node):
+            kept.append(node)
+            continue
+        location = tuple(node["location"])
+        for cluster_location, group in clusters:
+            if near(location, cluster_location):
+                group.append(node)
+                break
+        else:
+            clusters.append((location, [node]))
+    for _location, group in clusters:
+        ids = []
+        for node in group:
+            for connector_id in _connector_ids(node):
+                if connector_id not in ids:
+                    ids.append(connector_id)
+        ordered = sorted(ids, key=_node_id_key)
+        lead_id = ordered[0]
+        lead = group[0]
+        for node in group:
+            if lead_id in _connector_ids(node):
+                lead = node
+                break
+        device, mate = lead_id.rsplit(".", 1)
+        combined = {
+            "node_id": _combined_node_id(ordered),
+            "location": list(lead["location"]),
+            "alpha": lead.get("alpha"),
+            "beta": lead.get("beta"),
+            "gamma": lead.get("gamma"),
+            "mate": {"device": device, "mate": mate},
+        }
+        if len(ordered) > 1:
+            combined["mates"] = [
+                {"device": item.rsplit(".", 1)[0], "mate": item.rsplit(".", 1)[1]}
+                for item in ordered
+            ]
+        kept.append(combined)
+    return kept
+
+
 def end_all_segments_in_nodes(input_network, proximity_threshold=1e-6):
     """
-    Processes an input network dict.
+    Use this when a harness build needs every segment end closed on a node in the chosen network.
+
+    Give every segment end a node, and reject two different nodes at one location or two segments on the same endpoints.
 
     ## Behavior
 
     - Verifies that each line or spline ends at the location of a node.
     - If two nodes share the same location and the same name, deletes one of them.
+    - Mating-connector nodes that share a location become one node. Its id is
+      ``{nodea+nodeb}``, with the connector ids in order. A fasten record is
+      not consulted: only the locations matter. A node is a mating-connector
+      node when it carries ``mate`` or ``mates``.
     - If a segment endpoint has no matching node, creates one named `f"N{segment_id}A"` or `f"N{segment_id}B"` depending on which end is unmatched.
 
     ## Errors
 
-    - **Duplicate node:** raises `ValueError` if two nodes share the same location but have different names.
+    - **Duplicate node:** raises `ValueError` if two nodes share the same location and they are not both mating-connector nodes.
     - **Duplicate segment:** raises `ValueError` if two segments share the same pair of endpoints.
 
     ## Args
@@ -49,8 +138,8 @@ def end_all_segments_in_nodes(input_network, proximity_threshold=1e-6):
             for n in deduplicated
         ):
             deduplicated.append(node)
-    output_network["nodes"] = deduplicated
-    nodes = deduplicated
+    output_network["nodes"] = _coalesce_coincident_mate_nodes(deduplicated, _near)
+    nodes = output_network["nodes"]
 
     # Step 2: raise if two distinct nodes share a location
     for i, a in enumerate(nodes):
@@ -97,9 +186,11 @@ def end_all_segments_in_nodes(input_network, proximity_threshold=1e-6):
 
 def ensure_nodes_exist(input_network, set_of_required_nodes):
     """
-    Ensures that every node in the list is present in the network.
+    Use this when a harness build needs the required node ids that are still missing from a network.
 
-    Returns the list of required node ids that do not exist.
+    Return the required node ids that are not in the network.
+
+    The network is not modified. Missing ids come back in first-seen order.
 
     ## Args
 
@@ -116,7 +207,9 @@ def ensure_nodes_exist(input_network, set_of_required_nodes):
 
 def calculate_possible_sub_networks(input_network, set_of_required_nodes):
     """
-    Processes an input dict and searches it for all possible solutions connecting a set of nodes to other nodes via a set of segments.
+    Use this when a harness build needs every minimal route that joins a set of required nodes.
+
+    Return every minimal subnetwork that joins all of the required nodes.
 
     Connected segments means segments that share endpoint locations.
 
@@ -127,6 +220,8 @@ def calculate_possible_sub_networks(input_network, set_of_required_nodes):
     There can be zero, one, or many solutions. The output of this function should be a list of network dictionaries that are solutions.
 
     If zero solutions are found, raise an error.
+
+    When exactly one node is required, every segment that leaves that node is kept, with the node at its other end. That other node does not have to be an instance. A lone connector still carries its available-network stub. Zero required nodes still return no segments.
 
     ## Args
 
@@ -142,7 +237,27 @@ def calculate_possible_sub_networks(input_network, set_of_required_nodes):
 
     if len(set_of_required_nodes) <= 1:
         req_nodes = [n for n in nodes if n["node_id"] in set_of_required_nodes]
-        return [{"segments": [], "nodes": req_nodes}]
+        if len(req_nodes) != 1:
+            return [{"segments": [], "nodes": req_nodes}]
+        hub = req_nodes[0]
+        hub_loc = tuple(hub["location"])
+        node_at = {tuple(node["location"]): node for node in nodes}
+        stub_segments = []
+        stub_nodes = {hub["node_id"]: hub}
+        for seg in segments:
+            end_a = tuple(seg.get("location_at_end_a") or [])
+            end_b = tuple(seg.get("location_at_end_b") or [])
+            if end_a == hub_loc:
+                other = node_at.get(end_b)
+            elif end_b == hub_loc:
+                other = node_at.get(end_a)
+            else:
+                continue
+            if other is None or other["node_id"] == hub["node_id"]:
+                continue
+            stub_segments.append(seg)
+            stub_nodes[other["node_id"]] = other
+        return [{"segments": stub_segments, "nodes": list(stub_nodes.values())}]
 
     # Map location tuples to node_ids
     loc_to_node = {}
@@ -221,13 +336,19 @@ def calculate_possible_sub_networks(input_network, set_of_required_nodes):
 
 def find_network_with(input_networks, segment_ids=[], node_ids=[]):
     """
-    Processes a list of input dicts and returns just the networks that contain segments or nodes with id's in their respective lists.
+    Use this when a harness build got more than one route and needs the one that contains a segment id or a node id the user named. Both id lists empty matches nothing.
 
-    For example...
-     - if input networks are [[A, B, C], [C, D, E]] and segments_allowed is [A], only the first network will be returned.
-     - if segments_allowed is [B, E], both networks will be returned.
-     - if segments_allowed is [C], both networks will be returned.
-     - if segments_allowed is [F], neither network will be returned and the list will be empty
+    Keep the networks that contain any listed segment id or any listed node id.
+
+    A network of segments A, B, C and a network of segments C, D, E:
+
+    - ``segment_ids=["A"]`` keeps the first network.
+    - ``segment_ids=["B", "E"]`` keeps both.
+    - ``segment_ids=["C"]`` keeps both.
+    - ``segment_ids=["F"]`` keeps nothing.
+
+    Both ``segment_ids`` and ``node_ids`` empty matches nothing. Call this
+    only when more than one solution came back and a stable id was named.
 
     ## Args
 
@@ -248,7 +369,9 @@ def find_network_with(input_networks, segment_ids=[], node_ids=[]):
 
 def save(network):
     """
-    Stores a network dict into `fileio.path("chosen network")`.
+    Use this when a harness build has finished changing the chosen network and needs that dict written to disk.
+
+    Replace the chosen-network file with this network dict.
 
     ## Args
 

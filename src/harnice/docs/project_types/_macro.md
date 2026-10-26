@@ -62,7 +62,7 @@ build_utils.run_macro(
 **Required arguments**
 
 - `macro_part_number` — the MPN folder name in the library (`standard_harnice_formboard`, `bom_exporter_bottom_up`, …).
-- `lib_subpath` — directories between the library root and the MPN folder. Shipped Harnice macros use `library/macros/harness_artifacts` or `library/macros/system_artifacts`.
+- `lib_subpath` — directories between the library root and the MPN folder. Shipped Harnice macros use `library/macros/harness_artifacts`, `library/macros/system_artifacts`, or `library/macros/device_artifacts`.
 - `lib_repo` — the repo URL as listed in `library_locations.csv`, or `"local"` for a project-local library.
 - `artifact_id` — the instance name of this run. Must be unique in the current project's library history unless you pass `rerun=True`.
 
@@ -116,6 +116,7 @@ Shipped Harnice macros are in the [general library](https://github.com/harnice/h
 
 ```
 library/macros/
+├── device_artifacts/      # macros that write a device body
 ├── harness_artifacts/     # macros that write harness deliverables (drawings, tables, STEP, …)
 └── system_artifacts/      # macros that write system deliverables (subsystem symbol, …)
 ```
@@ -136,7 +137,7 @@ That is the same shape as a connector or a titleblock: part-number folder, revis
 
 ## What macros do
 
-Every shipped Harnice macro reads design data (typically the instances list) and writes files under `instance_data/macro/{artifact_id}/`: BOMs, formboards, PDF sheets, analysis drawings, tables, and similar deliverables. Default harness build instructions call a stack of them at the end of the script; default system build instructions call `subsystem_symbol`.
+Every shipped Harnice macro reads design data (typically the instances list) and writes files under `instance_data/macro/{artifact_id}/`: BOMs, formboards, PDF sheets, analysis drawings, tables, and similar deliverables. Default harness build instructions call a stack of them at the end of the script; default system build instructions call `subsystem_symbol` and `physical_model_drawing`.
 
 You can write any rule you want in Python, save it to a library, and call it from build instructions.
 
@@ -237,6 +238,11 @@ These are the macros that ship in the general library. Unless noted, `lib_repo` 
 | `cutlist_exporter_bottom_up` | `library/macros/harness_artifacts` | not in the default script; call it yourself |
 | `pdf_generator` | `library/macros/harness_artifacts` | default harness and system build (`artifact_id="pdf_drawing-1"`) |
 | `subsystem_symbol` | `library/macros/system_artifacts` | default system build (`artifact_id="subsystem-symbol-1"`) |
+| `physical_model_drawing` | `library/macros/system_artifacts` | default system build (`artifact_id="physical-1"`, before `pdf_generator`) |
+| `build_rectangular_physical_model` | `library/macros/device_artifacts` | device build, when you want a rectangular body (`artifact_id="body-1"`) |
+| `build_rackmount_physical_model` | `library/macros/device_artifacts` | device build, when you want a rack chassis (`artifact_id="body-1"`) |
+| `build_rackmount_enclosure` | `library/macros/device_artifacts` | device build, when you want a rack enclosure (`artifact_id="body-1"`) |
+| `build_physical_model_from_step` | `library/macros/device_artifacts` | device build, when the body is an existing STEP file (`artifact_id="body-1"`) |
 
 
 
@@ -365,7 +371,7 @@ Default call: `artifact_id="wirelist-1"`.
 
 ### `harness_step_builder`
 
-Builds one 3D STEP of the harness from the chosen network and the instances list. Each chosen-network segment is swept as a circular tube along its existing Bezier (or straight line) using that segment's `diameter`. Each cable and conductor mapped onto those segments is swept as its own tube on the same centerline (jacket OD or conductor OD), so the solids overlap and can be shown or hidden independently in STEP mode. Every other instance that already has `{instance_name}-model.step` is copied into the same file at the pose from `bundle_network_utils.calculate_location_3d` (`parent_csys` plus `3d_translate`). Missing models are skipped.
+Builds one 3D STEP of the harness from the chosen network and the instances list. Each chosen-network segment is swept as a circular tube along its existing Bezier (or straight line) using that segment's `diameter`. Each cable and conductor mapped onto those segments is swept as its own tube on the same centerline (jacket OD or conductor OD), so the solids overlap and can be shown or hidden independently in STEP mode. Every other instance that already has `model.step` is copied into the same file at the pose from `bundle_network_utils.calculate_location_3d` (`parent_csys` plus `3d_translate`). Missing models are skipped.
 
 **Args:** `chosen_network` — the chosen (solved) 3D network dict. Default harness build passes `bundle_network`. `input_instances` — which instances to write into the STEP. Default harness build passes `instances_list.read()`. Placement still walks the full instances list.
 
@@ -396,7 +402,7 @@ How it works:
 1. Reads `page_setup` from the `run_macro` kwargs (`{"pages": […]}`). Edit pages there — the console page-info panel is read-only.
 2. Walks the revision folder for files named `{pn-rev}-{master_name}-master.svg` whose SVG contains `id="{master_name}-contents-start"`, and composites them into `{artifact_id}-mastercontents.svg` (parked far off-page).
 3. For each page in the setup: pulls the titleblock (`tblock_mpn` / `tblock_lib_repo` / `tblock_lib_subpath`), applies text replacements, writes a user-editable page SVG under `page_svgs/`. Page identity is `text_replacements["tblock-key-pagedesc"]`. Default callers fill PN/rev from `state.partnumber`, description/drawn-by from `rev_history.info`, scale from `scales.get("A")`, and `autosheet` for the sheet number.
-4. Exports each page SVG to PDF with Inkscape and merges them to `{pn-rev}-{artifact_id}.pdf` at the **revision root**.
+4. Exports each page SVG to PDF with Inkscape and merges them to `{pn-rev}-{artifact_id}.pdf` at the **revision root**. Linked raster images stay links in the sheet SVG. The export copy embeds those files so the PDF contains the pixels.
 
 **Args:** `artifact_id` (instance name, default `"pdf_drawing-1"`), `page_setup` (dict of pages). Put the drawing scale in `text_replacements["tblock-key-scale"]` (typically `scales.get("A")`). Default harness and system build instructions inline this dict (harness: overview / to-from table / channel map; system: a single `block_diagram` page).
 
@@ -416,6 +422,30 @@ On first seed the macro writes a blank SVG and does not otherwise redraw a symbo
 **Args:** `artifact_id` (default `"subsystem-symbol-1"`), `scale` (default `0.1`).
 
 **Writes:** `{pn-rev}-{artifact_id}-subsystem-symbol.svg`, `{pn-rev}-{artifact_id}-params.json` (stores `scale`).
+
+
+### `physical_model_drawing`
+
+Draws the system physical assembly as one orthographic view. OpenCascade projects each placed device body to its visible edges and silhouettes, then the drawing adds that device's instance name. Hidden lines, mate connectors, and devices named in `hidden_instances` are left out.
+
+A face photo that faces the camera is an SVG `<image>` link to the PNG already stored on that device, relative to the revision folder. The picture sits on the bounding-box face, the same face the physical-model viewer paints. `pdf_generator` embeds those links as raster images when it writes the PDF.
+
+**Args:**
+
+- `scale` — drawing scale, the same numbers as a formboard. `1` is full size (96 px per model inch, then this factor).
+- `hidden_instances` — device names to omit. A list, or one name.
+- `orientation` — `front`, `back`, `left`, `right`, `top`, or `bottom`, or the viewport as `alpha`, `beta`, `gamma` (a dict or a 3-number list). `(0, 0, 0)` is the front view: look along +Y, with +X to the right and +Z up. The rotation is `R = Rx(α) · Ry(β) · Rz(γ)`, the same convention as a device pose. Named views look straight at that face, with the photo upright the way the physical-model viewer shows it.
+
+**Writes:** `{artifact_id}-master.svg`.
+
+Default system build calls it once (`artifact_id="physical-1"`, `scale=1`, `orientation="front"`), before `pdf_generator`.
+
+
+### Device body macros
+
+`build_rectangular_physical_model`, `build_rackmount_physical_model`, `build_rackmount_enclosure`, and `build_physical_model_from_step` live in `library/macros/device_artifacts`. A device build calls one of them. The macro writes `fileio.path("body")`, the device's `body.step`. Arguments, the inch frame, and mate connectors are on the [CAD](../cad.md) page.
+
+Default call: `artifact_id="body-1"`.
 
 
 ## File Structure

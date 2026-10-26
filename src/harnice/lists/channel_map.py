@@ -22,6 +22,24 @@ COLUMNS = [
     "manual_map_channel_python_equiv",  # channel_map.map(...) call that produced this pairing; copy back into build instructions
 ]
 
+# Flattened channel map (maps/channel_map_flattened.tsv). Repeat ids stay on
+# the channel map, where map() needs them. Descriptions come from
+# channel_types.tsv and sit beside the type.
+FLATTENED_COLUMNS = [
+    "group_of_connected_harnesses",
+    "from_device_refdes",
+    "from_device_channel_id",
+    "from_channel_type",
+    "from_channel_type_description",
+    "to_device_refdes",
+    "to_device_channel_id",
+    "to_channel_type",
+    "to_channel_type_description",
+    "multi_ch_junction_id",
+    "chain_of_connectors",
+    "chain_of_harnesses",
+]
+
 # Forced patches whose signal names differ, waiting for circuits_list.force().
 PENDING_COLUMNS = [
     "from_device_refdes",
@@ -42,7 +60,11 @@ mapped_channel_documentation_description = "A mapped channel is a connection fro
 
 
 def read():
-    """Return the channel map (cached)."""
+    """
+    Use this when a system build needs every row of the channel map in the revision that is open.
+
+    Return the channel map (cached).
+    """
     return cached_tsv.read(fileio.path("channel map"))
 
 
@@ -349,6 +371,8 @@ def _reject_if_not_same_group(from_key, to_key):
 
 def new():
     """
+    Use this when a system build is starting a blank channel map. system.build() calls this before the script and replaces the file. A system script does not call it again.
+
     Makes a new blank channel map. Overwrites existing channel map.
 
     Seeds one row per channel endpoint, including both faces of a passthrough.
@@ -566,6 +590,8 @@ def _apply_mapping(from_key, to_key=None, multi_ch_junction_key="", python_equiv
 
 def map(from_key, to_key=None, multi_ch_junction_key=""):
     """
+    Use this when a system build needs one channel endpoint patched to another, or landed on a multi-channel junction, and the channel types are compatible.
+
     Map one channel endpoint to another (a patch), or consume it onto a
     multi-channel junction.
 
@@ -614,7 +640,10 @@ def map(from_key, to_key=None, multi_ch_junction_key=""):
 
 
 def force(from_key, to_key):
-    """Map one channel endpoint to another regardless of channel-type compatibility.
+    """
+    Use this when a system build needs one channel endpoint patched to another even though the channel types do not match. Pair the signals with circuits_list.force before circuits_list.new.
+
+    Map one channel endpoint to another regardless of channel-type compatibility.
 
     Same key, group, and face rules as ``map()``. A 1:1 patch only: there is
     no ``multi_ch_junction_key``. ``map()`` is unchanged and does not record
@@ -723,7 +752,10 @@ def drop_pending(from_key):
 
 
 def already_mapped_set_append(key):
-    """Mark one endpoint as already mapped.
+    """
+    Use this when a system build needs to mark one channel endpoint as already consumed.
+
+    Mark one endpoint as already mapped.
 
     **Args:**
     - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``. Raises if that key is already in the mapped set.
@@ -736,7 +768,11 @@ def already_mapped_set_append(key):
 
 
 def already_mapped_set():
-    """Return the set of endpoint keys already consumed by ``map`` or ``route``."""
+    """
+    Use this when a system build needs every channel endpoint already consumed by map or route.
+
+    Return the set of endpoint keys already consumed by ``map`` or ``route``.
+    """
     if not os.path.exists(fileio.path("mapped channels set")):
         return set()
     with open(fileio.path("mapped channels set"), newline="", encoding="utf-8") as f:
@@ -745,7 +781,10 @@ def already_mapped_set():
 
 
 def already_mapped(key):
-    """Return whether an endpoint is already in the mapped-channels set.
+    """
+    Use this when a system build needs to know whether one channel endpoint is already consumed by a map or a route.
+
+    Return whether an endpoint is already in the mapped-channels set.
 
     **Args:**
     - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``.
@@ -855,21 +894,254 @@ def passthroughs_consumed_as_patch_ends():
     return consumed
 
 
-def compile_hierarchical():
-    """Write the hierarchical channel map for this system and every child subsystem.
+def _collapse_dual_mapped_passthroughs(rows, signals_root):
+    """Fold dual-mapped passthrough faces into one outer-to-outer row.
+
+    ``signals_root`` is the system directory whose ``instance_data`` holds the
+    signals lists for these rows (the live revision, or a child ``lib/revN``).
+    """
+
+    def endpoint_sort_key(endpoint):
+        return (
+            endpoint["device_refdes"],
+            endpoint["device_channel_id"],
+            endpoint["repeat_channel_id"],
+        )
+
+    def connector_token(endpoint, cache):
+        """``refdes.connector_id`` for one endpoint, or ``None`` when it cannot be resolved."""
+        refdes = endpoint["device_refdes"]
+        key = (signals_root or "", refdes or "")
+        if key not in cache:
+            found = None
+            if signals_root and refdes:
+                for kind in ("device", "system"):
+                    path = os.path.join(
+                        signals_root, "instance_data", kind, refdes, "signals.tsv"
+                    )
+                    if os.path.isfile(path):
+                        found = path
+                        break
+            cache[key] = found
+        path = cache[key]
+        if not path:
+            return None
+        try:
+            connector = signals_list.connector_id_of_channel(
+                endpoint["device_channel_id"],
+                path,
+                endpoint["repeat_channel_id"],
+            )
+        except (ValueError, FileNotFoundError, OSError):
+            return None
+        connector = (connector or "").strip()
+        if not connector:
+            return None
+        return f"{refdes}.{connector}"
+
+    def approach_tokens(row, occurrence, cache, original_ids):
+        """Connector tokens from the outer partner up to and including this face.
+
+        Chains already stored on an imported channel map are per-face routes from
+        ``passthrough_map.resolve()``, including imaginary hops. Only a chain this
+        collapse wrote, on a row created here, is reused. That is what carries an
+        earlier disconnect into the next fold.
+        """
+        if id(row) not in original_ids:
+            tokens = [
+                token.strip()
+                for token in (row.get("chain_of_connectors") or "").split(";")
+                if token.strip()
+            ]
+            if not tokens:
+                return None
+            if occurrence["side"] == "from":
+                tokens = list(reversed(tokens))
+            return tokens
+        partner = connector_token(occurrence["partner"], cache)
+        face = connector_token(occurrence["face"], cache)
+        if not partner or not face:
+            return None
+        return [partner, face]
+
+    def dual_mapped_passthroughs(current_rows, skipped):
+        """Smallest passthrough channel whose two faces are patch ends on two rows."""
+
+        def endpoint_fields(row, side):
+            refdes = (row.get(f"{side}_device_refdes") or "").strip()
+            channel_id = (row.get(f"{side}_device_channel_id") or "").strip()
+            if not refdes or not channel_id:
+                return None
+            return {
+                "device_refdes": refdes,
+                "device_channel_id": channel_id,
+                "repeat_channel_id": (row.get(f"{side}_repeat_channel_id") or "").strip(),
+                "channel_type": (row.get(f"{side}_channel_type") or "").strip(),
+            }
+
+        grouped = {}
+        for index, row in enumerate(current_rows):
+            if (row.get("multi_ch_junction_id") or "").strip():
+                continue
+            from_side = endpoint_fields(row, "from")
+            to_side = endpoint_fields(row, "to")
+            if not from_side or not to_side:
+                continue
+            for side_name, endpoint, partner in (
+                ("from", from_side, to_side),
+                ("to", to_side, from_side),
+            ):
+                if not endpoint["repeat_channel_id"]:
+                    continue
+                key = (endpoint["device_refdes"], endpoint["device_channel_id"])
+                grouped.setdefault(key, []).append(
+                    {
+                        "index": index,
+                        "side": side_name,
+                        "repeat": endpoint["repeat_channel_id"],
+                        "face": endpoint,
+                        "partner": partner,
+                    }
+                )
+
+        for channel in sorted(grouped):
+            if channel in skipped:
+                continue
+            occurrences = grouped[channel]
+            label = f"{channel[0]}.{channel[1]}"
+            if len(occurrences) < 2:
+                continue
+            if len(occurrences) > 2:
+                cli.warn(
+                    f"flattened channel map left {label} uncollapsed: "
+                    "more than two mapped faces"
+                )
+                skipped.add(channel)
+                continue
+            first, second = occurrences
+            if first["index"] == second["index"]:
+                skipped.add(channel)
+                continue
+            if first["repeat"] == second["repeat"]:
+                cli.warn(
+                    f"flattened channel map left {label} uncollapsed: "
+                    "both mapped faces use the same repeat"
+                )
+                skipped.add(channel)
+                continue
+            if endpoint_sort_key(first["partner"]) == endpoint_sort_key(second["partner"]):
+                skipped.add(channel)
+                continue
+            group_a = (
+                current_rows[first["index"]].get("group_of_connected_harnesses") or ""
+            ).strip()
+            group_b = (
+                current_rows[second["index"]].get("group_of_connected_harnesses") or ""
+            ).strip()
+            if group_a != group_b:
+                cli.warn(
+                    f"flattened channel map left {label} uncollapsed: "
+                    f"faces are in different groups ({group_a!r}, {group_b!r})"
+                )
+                skipped.add(channel)
+                continue
+            return channel, occurrences
+        return None
+
+    rows = [
+        {
+            col: "" if row.get(col) is None else str(row.get(col, ""))
+            for col in COLUMNS
+        }
+        for row in rows
+    ]
+    original_ids = {id(row) for row in rows}
+    skipped = set()
+    cache = {}
+    while True:
+        selected = dual_mapped_passthroughs(rows, skipped)
+        if selected is None:
+            return rows
+        channel, occurrences = selected
+        nearer, farther = sorted(
+            occurrences, key=lambda occurrence: endpoint_sort_key(occurrence["partner"])
+        )
+        nearer_tokens = approach_tokens(
+            rows[nearer["index"]], nearer, cache, original_ids
+        )
+        farther_tokens = approach_tokens(
+            rows[farther["index"]], farther, cache, original_ids
+        )
+        if not nearer_tokens or not farther_tokens:
+            missing = nearer["partner"] if not nearer_tokens else farther["partner"]
+            cli.warn(
+                f"flattened channel map left {channel[0]}.{channel[1]} uncollapsed: "
+                "no connector id for "
+                f"{missing['device_refdes']}.{missing['device_channel_id']}"
+            )
+            skipped.add(channel)
+            continue
+
+        collapsed = {col: "" for col in COLUMNS}
+        collapsed["group_of_connected_harnesses"] = (
+            rows[nearer["index"]].get("group_of_connected_harnesses") or ""
+        )
+        for side, endpoint in (("from", nearer["partner"]), ("to", farther["partner"])):
+            collapsed[f"{side}_device_refdes"] = endpoint["device_refdes"]
+            collapsed[f"{side}_device_channel_id"] = endpoint["device_channel_id"]
+            collapsed[f"{side}_repeat_channel_id"] = endpoint["repeat_channel_id"]
+            collapsed[f"{side}_channel_type"] = endpoint["channel_type"]
+        collapsed["chain_of_connectors"] = ";".join(
+            nearer_tokens + list(reversed(farther_tokens))
+        )
+
+        drop = {nearer["index"], farther["index"]}
+        insert_at = min(drop)
+        rewritten = []
+        for index, row in enumerate(rows):
+            if index == insert_at:
+                rewritten.append(collapsed)
+            if index in drop:
+                continue
+            rewritten.append(row)
+        rows = rewritten
+
+
+def flatten():
+    """
+    Use this when a system build needs the flattened channel map of this system and the subsystems it contains.
+
+    Write ``maps/channel_map_flattened.tsv`` for this system and every child subsystem.
 
     Reads this system's channel map, then the channel map imported with each
     child subsystem, recursively. An imported subsystem channel map is the
-    source of truth: this does not rebuild those rows.
+    source of truth for which endpoints were mapped. This does not re-run
+    channel mapping inside the subsystem.
+
+    A passthrough channel whose two faces are both mapped patch ends is folded
+    into one row between the outer endpoints before subsystem prefixes are
+    applied. The lexicographically smaller outer endpoint (refdes, channel id,
+    repeat) is the from side. ``chain_of_connectors`` records the disconnect
+    between them (``SNK-0.J1;X-6.B;X-6.A;SNK-3.J1``). ``chain_of_harnesses``
+    on that row is left blank. A chain of dual-mapped disconnects folds to the
+    two outer devices, with every disconnect in the connector chain. A channel
+    with only one face mapped stays as that one patch. A row that already joins
+    the two faces is left unchanged. Rows with no partner and no
+    multi-channel junction are omitted. A junction row is kept. The flat
+    channel map is not rewritten.
 
     Rows from a subsystem prefix that subsystem's instance name onto
     ``group_of_connected_harnesses``, ``from_device_refdes``,
     ``to_device_refdes``, ``multi_ch_junction_id``, ``chain_of_connectors``,
     and ``chain_of_harnesses``. A list is prefixed per entry (``AMP.H1+AMP.H2``,
     ``AMP.H1;AMP.H2``, ``AMP.MIC3.J1;AMP.X1.A``). Nested subsystems accumulate
-    prefixes (``AMP.PRE.MIC1``). ``manual_map_channel_python_equiv`` is left
-    blank. Channel ids, repeat ids, and channel types are copied unchanged.
-    This system's own rows are not prefixed. Headers match the channel map.
+    prefixes (``AMP.PRE.MIC1``). ``from_repeat_channel_id``,
+    ``to_repeat_channel_id``, and ``manual_map_channel_python_equiv`` are
+    omitted. ``from_channel_type_description`` and
+    ``to_channel_type_description`` sit beside the channel type columns and
+    are the ``description`` from that type's ``channel_types.tsv``. Channel
+    ids and channel types are copied unchanged. This system's own rows are
+    not prefixed.
 
     Call after channel mapping, including
     ``map_unmapped_compatibles_alphabetically()``. The sheet snapshots the
@@ -928,6 +1200,25 @@ def compile_hierarchical():
             out["chain_of_connectors"] = ";".join(tokens)
         return out
 
+    descriptions = {}
+
+    def channel_type_description(channel_type):
+        """``description`` from ``channel_types.tsv``, or blank when it cannot be read."""
+        channel_type = (channel_type or "").strip()
+        if not channel_type:
+            return ""
+        if channel_type in descriptions:
+            return descriptions[channel_type]
+        text = ""
+        try:
+            value = chtype.attribute(channel_type, "description")
+        except (ValueError, FileNotFoundError, OSError, TypeError, SyntaxError):
+            value = ""
+        if value not in (None, "", []):
+            text = str(value).strip()
+        descriptions[channel_type] = text
+        return text
+
     def collect(rows, system_dir, prefix, rev_hint, seen, live):
         """Append this system's namespaced rows, then each child subsystem."""
         real = os.path.realpath(system_dir)
@@ -958,6 +1249,11 @@ def compile_hierarchical():
 
             return found[max(found, key=sort_key)]
 
+        if os.path.isfile(os.path.join(system_dir, "lists", "bom.tsv")):
+            content_root = system_dir
+        else:
+            content_root = revision_dir() or system_dir
+
         if live:
             source_rows = cached_tsv.read(fileio.path("channel map"))
         else:
@@ -973,20 +1269,33 @@ def compile_hierarchical():
             if not path:
                 cli.warn(
                     f"subsystem {prefix} has no imported channel map; "
-                    "its channels are omitted from the hierarchical channel map"
+                    "its channels are omitted from the flattened channel map"
                 )
                 source_rows = []
             else:
                 source_rows = fileio.read_tsv(path)
 
+        source_rows = _collapse_dual_mapped_passthroughs(source_rows, content_root)
         for row in source_rows:
-            rows.append(namespace_row(row, prefix))
+            if not (row.get("multi_ch_junction_id") or "").strip() and not (
+                (row.get("to_device_refdes") or "").strip()
+                and (row.get("to_device_channel_id") or "").strip()
+            ):
+                continue
+            namespaced = namespace_row(row, prefix)
+            presented = {
+                col: namespaced.get(col) or ""
+                for col in FLATTENED_COLUMNS
+                if not col.endswith("_description")
+            }
+            for side in ("from", "to"):
+                presented[f"{side}_channel_type_description"] = channel_type_description(
+                    presented.get(f"{side}_channel_type")
+                )
+            rows.append({col: presented.get(col) or "" for col in FLATTENED_COLUMNS})
 
         # A live revision stores lists/bom.tsv at its root. An imported
         # subsystem keeps that BOM under lib/revN.
-        content_root = system_dir
-        if not os.path.isfile(os.path.join(system_dir, "lists", "bom.tsv")):
-            content_root = revision_dir()
         bom_path = (
             os.path.join(content_root, "lists", "bom.tsv") if content_root else ""
         )
@@ -1020,7 +1329,7 @@ def compile_hierarchical():
 
     rows = []
     collect(rows, fileio.rev_directory(), "", "", set(), True)
-    out_path = fileio.path("hierarchical channel map")
+    out_path = fileio.path("flattened channel map")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    cached_tsv.write(out_path, COLUMNS, rows)
+    cached_tsv.write(out_path, FLATTENED_COLUMNS, rows)
     return rows

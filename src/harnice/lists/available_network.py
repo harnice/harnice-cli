@@ -50,12 +50,17 @@ class AvailableNetwork:
 
 def load():
     """
+    Use this when a harness build needs the available network already stored in this revision.
+
     Load the available network from disk.
 
     If the file does not exist yet, generates a starter network from harness node
     instances, writes it, and returns it:
 
-    - **0 or 1 node instances:** raises ``ValueError``.
+    - **0 node instances:** raises ``ValueError``.
+    - **1:** places that node at ``(0, 0, 0)`` and adds a node instance named
+      ``far`` (``far-2`` if that name is taken) four inches in −X, at
+      ``(-4, 0, 0)``, connected by one segment.
     - **2:** places them at ``(0, 0, 0)`` and ``(x, 0, 0)`` with ``x`` a random
       integer in ``[6, 18]``, connected by one segment.
     - **3 or more:** places a hub at ``(0, 0, 0)`` and each instance node at
@@ -70,22 +75,64 @@ def load():
 
 
 def _generate_from_instances(path: Path):
-    node_names = [
-        instance.get("instance_name")
+    node_instances = [
+        instance
         for instance in instances_list.read()
         if instance.get("item_type") == "node"
     ]
+    node_names = [instance.get("instance_name") for instance in node_instances]
 
-    if len(node_names) < 2:
+    if len(node_names) < 1:
         raise ValueError(
             "Not enough node instances in the harness to generate an available "
-            f"network (found {len(node_names)}; need at least 2)."
+            "network (found 0; need at least 1)."
         )
 
     nodes = []
     segments = []
 
-    if len(node_names) == 2:
+    if len(node_names) == 1:
+        # One real node cannot form a segment. Add a partner four inches
+        # in −X from it so the starter network has a length.
+        loc_a = [0.0, 0.0, 0.0]
+        loc_b = [-4.0, 0.0, 0.0]
+        existing = node_instances[0]
+        partner_id = "far" if node_names[0] != "far" else "far-2"
+        instances_list.new_instance(
+            partner_id,
+            {
+                "harness": existing.get("harness") or "",
+                "item_type": "node",
+                "location_type": "node",
+                "print_name": partner_id,
+            },
+            ignore_duplicates=True,
+        )
+        nodes = [
+            {
+                "node_id": node_names[0],
+                "location": loc_a,
+                "alpha": None,
+                "beta": None,
+                "gamma": None,
+            },
+            {
+                "node_id": partner_id,
+                "location": loc_b,
+                "alpha": None,
+                "beta": None,
+                "gamma": None,
+            },
+        ]
+        segments = [
+            {
+                "segment_id": "segment",
+                "location_at_end_a": loc_a,
+                "location_at_end_b": loc_b,
+                "spline_control_points": [],
+            }
+        ]
+    elif len(node_names) == 2:
         x = float(random.randint(6, 18))
         loc_a = [0.0, 0.0, 0.0]
         loc_b = [x, 0.0, 0.0]
@@ -154,7 +201,10 @@ def _generate_from_instances(path: Path):
 
 
 def source_context_from_path(local_path=None, lib_repo=None, relative_path=None):
-    """Copy a STEP file into this harness as routing context.
+    """
+    Use this when a harness build needs a STEP file copied into networks/contexts/ as routing context for this harness.
+
+    Copy a STEP file into this harness as routing context.
 
     Pass either ``local_path`` or both ``lib_repo`` and ``relative_path``.
     The file is written to ``networks/contexts/`` under its own filename,
@@ -185,7 +235,10 @@ def source_context_from_path(local_path=None, lib_repo=None, relative_path=None)
 
 
 def source_available_network_from_project(project_mpn, project_subpath, project_repo):
-    """Copy another project's available network into this harness.
+    """
+    Use this when a harness build should replace this revision's available network with the available network from another project.
+
+    Copy another project's available network into this harness.
 
     The other project is the library tip (highest revision) of ``project_mpn``
     under ``project_repo`` and ``project_subpath``. Its available-network file

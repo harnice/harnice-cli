@@ -245,6 +245,8 @@ def pull(
     replace_destination=False,
 ):
     """
+Use this when a build needs a library part copied into this project's instance_data.
+
 Imports a part from the library into the project.
 
 Copies a part (device, connector, cable, etc.) from the library repository into
@@ -264,7 +266,7 @@ removes the previous imported destination after the source revision and
 requested files have been validated.
 
 A system import also copies ``maps/channels.tsv`` to the instance. That file
-is the source of truth for a parent system's hierarchical channel map.
+is the source of truth for a parent system's flattened channel map.
 
 **Args:**
 - `input_dict` (dict): Dictionary containing part information with required keys:
@@ -586,6 +588,8 @@ def read_default_refdes_prefix_for_import(input_dict):
 
 def get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None):
     """
+    Use this when a build needs the local checkout of a library URL recorded in repository locations.
+
     Looks up the local filesystem path for a library repository URL.
 
     Reads the `repository_locations.csv` file to find the mapping between a library

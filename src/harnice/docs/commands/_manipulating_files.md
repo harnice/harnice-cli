@@ -48,6 +48,8 @@ Here's the basics of how to read a file structure dictionary:
 
 ??? info "`fileio.path(target_value, structure_dict=None, base_directory=None)`"
 
+    Use this when a build needs the path of a file in the revision that is open, looked up by its file key (for example "instances list" or "revision history").
+    
     Return the full path to a file identified by its file key.
     
     * file structure dict (`state.file_structure`, or **structure_dict** if provided) is searched for a *value* equal to **target_value**. The path is built from the rev directory + **base_directory** (if any) + the key path to that value.
@@ -85,6 +87,8 @@ Here's the basics of how to read a file structure dictionary:
 
 ??? info "`fileio.dirpath(target_key, structure_dict=None, base_directory=None)`"
 
+    Use this when a build needs the path of a folder in the revision that is open, looked up by its directory name (for example "instance_data" or "contexts").
+    
     Return the full path to a directory identified by its key in the file structure.
     
     Searches the file structure (`state.file_structure` or **structure_dict**) for a
@@ -149,6 +153,8 @@ Behind the scenes, Harnice stores the current part number and revision number in
 
 ??? info "`state.partnumber(format)`"
 
+    Use this when a build needs the part number or revision of the open revision in one of the formats "pn", "R", "rev", or "pn-rev".
+    
     Return the current part number and/or revision in the requested format.
     
     Assumes `state.pn` and `state.rev` are set (e.g. by `fileio.verify_revision_structure()`).
@@ -165,111 +171,80 @@ Behind the scenes, Harnice stores the current part number and revision number in
     **Returns:** The requested substring of `"pn-revRev"` (e.g. `"mypart-rev1"`) (`str`).
     
     **Raises:** `ValueError` if **format** is not one of the options above.
+
+??? info "`state.set_pn(x)`"
+
+    Use this when the runner records the part number of the revision that is open. verify_revision_structure calls this. A build script does not.
+    
+    Set the current part number (e.g. `"mypart"`). Called by `fileio.verify_revision_structure()`.
+    
+    **Args:**
+    - `x`: Part number string, for example ``"mypart"``. Later calls to ``partnumber`` read this value.
+
+??? info "`state.set_rev(x)`"
+
+    Use this when the runner records the revision token of the folder that is open. verify_revision_structure calls this. A build script reads state.rev instead.
+    
+    Set the current revision (number or string, e.g. 1 or "A"). Called by `fileio.verify_revision_structure()`.
+    
+    **Args:**
+    - `x`: Revision number or letter, for example ``1`` or ``"A"``. ``partnumber`` formats this as ``rev1`` or ``revA``.
+
+??? info "`state.set_project_type(x)`"
+
+    Use this when the runner records the project type of the revision that is open. A build script does not call this.
+    
+    Set the current project type (e.g. `"harness"`, `"system"`).
+    
+    **Args:**
+    - `x`: Project type name, for example ``"harness"``, ``"system"``, or ``"device"``.
+
+??? info "`state.set_harness(x)`"
+
+    Use this when the harness refdes of the build that is running needs to be recorded. system.build() clears it, and import_harness_from_harnice_system sets it to the harness being imported.
+    
+    Set the current harness context (used during build).
+    
+    **Args:**
+    - `x`: Harness name for this build. New instances pick it up when they do not set ``harness`` themselves.
+
+??? info "`state.set_file_structure(x)`"
+
+    Use this when the runner records the file structure for the project type that is open. fileio.path and fileio.dirpath read it. A build script does not call this.
+    
+    Set the default file structure dict used by `fileio.path()` and `fileio.dirpath()`.
+    
+    The CLI calls this with the current project type's `file_structure()` result.
+    
+    **Args:**
+    - `x`: File-structure dict. ``fileio.path`` and ``fileio.dirpath`` resolve keys against it.
 
 
 ---
 ##Commands
 *These functions are already available in build instructions as `fileio`. Use them as written.*
-??? info "`state.partnumber(format)`"
+??? info "`fileio.part_directory()`"
 
-    Return the current part number and/or revision in the requested format.
+    Use this when a build needs the part folder of the revision that is open. The revision history file lives there.
     
-    Assumes `state.pn` and `state.rev` are set (e.g. by `fileio.verify_revision_structure()`).
-    For a part `"mypart"` and rev `1`:
+    Return the part directory: the parent of the current working directory.
     
-    **Args:**
-    
-    - **format** — One of:
-        - `"pn-rev"`: full part-rev string, e.g. `"mypart-rev1"`
-        - `"pn"`: part number only, e.g. `"mypart"`
-        - `"rev"`: revision label, e.g. `"rev1"`
-        - `"R"`: revision number only, e.g. `"1"`
-    
-    **Returns:** The requested substring of `"pn-revRev"` (e.g. `"mypart-rev1"`) (`str`).
-    
-    **Raises:** `ValueError` if **format** is not one of the options above.
+    When running in a revision folder (e.g. `rev1`), this is the part folder
+    (e.g. `mypart`). Equivalent to `os.path.dirname(os.getcwd())`.
 
-??? info "`fileio.path(target_value, structure_dict=None, base_directory=None)`"
+??? info "`fileio.rev_directory()`"
 
-    Return the full path to a file identified by its file key.
+    Use this when a build needs the revision folder that is open. During harnice -b that folder is the current working directory.
     
-    * file structure dict (`state.file_structure`, or **structure_dict** if provided) is searched for a *value* equal to **target_value**. The path is built from the rev directory + **base_directory** (if any) + the key path to that value.
+    Return the current revision directory (the current working directory).
     
-    **Special Target Values:**
-    
-    - **`revision history`:** the revision history file of the project you're currently working on
-    - **`repository locations`:** the repository locations file on your computer (`repository_locations.csv`)
-    - **`drawnby`:** the text file on your computer that stores your name
-    - **`rev directory`:** the revsion directory of the project you're currently working on
-    - **`part directory`:** the part directory of the project you're currently working on
-    
-    **Args:**
-    
-    - **target_value** — File key to look up (e.g. `"signals list"`, `"build instructions"`).
-    - **structure_dict** — Optional. Override the default structure (e.g. for a macro).
-        If `None`, uses `state.file_structure`.
-    - **base_directory** — Optional. Subdirectory under the rev directory to use as
-        the root for structure paths. If `None` or `""`, paths are under the rev directory only.
-    
-    **Returns:** Absolute path to the file (`str`).
-    
-    **Raises:** `TypeError` if **target_value** is not found in the structure (for non-special keys).
-    The message names the project types that use that file key, and the project
-    type of the revision that is open, so a wrong ``project_type`` in the
-    revision history is visible.
-    
-    **First run**
-    - If `repository locations` is missing, Harnice creates an empty CSV without
-      prompting. Setup-checklist progress (finished and waived rows) is stored in
-      ``setup_progress.json`` in that same folder. If `drawnby.json` is missing,
-      the CLI (`harnice -b`, `--newrev`, `--newpn`) asks for your name when stdin
-      is a terminal and writes it there. The desktop app asks from Settings
-      (gear) → Drawn by… instead. The name is never guessed.
-
-??? info "`fileio.dirpath(target_key, structure_dict=None, base_directory=None)`"
-
-    Return the full path to a directory identified by its key in the file structure.
-    
-    Searches the file structure (`state.file_structure` or **structure_dict**) for a
-    *key* equal to **target_key** (directory names are keys; file keys are values).
-    The path is built from the rev directory + **base_directory** (if any) + the path to that key.
-    
-    **Special Target Keys:**
-    
-    - **`part directory`:** part directory of the project you're currently working on
-    - **`rev directory`:** rev directory of the project you're currently working on
-    
-    **Args:**
-    
-    - **target_key** — Directory name in the structure (e.g. `"lists"`, `"maps"`).
-        Pass `None` to get the rev directory (or rev + **base_directory**).
-    - **structure_dict** — Optional. Override the default structure. If `None`, uses `state.file_structure`.
-    - **base_directory** — Optional. Subdirectory under the rev directory. If `None` or `""`,
-        paths are under the rev directory only.
-    
-    **Returns:** Absolute path to the directory (`str`).
-    
-    **Raises:** `TypeError` if **target_key** is not `None` and not found in the structure.
-
-??? info "`fileio.silentremove(filepath)`"
-
-    Remove a file or directory and its contents if it exists.
-    
-    No-op if the path does not exist. Removes symlinks as files (does not follow).
-    
-    **Args:**
-    
-    - **filepath** — Path to the file or directory to remove.
-
-??? info "`fileio.get_git_hash_of_harnice_src()`"
-
-    Return the git commit hash of the Harnice source repo (HEAD).
-    
-    Used for version/attribution in outputs. Returns `"UNKNOWN"` if git is
-    unavailable or the repo cannot be read.
+    All project file-structure paths are resolved relative to this directory.
+    Same as `os.getcwd()`.
 
 ??? info "`fileio.read_tsv(filepath, delimiter='\t')`"
 
+    Use this when a build needs the rows of a tab-separated file, given either a file key such as "signals list" or a path already returned by fileio.path.
+    
     Read a TSV file and return a list of row dicts (one dict per row, keys from header).
     
     If **filepath** is an existing file path, that file is read. If not, **filepath** is
@@ -285,8 +260,35 @@ Behind the scenes, Harnice stores the current part number and revision number in
     
     **Raises:** `FileNotFoundError` if the path does not exist or the resolved path does not exist.
 
+??? info "`fileio.verify_revision_structure()`"
+
+    Use this when the runner checks that the current folder is a revision and records its part number and revision. It runs before the script. A build script does not call this.
+    
+    Ensure the current directory is a valid revision folder and set `state.pn` and `state.rev`.
+    
+    Called before building and when the console opens a project.
+    
+    **Behavior:**
+    
+    - If cwd is a `rev<N>` folder: sets `state.pn` and `state.rev` from the path.
+    - If cwd is a part folder that contains rev folders: prints a message and exits.
+    - Otherwise: fails — create new projects from the Harnice console (**New project…**).
+    
+    Ensures revision_history exists and that the revision status is blank (Harnice only
+    builds revisions with blank status). Updates revision_history library_repo /
+    library_subpath from the current path. Does not change ``datemodified``; that
+    is stamped when the project is built.
+
+??? info "`fileio.harnice_root()`"
+
+    Use this when a build needs the Harnice user-data folder, where repository locations and drawnby.json live.
+    
+    Return the Harnice user-data directory on this computer.
+
 ??? info "`fileio.drawnby()`"
 
+    Use this when a build needs the name stored on this computer as the person who drew the work.
+    
     Load and return the contents of the drawnby file (path from `fileio.path("drawnby")`).
     
     The drawnby file stores author/credits info on this computer.
@@ -307,24 +309,40 @@ Behind the scenes, Harnice stores the current part number and revision number in
 
 ??? info "`fileio.today()`"
 
+    Use this when a build needs today's date as M/D/YY, such as a date on the revision that is open.
+    
     Return today's date as a short string: `M/D/YY` (e.g. `2/12/25`).
 
-This one happens behind the scenes, but here's how it knows you're in the right folder structure:
+??? info "`fileio.silentremove(filepath)`"
 
-??? info "`fileio.verify_revision_structure()`"
+    Use this when a build needs a file or folder deleted and should continue if that path is already gone.
+    
+    Remove a file or directory and its contents if it exists.
+    
+    No-op if the path does not exist. Removes symlinks as files (does not follow).
+    
+    **Args:**
+    
+    - **filepath** — Path to the file or directory to remove.
 
-    Ensure the current directory is a valid revision folder and set `state.pn` and `state.rev`.
+??? info "`fileio.get_git_hash_of_harnice_src()`"
+
+    Use this when a revision-history row needs the commit of the Harnice source that ran the build.
     
-    Called before building and when the console opens a project.
+    Return the git commit hash of the Harnice source repo (HEAD).
     
-    **Behavior:**
+    Used for version/attribution in outputs. Returns `"UNKNOWN"` if git is
+    unavailable or the repo cannot be read.
+
+
+## Output
+
+??? info "`cli.warn(message)`"
+
+    Use this when a build should tell the user about a problem and continue. Raising an exception stops the build.
     
-    - If cwd is a `rev<N>` folder: sets `state.pn` and `state.rev` from the path.
-    - If cwd is a part folder that contains rev folders: prints a message and exits.
-    - Otherwise: fails — create new projects from the Harnice console (**New project…**).
+    Print ``Warning: {message}`` to stdout in yellow.
     
-    Ensures revision_history exists and that the revision status is blank (Harnice only
-    builds revisions with blank status). Updates revision_history library_repo /
-    library_subpath from the current path. Does not change ``datemodified``; that
-    is stamped when the project is built.
+    **Args:**
+    - `message`: Warning text (the ``Warning:`` prefix is added).
 

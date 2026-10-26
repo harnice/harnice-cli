@@ -860,6 +860,26 @@ def tessellate_step_file(path, deflection_mm=0.5):
     return tessellate_shape(shape, deflection_mm)
 
 
+def pose_trsf(x, y, z, alpha=0.0, beta=0.0, gamma=0.0):
+    """Rigid transform for a ZYX Euler pose. Translation uses the shape's units.
+
+    ``alpha`` is about X, ``beta`` about Y, ``gamma`` about Z
+    (``R = Rx(alpha) · Ry(beta) · Rz(gamma)``).
+    """
+    from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
+
+    origin = gp_Pnt(0.0, 0.0, 0.0)
+    rx = gp_Trsf()
+    ry = gp_Trsf()
+    rz = gp_Trsf()
+    translate = gp_Trsf()
+    rx.SetRotation(gp_Ax1(origin, gp_Dir(1.0, 0.0, 0.0)), math.radians(float(alpha)))
+    ry.SetRotation(gp_Ax1(origin, gp_Dir(0.0, 1.0, 0.0)), math.radians(float(beta)))
+    rz.SetRotation(gp_Ax1(origin, gp_Dir(0.0, 0.0, 1.0)), math.radians(float(gamma)))
+    translate.SetTranslation(gp_Vec(float(x), float(y), float(z)))
+    return translate * rx * ry * rz
+
+
 def transform_shape(shape, x, y, z, alpha=0.0, beta=0.0, gamma=0.0):
     """Apply a ZYX Euler pose (degrees) and translation (same units as the shape).
 
@@ -868,18 +888,8 @@ def transform_shape(shape, x, y, z, alpha=0.0, beta=0.0, gamma=0.0):
     (``R = Rx(alpha) · Ry(beta) · Rz(gamma)``).
     """
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-    from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
 
-    origin = gp_Pnt(0.0, 0.0, 0.0)
-    rx = gp_Trsf()
-    ry = gp_Trsf()
-    rz = gp_Trsf()
-    translate = gp_Trsf()
-    rx.SetRotation(gp_Ax1(origin, gp_Dir(1.0, 0.0, 0.0)), math.radians(alpha))
-    ry.SetRotation(gp_Ax1(origin, gp_Dir(0.0, 1.0, 0.0)), math.radians(beta))
-    rz.SetRotation(gp_Ax1(origin, gp_Dir(0.0, 0.0, 1.0)), math.radians(gamma))
-    translate.SetTranslation(gp_Vec(float(x), float(y), float(z)))
-    combined = translate * rx * ry * rz
+    combined = pose_trsf(x, y, z, alpha, beta, gamma)
     return BRepBuilderAPI_Transform(shape, combined, True).Shape()
 
 

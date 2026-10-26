@@ -35,8 +35,66 @@ A record of every revision of a part, and its release status
 ---
 ##Commands
 *These functions are already available in build instructions as `rev_history`. Use them as written.*
+??? info "`rev_history.read(path=None)`"
+
+    Use this when a build needs every row of a revision history.
+    
+    Return every row of a revision history.
+    
+    ``path`` defaults to ``fileio.path("revision history")``. Cells come
+    back as strings. ``info`` parses ``affectedinstances`` into a list.
+
+??? info "`rev_history.new(ignore_project_type=False, path=None)`"
+
+    Use this when a build needs a new revision-history file created for the part that is open.
+    
+    Create a new revision history file.
+    
+    **Arguments:**
+    
+    - `ignore_project_type` (bool):
+        - If `True`, the function will raise an error if `state.project_type` is not set first.
+        - If `False`, the function will prompt the user to select a project type.
+    - `path`: Revision-history file to create. Optional. Omit it to use the current project's revision history. Raises if that file already exists.
+    
+    **Returns:**
+    
+    - `None`
+    
+    **Raises:**
+    
+    - `ValueError`: If attempting to create a new revision history file without a project type when `ignore_project_type=True`.
+    - `ValueError`: If attempting to overwrite an existing revision history file.
+
+??? info "`rev_history.append(next_rev=None)`"
+
+    Use this when a build needs a new row on the revision history of the part that is open.
+    
+    Append a new revision history entry to the current revision history file.
+    
+    If the revision history file does not exist, the function will create it.
+    If the revision history file exists, the function will append a new entry to the file.
+    
+    It will prompt the user for the following fields:
+    
+    - `project_type`: The project type of the part.
+    - `desc`: The description of the part.
+    - `revisionupdates`: What is the purpose of this revision?
+    
+    If the previous revision has a blank status, the function will prompt the user to obsolete it with a message.
+    
+    **Arguments:**
+    
+    - `next_rev` The next revision number to append.
+    
+    **Returns:**
+    
+    - `None`
+
 ??? info "`rev_history.overwrite(content_dict)`"
 
+    Use this when a build needs to change columns on the revision-history row for the revision that is open. state.rev is the token this matches.
+    
     Overwrite a revision history entry.
     
     **Arguments:**
@@ -71,6 +129,8 @@ A record of every revision of a part, and its release status
 
 ??? info "`rev_history.info(rev=None, path=None, field=None, all=False)`"
 
+    Use this when a build needs one field from a revision-history row, such as the description of the revision that is open.
+    
     Get information about a revision history entry.
     
     **Arguments:**
@@ -97,6 +157,8 @@ A record of every revision of a part, and its release status
 
 ??? info "`rev_history.initial_release_exists()`"
 
+    Use this when a build needs to know whether this part's revision history already has an initial release.
+    
     Check if an initial release exists.
     
     **Arguments:**
@@ -109,6 +171,8 @@ A record of every revision of a part, and its release status
 
 ??? info "`rev_history.initial_release_desc()`"
 
+    Use this when a build needs the description recorded on this part's initial release.
+    
     Get the description of the initial release.
     
     **Arguments:**
@@ -119,90 +183,10 @@ A record of every revision of a part, and its release status
     
     - `str`: The description of the revision which has `revisionupdates == 'INITIAL RELEASE'`.
 
-??? info "`rev_history.update_datemodified()`"
-
-    Update the `datemodified` field of the current revision with today's date.
-    
-    Called when the project is built (console **Build** or ``harnice -b``), not
-    when the console merely mounts the project. Also refreshes ``drawnby`` and
-    ``git_hash_of_harnice_src``.
-    
-    **Arguments:**
-    
-    None
-    
-    **Returns:**
-    
-    - `None`
-    
-    **Raises:**
-    
-    - `ValueError`: If the revision history file is not found.
-    - `ValueError`: If the revision is not found in the revision history file.
-
-??? info "`rev_history.update_last_build(result)`"
-
-    Set ``last_build`` on the current revision to ``"succeeded"`` or ``"failed"``.
-    
-    Called when the project is built (console **Build** or ``harnice -b``).
-    
-    **Arguments:**
-    
-    - `result` (str): ``"succeeded"`` or ``"failed"``.
-    
-    **Returns:**
-    
-    - `None`
-    
-    **Raises:**
-    
-    - `ValueError`: If ``result`` is not ``"succeeded"`` or ``"failed"``.
-
-??? info "`rev_history.new(ignore_project_type=False, path=None)`"
-
-    Create a new revision history file.
-    
-    **Arguments:**
-    
-    - `ignore_project_type` (bool):
-        - If `True`, the function will raise an error if `state.project_type` is not set first.
-        - If `False`, the function will prompt the user to select a project type.
-    - `path`: Revision-history file to create. Optional. Omit it to use the current project's revision history. Raises if that file already exists.
-    
-    **Returns:**
-    
-    - `None`
-    
-    **Raises:**
-    
-    - `ValueError`: If attempting to create a new revision history file without a project type when `ignore_project_type=True`.
-    - `ValueError`: If attempting to overwrite an existing revision history file.
-
-??? info "`rev_history.append(next_rev=None)`"
-
-    Append a new revision history entry to the current revision history file.
-    
-    If the revision history file does not exist, the function will create it.
-    If the revision history file exists, the function will append a new entry to the file.
-    
-    It will prompt the user for the following fields:
-    
-    - `project_type`: The project type of the part.
-    - `desc`: The description of the part.
-    - `revisionupdates`: What is the purpose of this revision?
-    
-    If the previous revision has a blank status, the function will prompt the user to obsolete it with a message.
-    
-    **Arguments:**
-    
-    - `next_rev` The next revision number to append.
-    
-    **Returns:**
-    
-    - `None`
-
 ??? info "`rev_history.part_family_append(content_dict, rev_history_path)`"
 
+    Use this when a part-family script needs to add or update a row in that family's revision history.
+    
     Append a new revision history entry to the part family revision history file.
     
     Intended to be called by part family scripts only.
@@ -231,4 +215,47 @@ A record of every revision of a part, and its release status
     **Raises:**
     
     - `ValueError`: If the content dictionary contains invalid keys or missing required fields.
+
+??? info "`rev_history.update_datemodified()`"
+
+    Use this when a build needs datemodified on the open revision set to today.
+    
+    Update the `datemodified` field of the current revision with today's date.
+    
+    Called when the project is built (console **Build** or ``harnice -b``), not
+    when the console merely mounts the project. Also refreshes ``drawnby`` and
+    ``git_hash_of_harnice_src``.
+    
+    **Arguments:**
+    
+    None
+    
+    **Returns:**
+    
+    - `None`
+    
+    **Raises:**
+    
+    - `ValueError`: If the revision history file is not found.
+    - `ValueError`: If the revision is not found in the revision history file.
+
+??? info "`rev_history.update_last_build(result)`"
+
+    Use this when the runner records whether the build of the open revision succeeded or failed. It runs after the script. A build script does not call this.
+    
+    Set ``last_build`` on the current revision to ``"succeeded"`` or ``"failed"``.
+    
+    Called when the project is built (console **Build** or ``harnice -b``).
+    
+    **Arguments:**
+    
+    - `result` (str): ``"succeeded"`` or ``"failed"``.
+    
+    **Returns:**
+    
+    - `None`
+    
+    **Raises:**
+    
+    - `ValueError`: If ``result`` is not ``"succeeded"`` or ``"failed"``.
 

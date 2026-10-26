@@ -8,7 +8,7 @@ from pathlib import Path
 
 from harnice import fileio, state
 from harnice import build_sandbox
-from harnice.lists import signals_list
+from harnice.lists import library_history, signals_list
 from harnice.utils import block_diagram_utils, build_utils
 
 def _import_yaml():
@@ -38,10 +38,13 @@ button_color = "#d376f5"
 def file_structure():
     return {
         "build.py": "build instructions",
+        "libhist.tsv": "library history",
         "signals.tsv": "signals list",
         "attributes.json": "attributes",
         "symbol.svg": "block diagram symbol",
         "config.yaml": "configuration setup",
+        "body.step": "body",
+        "body_images": {},
     }
 
 def generate_structure():
@@ -616,6 +619,8 @@ def build(verbose=True, configuration=None):
         # so build instructions and the subsequent signals-list validation see a complete config.
         configuration = {**_default_configuration_from_setup(), **configuration}
 
+    library_history.new()
+
     if os.path.exists(fileio.path("build instructions")):
         init_globals = {"configuration": configuration}
         build_sandbox.run_path(
@@ -629,3 +634,5 @@ def build(verbose=True, configuration=None):
     _validate_signals_list(verbose)
     _validate_svg_symbol()
     _validate_config_yaml()
+    from harnice.utils import physical_body
+    physical_body.require_saved_mates()

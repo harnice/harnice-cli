@@ -25,8 +25,16 @@ A list of channels on devices within groups of connected harnesses. Each complet
 ---
 ##Commands
 *These functions are already available in build instructions as `channel_map`. Use them as written.*
+??? info "`channel_map.read()`"
+
+    Use this when a system build needs every row of the channel map in the revision that is open.
+    
+    Return the channel map (cached).
+
 ??? info "`channel_map.new()`"
 
+    Use this when a system build is starting a blank channel map. system.build() calls this before the script and replaces the file. A system script does not call it again.
+    
     Makes a new blank channel map. Overwrites existing channel map.
     
     Seeds one row per channel endpoint, including both faces of a passthrough.
@@ -39,6 +47,8 @@ A list of channels on devices within groups of connected harnesses. Each complet
 
 ??? info "`channel_map.map(from_key, to_key=None, multi_ch_junction_key='')`"
 
+    Use this when a system build needs one channel endpoint patched to another, or landed on a multi-channel junction, and the channel types are compatible.
+    
     Map one channel endpoint to another (a patch), or consume it onto a
     multi-channel junction.
     
@@ -70,6 +80,8 @@ A list of channels on devices within groups of connected harnesses. Each complet
 
 ??? info "`channel_map.force(from_key, to_key)`"
 
+    Use this when a system build needs one channel endpoint patched to another even though the channel types do not match. Pair the signals with circuits_list.force before circuits_list.new.
+    
     Map one channel endpoint to another regardless of channel-type compatibility.
     
     Same key, group, and face rules as ``map()``. A 1:1 patch only: there is
@@ -88,22 +100,41 @@ A list of channels on devices within groups of connected harnesses. Each complet
     be left unwired. If the from channel has a name the to channel does not,
     swap the endpoints so that extra name is on the to side, then drop it.
 
-??? info "`channel_map.compile_hierarchical()`"
+??? info "`channel_map.flatten()`"
 
-    Write the hierarchical channel map for this system and every child subsystem.
+    Use this when a system build needs the flattened channel map of this system and the subsystems it contains.
+    
+    Write ``maps/channel_map_flattened.tsv`` for this system and every child subsystem.
     
     Reads this system's channel map, then the channel map imported with each
     child subsystem, recursively. An imported subsystem channel map is the
-    source of truth: this does not rebuild those rows.
+    source of truth for which endpoints were mapped. This does not re-run
+    channel mapping inside the subsystem.
+    
+    A passthrough channel whose two faces are both mapped patch ends is folded
+    into one row between the outer endpoints before subsystem prefixes are
+    applied. The lexicographically smaller outer endpoint (refdes, channel id,
+    repeat) is the from side. ``chain_of_connectors`` records the disconnect
+    between them (``SNK-0.J1;X-6.B;X-6.A;SNK-3.J1``). ``chain_of_harnesses``
+    on that row is left blank. A chain of dual-mapped disconnects folds to the
+    two outer devices, with every disconnect in the connector chain. A channel
+    with only one face mapped stays as that one patch. A row that already joins
+    the two faces is left unchanged. Rows with no partner and no
+    multi-channel junction are omitted. A junction row is kept. The flat
+    channel map is not rewritten.
     
     Rows from a subsystem prefix that subsystem's instance name onto
     ``group_of_connected_harnesses``, ``from_device_refdes``,
     ``to_device_refdes``, ``multi_ch_junction_id``, ``chain_of_connectors``,
     and ``chain_of_harnesses``. A list is prefixed per entry (``AMP.H1+AMP.H2``,
     ``AMP.H1;AMP.H2``, ``AMP.MIC3.J1;AMP.X1.A``). Nested subsystems accumulate
-    prefixes (``AMP.PRE.MIC1``). ``manual_map_channel_python_equiv`` is left
-    blank. Channel ids, repeat ids, and channel types are copied unchanged.
-    This system's own rows are not prefixed. Headers match the channel map.
+    prefixes (``AMP.PRE.MIC1``). ``from_repeat_channel_id``,
+    ``to_repeat_channel_id``, and ``manual_map_channel_python_equiv`` are
+    omitted. ``from_channel_type_description`` and
+    ``to_channel_type_description`` sit beside the channel type columns and
+    are the ``description`` from that type's ``channel_types.tsv``. Channel
+    ids and channel types are copied unchanged. This system's own rows are
+    not prefixed.
     
     Call after channel mapping, including
     ``map_unmapped_compatibles_alphabetically()``. The sheet snapshots the
@@ -113,21 +144,27 @@ A list of channels on devices within groups of connected harnesses. Each complet
     
     Returns: the written rows
 
-??? info "`channel_map.already_mapped_set_append(key)`"
-
-    Mark one endpoint as already mapped.
-    
-    **Args:**
-    - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``. Raises if that key is already in the mapped set.
-
-??? info "`channel_map.already_mapped_set()`"
-
-    Return the set of endpoint keys already consumed by ``map`` or ``route``.
-
 ??? info "`channel_map.already_mapped(key)`"
 
+    Use this when a system build needs to know whether one channel endpoint is already consumed by a map or a route.
+    
     Return whether an endpoint is already in the mapped-channels set.
     
     **Args:**
     - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``.
+
+??? info "`channel_map.already_mapped_set()`"
+
+    Use this when a system build needs every channel endpoint already consumed by map or route.
+    
+    Return the set of endpoint keys already consumed by ``map`` or ``route``.
+
+??? info "`channel_map.already_mapped_set_append(key)`"
+
+    Use this when a system build needs to mark one channel endpoint as already consumed.
+    
+    Mark one endpoint as already mapped.
+    
+    **Args:**
+    - `key`: Endpoint key in the same shape ``map`` uses: ``(device_refdes, channel_id)`` or ``(device_refdes, channel_id, repeat_channel_id)``. Raises if that key is already in the mapped set.
 

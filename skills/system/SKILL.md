@@ -11,37 +11,47 @@ description: >-
 
 # Harnice system build instructions
 
-This file is the procedure for a **system** `build.py`. The functions you
-may call are the headings named below in
-[reference.md](../build-api/reference.md).
+This file is the procedure for a **system** `build.py`. The pages you
+may call are listed below. Each page is the list of calls and how to
+use them. Read it before you call.
 
 A harness revision follows `skills/harness/SKILL.md`. A device signals
 list follows `skills/device-signals-list/SKILL.md`. A catalog of library
-SKUs follows `skills/part-family/SKILL.md`.
+SKUs follows `skills/part-family/SKILL.md`. Arranging device solids
+follows `skills/cad/SKILL.md`. This script does not write `physical.json`
+or `assembly.step`.
+
+
+## Why the script exists
+
+The instances list is the source of truth for a harness or a system. It
+records every piece of data about every item or idea in that project.
+Build instructions build that list up. When an artifact has to describe
+the project, the same script exports it from the list.
 
 
 ## What runs
 
 The script is `fileio.path("build instructions")` in the system revision.
-Harnice runs it as `__main__`. If this revision is a harness, stop and
-follow the harness skill.
+Do not run `build.py`. From that revision folder, `harnice -b` runs the
+project. If this revision is a harness, stop and follow the harness skill.
 
-These names are already bound. Do not write `from harnice import ...`.
-You may import the standard library.
+Do not import anything. The names you need are already bound.
 
 Read the `build.py` already in the revision before you replace it. The
 stock script is in the clone at:
 
     src/harnice/defaults/system_default_build_instructions.py
 
-Keep that order. Put new rules in the section they belong to. Code at
-module level runs on every build. `connector_chooser` and
+That script makes a new system build, and it shows the usual steps.
+Remove a section the project does not need. The script has to succeed.
+Code at module level runs on every build. `connector_chooser` and
 `m85049_chooser` are `def`s on this system. A child harness calls them
 with `build_utils.run_instruction_from_relative`. Do not put those part
 numbers in the harness script.
 
-Reach files with `fileio.path` and `fileio.dirpath`. Do not join folders
-into a path yourself.
+Reach files with `fileio.path` and `fileio.dirpath`. The keys are in
+`skills/fileio/SKILL.md`. Do not join folders into a path yourself.
 
 Which endpoints are one patch, which connector mates, and which cable a
 circuit uses are my decisions. Ask, and put the choice in front of me.
@@ -49,23 +59,21 @@ Record it in a comment. `cli.warn` prints a warning and continues.
 Raising stops the build.
 
 
-## Call these headings only
+## Call these pages only
 
-In [reference.md](../build-api/reference.md):
+- `instances_list` — `docs/interacting_with_data/_instances_lists.md`
+- `channel_map` — `docs/interacting_with_data/_channel_maps.md`
+- `passthrough_map` — `docs/interacting_with_data/_passthrough_maps.md`
+- `circuits_list` — `docs/interacting_with_data/_circuits_lists.md`
+- `rev_history` — `docs/interacting_with_data/_revision_history_lists.md`
+- `build_utils` — `docs/commands/_build_utils.md`
+- `system_utils` — `docs/commands/_system_utils.md`
+- `fileio`, `state`, and `cli` — `docs/commands/_manipulating_files.md`
+- `chtype` — `docs/project_types/_channel_type.md`
+- Shipped macros `subsystem_symbol` and `pdf_generator` — `docs/project_types/_macro.md`
 
-- Instances List
-- Channels and Mapping
-- Electrical, the Circuits subsection
-- Revision History
-- Build instructions tools: General and Macros
-- System, the General subsection
-- Files and State
-- Channel types
-- Reading a list back: `instances_list.read`, `circuits_list.read`, `channel_map.read`, `passthrough_map.read`, `rev_history.read`
-- Shipped macros: `subsystem_symbol` and `pdf_generator`
-
-Do not call Bundle Networks, Cables, Build Notes, Part Libraries, or
-Post-Harness Instances. Those are the harness script.
+Do not call bundle networks, cables, build notes, part libraries, or
+post-harness instances. Those are the harness script.
 
 
 ## Order
@@ -80,7 +88,7 @@ runs. One row per channel endpoint. Do not call `channel_map.new()` again.
    harnesses.
 2. `channel_map.map_unmapped_compatibles_alphabetically()` only if I said
    to auto-map what is left.
-3. `channel_map.compile_hierarchical()`
+3. `channel_map.flatten()`
 4. `passthrough_map.new()`, then any `passthrough_map.route()` hops I
    named, then `passthrough_map.resolve()`
 5. `circuits_list.new()`
@@ -98,7 +106,7 @@ runs. One row per channel endpoint. Do not call `channel_map.new()` again.
 
 ## Run the build
 
-From the system revision folder:
+Do not run `build.py`. From the system revision folder:
 
     harnice -b
 
@@ -118,7 +126,7 @@ Build and paste the error text back. Do not invent an exit code.
 
 - [ ] The revision is a system, and you edited that `build.py`
 - [ ] You did not write harness network code, a device signals list, or a part family
-- [ ] You kept the stock script's order
-- [ ] Every Harnice call is under a heading this skill allows in [reference.md](../build-api/reference.md), with arguments from that function's doc page or docstring
+- [ ] A stock section you removed is one the project does not need, and `harnice -b` still succeeds
+- [ ] Every Harnice call is on a page this skill lists, with arguments from that page
 - [ ] Decisions I made are comments in the file
 - [ ] An agent build exited 0. A chatbot told me to click Build and paste the errors back

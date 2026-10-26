@@ -35,6 +35,13 @@ def file_structure():
         "instances.tsv": "instances list",
         "blockdiagram.svg": "block diagram",
         "signals.tsv": "icd",
+        "physical.json": "physical assembly",
+        "assembly.step": "assembly",
+        # Mating-connector nodes are written here by the system build.
+        "available_network.json": "available network",
+        # Reference STEP files dropped in from the file browser. The physical
+        # view shows one of them at a time.
+        "contexts": {},
         "instance_data": {},
         "harnesses": {},
         "lists": {
@@ -47,7 +54,7 @@ def file_structure():
         },
         "maps": {
             "channels.tsv": "channel map",
-            "hierarchical_channel_map.tsv": "hierarchical channel map",
+            "channel_map_flattened.tsv": "flattened channel map",
             "passthrough.tsv": "passthrough map",
             "context.tsv": "passthrough routing context",
             "forced_channels_pending.tsv": "pending forced channels",
@@ -61,6 +68,7 @@ def generate_structure():
     os.makedirs(fileio.dirpath("harnesses"), exist_ok=True)
     os.makedirs(fileio.dirpath("lists"), exist_ok=True)
     os.makedirs(fileio.dirpath("maps"), exist_ok=True)
+    os.makedirs(fileio.dirpath("contexts"), exist_ok=True)
 
 
 def _icd_rows_from_unmated_device_connector(connector):
@@ -257,6 +265,10 @@ def build():
         if svg_diagram != original_svg:
             with open(bd_path, "w", encoding="utf-8") as f:
                 f.write(svg_diagram)
+
+        from harnice.utils import physical_assembly
+
+        physical_assembly.sync_mating_connector_nodes()
     except Exception:
         pdf_drawings_utils.watermark_existing_pdfs_incomplete_rebuild()
         raise

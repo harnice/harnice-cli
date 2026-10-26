@@ -162,7 +162,11 @@ def _repeat_of_orientation(refdes, orientation, channel_id=None):
 
 
 def read():
-    """Return the passthrough map (cached)."""
+    """
+    Use this when a system build needs every row of the passthrough map in the revision that is open.
+
+    Return the passthrough map (cached).
+    """
     return cached_tsv.read(fileio.path("passthrough map"))
 
 
@@ -291,6 +295,8 @@ def _context_row_matches_pair(row, group_of_connected_harnesses, from_channel_ty
 
 def new():
     """
+    Use this when a system build needs passthrough rows created from the signals lists of the devices on the block diagram.
+
     Create passthrough channel rows from placed-device signals lists.
 
     Rebuilds ``system.passthrough_routing_context`` as one row per unique
@@ -475,6 +481,8 @@ def route(
     satisfaction=False,
 ):
     """
+    Use this when a system build needs one mapped channel sent through one passthrough device.
+
     Route a mapped channel through a passthrough device.
 
     Looks up the mapped channel's from→to types and group_of_connected_harnesses, finds the matching
@@ -817,6 +825,38 @@ def route(
 
     map_rows = read()
 
+    def _reject_unmated_loopback(orientation):
+        """Both patch ends sit on a harness, and this hop's exit face has none."""
+        harness_sides = passthrough_harness_lookup.get(intended_device_refdes) or {}
+        face_a, face_b = passthrough_face_names.get(
+            intended_device_refdes, ("A", "B")
+        )
+        if orientation == 1:
+            exit_face, exit_harness = face_b, harness_sides.get("B", "")
+        else:
+            exit_face, exit_harness = face_a, harness_sides.get("A", "")
+        if system_utils._is_real_harness_refdes(exit_harness):
+            return
+
+        def endpoint_harness(prefix):
+            refdes = channel_map_row.get(f"{prefix}_device_refdes")
+            channel_id = channel_map_row.get(f"{prefix}_device_channel_id")
+            repeat = (channel_map_row.get(f"{prefix}_repeat_channel_id") or "").strip()
+            key = (refdes, channel_id, repeat) if repeat else (refdes, channel_id)
+            connector = system_utils.connector_of_channel(key)
+            return channel_harness_lookup.get((refdes, connector)) or ""
+
+        if not (
+            system_utils._is_real_harness_refdes(endpoint_harness("from"))
+            and system_utils._is_real_harness_refdes(endpoint_harness("to"))
+        ):
+            return
+        raise ValueError(
+            f"Cannot route {this_channel_key} through {intended_device_refdes!r} "
+            f"connector {exit_face!r}: that connector has no harness mated to it. "
+            "You can't map this loopback because there is no harness there."
+        )
+
     def _next_step():
         if satisfaction:
             return next_satisfaction(this_channel_key)
@@ -826,10 +866,11 @@ def route(
 
     # --- Imaginary path: no availables left ---
     if total_availables <= 0:
-        step = _next_step()
         orientation = (
             preferred_directionality if preferred_directionality in (1, -1) else 1
         )
+        _reject_unmated_loopback(orientation)
+        step = _next_step()
         prefix = "imaginary-satisfaction" if satisfaction else "imaginary-requirement"
         imaginary_id = f"{prefix}-{step}"
         # Same type on each A/B side as the device sitting there, so the
@@ -875,8 +916,9 @@ def route(
             "Re-run passthrough_map.new() or check for map/context desync."
         )
 
-    step = _next_step()
     chosen_id, orientation, sides = candidates[0]
+    _reject_unmated_loopback(orientation)
+    step = _next_step()
     fill_kwargs = {"satisfaction": step} if satisfaction else {"requirement": step}
 
     # Update passthrough map row for this channel
@@ -949,6 +991,8 @@ def route(
 
 def resolve():
     """
+    Use this when a system build needs every mapped channel routed through its passthroughs, in channel-map order.
+
     Complete passthrough routing for each mapped channel (channel-map order).
 
     Uses the routing context (filtered to group_of_connected_harnesses + from→to pair) to find the

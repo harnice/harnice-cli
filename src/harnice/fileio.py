@@ -20,7 +20,11 @@ LIBRARY_USED_DIR = "lib"
 
 
 def harnice_root():
-    """Return the Harnice user-data directory on this computer."""
+    """
+    Use this when a build needs the Harnice user-data folder, where repository locations and drawnby.json live.
+
+    Return the Harnice user-data directory on this computer.
+    """
     from harnice.runtime import user_data_dir
 
     return str(user_data_dir())
@@ -280,7 +284,10 @@ def repository_locations_empty():
 
 
 def part_directory():
-    """Return the part directory: the parent of the current working directory.
+    """
+    Use this when a build needs the part folder of the revision that is open. The revision history file lives there.
+
+    Return the part directory: the parent of the current working directory.
 
     When running in a revision folder (e.g. `rev1`), this is the part folder
     (e.g. `mypart`). Equivalent to `os.path.dirname(os.getcwd())`.
@@ -289,7 +296,10 @@ def part_directory():
 
 
 def rev_directory():
-    """Return the current revision directory (the current working directory).
+    """
+    Use this when a build needs the revision folder that is open. During harnice -b that folder is the current working directory.
+
+    Return the current revision directory (the current working directory).
 
     All project file-structure paths are resolved relative to this directory.
     Same as `os.getcwd()`.
@@ -298,7 +308,10 @@ def rev_directory():
 
 
 def silentremove(filepath):
-    """Remove a file or directory and its contents if it exists.
+    """
+    Use this when a build needs a file or folder deleted and should continue if that path is already gone.
+
+    Remove a file or directory and its contents if it exists.
 
     No-op if the path does not exist. Removes symlinks as files (does not follow).
 
@@ -500,7 +513,10 @@ def missing_file_key_message(target_value):
 
 
 def path(target_value, structure_dict=None, base_directory=None):
-    """Return the full path to a file identified by its file key.
+    """
+    Use this when a build needs the path of a file in the revision that is open, looked up by its file key (for example "instances list" or "revision history").
+
+    Return the full path to a file identified by its file key.
 
     * file structure dict (`state.file_structure`, or **structure_dict** if provided) is searched for a *value* equal to **target_value**. The path is built from the rev directory + **base_directory** (if any) + the key path to that value.
 
@@ -587,7 +603,10 @@ def path(target_value, structure_dict=None, base_directory=None):
 
 
 def dirpath(target_key, structure_dict=None, base_directory=None):
-    """Return the full path to a directory identified by its key in the file structure.
+    """
+    Use this when a build needs the path of a folder in the revision that is open, looked up by its directory name (for example "instance_data" or "contexts").
+
+    Return the full path to a directory identified by its key in the file structure.
 
     Searches the file structure (`state.file_structure` or **structure_dict**) for a
     *key* equal to **target_key** (directory names are keys; file keys are values).
@@ -703,7 +722,10 @@ def library_identity_for_path(folder):
 
 
 def verify_revision_structure():
-    """Ensure the current directory is a valid revision folder and set `state.pn` and `state.rev`.
+    """
+    Use this when the runner checks that the current folder is a revision and records its part number and revision. It runs before the script. A build script does not call this.
+
+    Ensure the current directory is a valid revision folder and set `state.pn` and `state.rev`.
 
     Called before building and when the console opens a project.
 
@@ -772,13 +794,20 @@ def verify_revision_structure():
 
 
 def today():
-    """Return today's date as a short string: `M/D/YY` (e.g. `2/12/25`)."""
+    """
+    Use this when a build needs today's date as M/D/YY, such as a date on the revision that is open.
+
+    Return today's date as a short string: `M/D/YY` (e.g. `2/12/25`).
+    """
     d = datetime.date.today()
     return f"{d.month}/{d.day}/{d.year % 100}"
 
 
 def get_git_hash_of_harnice_src():
-    """Return the git commit hash of the Harnice source repo (HEAD).
+    """
+    Use this when a revision-history row needs the commit of the Harnice source that ran the build.
+
+    Return the git commit hash of the Harnice source repo (HEAD).
 
     Used for version/attribution in outputs. Returns `"UNKNOWN"` if git is
     unavailable or the repo cannot be read.
@@ -802,7 +831,10 @@ def get_git_hash_of_harnice_src():
 
 
 def read_tsv(filepath, delimiter="\t"):
-    """Read a TSV file and return a list of row dicts (one dict per row, keys from header).
+    """
+    Use this when a build needs the rows of a tab-separated file, given either a file key such as "signals list" or a path already returned by fileio.path.
+
+    Read a TSV file and return a list of row dicts (one dict per row, keys from header).
 
     If **filepath** is an existing file path, that file is read. If not, **filepath** is
     treated as a file key and `fileio.path(filepath)` is used to resolve the path
@@ -832,7 +864,10 @@ def read_tsv(filepath, delimiter="\t"):
 
 
 def drawnby():
-    """Load and return the contents of the drawnby file (path from `fileio.path("drawnby")`).
+    """
+    Use this when a build needs the name stored on this computer as the person who drew the work.
+
+    Load and return the contents of the drawnby file (path from `fileio.path("drawnby")`).
 
     The drawnby file stores author/credits info on this computer.
 

@@ -233,6 +233,8 @@ def _csys_as_pose(csys):
 
 def compose_csys(*csys_list):
     """
+    Use this when a harness build needs one pose made by stacking child coordinate systems.
+
     Compose child CSYS dicts left to right.
 
     Each next CSYS is expressed in the previous CSYS's frame. Returns
@@ -265,6 +267,8 @@ def compose_csys(*csys_list):
 
 def invert_csys(csys):
     """
+    Use this when a harness build needs the opposite of a child coordinate system.
+
     Return the opposite of a child CSYS.
 
     The result takes the child frame back to its parent origin: if ``csys``
@@ -290,6 +294,8 @@ def invert_csys(csys):
 
 def calculate_location_3d(lookup_instance, instances):
     """
+    Use this when a harness build needs an instance's world pose from the chain of parent coordinate systems.
+
     Calculates the 3D world pose of an instance from the CSYS chain.
 
     Same walk and order as ``flattened_network.calculate_location``: origin of
@@ -323,7 +329,27 @@ def calculate_location_3d(lookup_instance, instances):
         ValueError: If parent coordinate system information is missing or invalid, or
             if parent instances cannot be found in the instances list.
     """
-    from harnice.lists.flattened_network import _2d_translate_of
+    def translate_2d(instance):
+        def float_or_none(value):
+            if value in ("", None):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        td = _as_dict(instance.get("2d_translate"))
+        if td:
+            return (
+                float_or_none(td.get("x")),
+                float_or_none(td.get("y")),
+                float_or_none(td.get("rotate")),
+            )
+        return (
+            float_or_none(instance.get("translate_x")),
+            float_or_none(instance.get("translate_y")),
+            float_or_none(instance.get("rotate_csys")),
+        )
 
     def translate_of(instance):
         td = _as_dict(instance.get("3d_translate"))
@@ -336,7 +362,7 @@ def calculate_location_3d(lookup_instance, instances):
                 _float_or_0(td.get("beta")),
                 _float_or_0(td.get("gamma")),
             )
-        tx, ty, rotate = _2d_translate_of(instance)
+        tx, ty, rotate = translate_2d(instance)
         return (
             0.0 if tx is None else tx,
             0.0 if ty is None else ty,
@@ -540,6 +566,8 @@ def _pose_from_node_origin_to(instances, owner, csys_name):
 
 def difference_between_csys(instance, from_csys, to_csys):
     """
+    Use this when a harness build needs the move from one coordinate system to another before passing it to move_node.
+
     Direction that takes ``to_csys`` onto ``from_csys``.
 
     Pass the result to ``move_node`` as the move direction. Typical use:
@@ -621,6 +649,8 @@ def move_node(
     output_csys=None,
 ):
     """
+    Use this when a harness build needs one node of the chosen network moved, along with the segment ends that sit on it.
+
     Moves one node in a network.
 
     ## Args
@@ -693,6 +723,8 @@ def move_node(
 
 def adjacent_nodes(input_network, from_node):
     """
+    Use this when a harness build needs the nodes one segment away from a given node.
+
     Traverses the network from a given node and returns a list of dicts representing nodes that are one segment of connection away.
 
     The dict should contain node_id, delta_x, delta_y, and delta_z.
@@ -814,6 +846,8 @@ def path_angle(
     if_along_axis=None,
 ):
     """
+    Use this when a harness build needs the angle of one hop away from a node, in that node's frame.
+
     Angle of a hop in a node's frame, in degrees ``[0, 360)``.
 
     ``θ`` is the right-hand angle from ``zero`` to the hop, about ``axis``.
@@ -876,6 +910,8 @@ def path_angle(
 
 def rotate_csys(csys, angle, about="x"):
     """
+    Use this when a harness build needs a child coordinate system rotated about one parent axis.
+
     Rotate a child CSYS about a parent axis.
 
     ``R = R_about(angle) · csys`` in the parent frame.
@@ -903,6 +939,8 @@ def rotate_csys(csys, angle, about="x"):
 
 def output_csys(instance, csys_name):
     """
+    Use this when a harness build needs a named output coordinate system on one instance, without walking its parents.
+
     Named output CSYS on one instance (no parent-chain walk).
 
     **Args:**
@@ -938,6 +976,8 @@ def output_csys(instance, csys_name):
 
 def output_offset(instance, csys_name, about=None, angle=0):
     """
+    Use this when a harness build needs the node move taken from one output coordinate system, such as a connector's 3d-mate.
+
     Node move taken from one instance output CSYS.
 
     ``invert(output)``, then optionally ``rotate_csys`` about ``about``.
@@ -961,6 +1001,8 @@ def output_offset(instance, csys_name, about=None, angle=0):
 
 def spin(instance_name, angle, about="x"):
     """
+    Use this when a harness build needs one rotation component written on an instance, such as un-clocking a connector after clocking its backshell.
+
     Write one Euler component of ``3d_translate`` on an instance.
 
     Use the opposite of a ``path_angle`` when a child should not inherit a
@@ -1010,6 +1052,8 @@ def clock_backshell(
     round_to_nearest_angle=None,
 ):
     """
+    Use this when a harness build needs a backshell clocked on its connector group toward another node.
+
     Clock a backshell on ``connector_group`` and un-clock its connector.
 
     1. ``θ = path_angle`` from the group node toward ``towards_node``.
@@ -1099,6 +1143,8 @@ def clock_backshell(
 
 def rename_node(input_network, new_id, existing_id=None, coordinates=[]):
     """
+    Use this when a harness build needs a node's id changed in the chosen network.
+
     Finds a node and changes its id.
 
     If existing ID is used, that's self-explanatory.
@@ -1144,6 +1190,8 @@ def rename_node(input_network, new_id, existing_id=None, coordinates=[]):
 
 def new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None):
     """
+    Use this when a harness build needs a node added at a location in the chosen network.
+
     Adds a node at a location.
 
     ## Args
@@ -1171,6 +1219,8 @@ def new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None)
 
 def reroute_segment(input_network, existing_endpoint_node_name, new_endpoint_node_name):
     """
+    Use this when a harness build needs a segment that ends on one node moved onto a new node.
+
     Moves a segment that ends at an existing node to the coordinates of a new node.
 
     ## Args

@@ -21,8 +21,16 @@ Every passthrough channel in the system. Call `new()` to build the map and routi
 ---
 ##Commands
 *These functions are already available in build instructions as `passthrough_map`. Use them as written.*
+??? info "`passthrough_map.read()`"
+
+    Use this when a system build needs every row of the passthrough map in the revision that is open.
+    
+    Return the passthrough map (cached).
+
 ??? info "`passthrough_map.new()`"
 
+    Use this when a system build needs passthrough rows created from the signals lists of the devices on the block diagram.
+    
     Create passthrough channel rows from placed-device signals lists.
     
     Rebuilds ``system.passthrough_routing_context`` as one row per unique
@@ -33,6 +41,8 @@ Every passthrough channel in the system. Call `new()` to build the map and routi
 
 ??? info "`passthrough_map.route(to_from_channel_device_refdes, to_from_channel_id, intended_device_refdes, intended_channel_id=None, repeat_channel_id=None, satisfaction=False)`"
 
+    Use this when a system build needs one mapped channel sent through one passthrough device.
+    
     Route a mapped channel through a passthrough device.
     
     Looks up the mapped channel's from→to types and group_of_connected_harnesses, finds the matching
@@ -61,6 +71,8 @@ Every passthrough channel in the system. Call `new()` to build the map and routi
 
 ??? info "`passthrough_map.resolve()`"
 
+    Use this when a system build needs every mapped channel routed through its passthroughs, in channel-map order.
+    
     Complete passthrough routing for each mapped channel (channel-map order).
     
     Uses the routing context (filtered to group_of_connected_harnesses + from→to pair) to find the

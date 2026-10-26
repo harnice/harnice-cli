@@ -31,6 +31,8 @@ Drafting ink (tables, wirelists, labels, dimension lines) is painted from a **st
 *These functions are already available in build instructions as `appearance`. Use them as written.*
 ??? info "`appearance.parse(val)`"
 
+    Use this when a build needs an appearance dict whose colors are #rrggbb.
+    
     Parse a dict or dict-string, converting color-like values to ``#rrggbb``.
     
     Runs ``ast.literal_eval`` on strings. Nested dicts and lists are walked.
@@ -44,6 +46,8 @@ Drafting ink (tables, wirelists, labels, dimension lines) is painted from a **st
 
 ??? info "`appearance.to_rgb(val)`"
 
+    Use this when a build needs red, green, and blue from a color name, a hex string, or an appearance dict.
+    
     Return ``(r, g, b)`` in 0–255 from a color name, hex string, or appearance dict.
     
     Unknown or empty values return ``(0, 0, 0)``. Appearance dicts use
@@ -57,6 +61,8 @@ Drafting ink (tables, wirelists, labels, dimension lines) is painted from a **st
 
 ??? info "`appearance.black_or_white_to_contrast_with_color(color)`"
 
+    Use this when a drawing needs black or white text chosen to contrast with a color.
+    
     Return ``#ffffff`` or ``#000000``, whichever has higher WCAG contrast against the color.
     
     **Args:**

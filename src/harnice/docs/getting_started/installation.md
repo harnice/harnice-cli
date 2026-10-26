@@ -86,6 +86,10 @@ Open the checklist and click **Check**, or build a drawing. Harnice keeps that p
 
 ---
 
+## :octicons-terminal-16: Command line
+
+To install the `harnice` command and build from a terminal, see [Harnice command line](command_line.md).
+
 ## :material-folder-open: Open or create a project
 
 Use **File → Open Project…** or **File → New Project…** (same as the buttons in the console), or click those buttons in the left panel. **Window → New Window** opens another Harnice window with its own Python process so you can work on a different project at the same time.

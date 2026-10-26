@@ -8,6 +8,8 @@ circuit_documentation_description = 'A circuit is the requirement that there mus
 
 def end_ports_of_circuit(circuit_id):
     """
+    Use this when a harness or system build needs the instance names at the two ends of a circuit.
+
     Returns the instance names at the end ports (port 0 and maximum port) of a circuit.
 
     Finds and returns the instance names connected to port 0 and the maximum port number
@@ -54,6 +56,8 @@ def squeeze_instance_between_ports_in_circuit(
     instance_name, circuit_id, new_circuit_port_number
 ):
     """
+    Use this when a harness or system build needs an instance inserted into a circuit between two existing ports.
+
     Inserts an instance into a circuit by shifting existing port numbers.
 
     Assigns the specified instance to a port number in the circuit, incrementing
@@ -95,6 +99,8 @@ def squeeze_instance_between_ports_in_circuit(
 
 def instances_of_circuit(circuit_id):
     """
+    Use this when a harness or system build needs every instance of one circuit, in port order.
+
     Returns all instances in a circuit, sorted by port number.
 
     Finds all instances (excluding circuit instances themselves) that belong to
@@ -122,6 +128,8 @@ def instances_of_circuit(circuit_id):
 
 def instance_of_circuit_port_number(circuit_id, circuit_port_number):
     """
+    Use this when a harness or system build needs the instance at one port number of a circuit.
+
     Finds the instance name at a specific port number in a circuit.
 
     Searches the instances list for an instance that matches both the `circuit_id`
@@ -159,6 +167,8 @@ def instance_of_circuit_port_number(circuit_id, circuit_port_number):
 
 def circuit_instance_of_instance(instance_name):
     """
+    Use this when a harness or system build needs the circuit instance that an item belongs to.
+
     Returns the circuit instance dictionary for an instance that belongs to a circuit.
 
     Finds the circuit instance (`item_type=="circuit"`) that corresponds to a given
@@ -197,6 +207,8 @@ def assign_cable_conductor(
     harness,  # which harness this cable belongs to
 ):
     """
+    Use this when a harness build needs a conductor instance assigned to one conductor of a cable, and that cable should be imported if it is not already in the project.
+
     Assigns a conductor instance to a specific conductor in a cable.
 
     Links a conductor instance in the project to a specific conductor within a cable

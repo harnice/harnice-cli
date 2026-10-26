@@ -29,7 +29,11 @@ _OPTIONAL_COLUMNS = tuple(col for col in COLUMNS if col not in _REQUIRED_ALWAYS)
 
 
 def new():
-    """Create a signals TSV at fileio.path("signals list") with only the header row."""
+    """
+    Use this when a device build is starting the signals list and should replace the file that is already there.
+
+    Create a signals TSV at fileio.path("signals list") with only the header row.
+    """
     signals_path = fileio.path("signals list")
     os.makedirs(os.path.dirname(signals_path), exist_ok=True)
     with open(signals_path, "w", newline="", encoding="utf-8") as f:
@@ -38,7 +42,10 @@ def new():
 
 
 def append(**kwargs):
-    """Append one signal row. Missing optional fields are written as empty strings.
+    """
+    Use this when a device build needs one signal added to the signals list.
+
+    Append one signal row. Missing optional fields are written as empty strings.
 
     Required: channel_id, signal, cavity, connector_id, channel_type, and exactly
     one of device_connector_mpn or harness_connector_mpn.
@@ -75,7 +82,11 @@ def append(**kwargs):
 
 
 def read(path_to_signals_list=None):
-    """Return signals-list rows from a path, file key, or the current project list."""
+    """
+    Use this when a device or system build needs the rows of a signals list: a path, a file key, or the signals list of the revision that is open.
+
+    Return signals-list rows from a path, file key, or the current project list.
+    """
     path = path_to_signals_list or "signals list"
     return fileio.read_tsv(path)
 
@@ -107,7 +118,10 @@ def unique_connector_ids_from_directory(directory):
 
 
 def cavity_of_signal(channel_id, signal, path_to_signals_list, repeat_channel_id=""):
-    """Return the cavity a signal uses on one channel endpoint.
+    """
+    Use this when a build needs the cavity one signal uses on a channel endpoint.
+
+    Return the cavity a signal uses on one channel endpoint.
 
     **Args:**
     - `channel_id`: Channel id of the signal whose cavity you want.
@@ -130,7 +144,10 @@ def cavity_of_signal(channel_id, signal, path_to_signals_list, repeat_channel_id
 
 
 def connector_id_of_channel(channel_id, path_to_signals_list, repeat_channel_id=""):
-    """Return ``connector_id`` for a channel endpoint.
+    """
+    Use this when a build needs the connector id of one channel in a signals list.
+
+    Return ``connector_id`` for a channel endpoint.
 
     **Args:**
     - `channel_id`: Channel id whose connector you want.

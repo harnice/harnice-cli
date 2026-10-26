@@ -4,6 +4,8 @@
 *These functions are already available in build instructions as `cable_utils`. Use them as written.*
 ??? info "`cable_utils.new_cable(instance_name, mpn, lib_repo, lib_subpath)`"
 
+    Use this when a harness build needs a library cable imported as a new cable instance.
+    
     Imports a library cable into the project as a new cable instance.
     
     Creates an instances-list row named `instance_name` (the cable refdes) and
@@ -23,6 +25,8 @@
 
 ??? info "`cable_utils.prepare_for_conductor_assign(instance_name)`"
 
+    Use this when a harness build needs the system cable recommendation cleared on a conductor before that conductor is assigned to a chosen cable.
+    
     Clears system cable-recommendation fields on a conductor so it can be assigned.
     
     System build writes `mpn`, `lib_repo`, `lib_subpath`, `cable_group`, and
@@ -36,6 +40,8 @@
 
 ??? info "`cable_utils.assign_conductor_to_cable(instance_name, cable_instance_name, cable_identifier)`"
 
+    Use this when a harness build needs a conductor instance assigned to one conductor of a cable that is already in the project.
+    
     Assigns a conductor instance to one conductor inside an existing cable.
     
     Verifies that `cable_instance_name` exists as a cable, that `cable_identifier`
@@ -62,9 +68,13 @@
 
 ??? info "`cable_utils.map_cables_and_conductors_to_segments()`"
 
+    Use this when a harness build needs every cable and conductor routed onto the flattened network and their lengths written.
+    
     Routes every conductor and cable onto the flattened network and writes lengths.
     
-    Conductors are mapped from `node_at_end_a` to `node_at_end_b`. Cables have no
+    Conductors are mapped from `node_at_end_a` to `node_at_end_b`. A conductor
+    whose ends resolve to the same connector node is a loopback and is mapped
+    out and back along that connector's free stub. Cables have no
     ends of their own: each cable is mapped onto the segments shared by every
     conductor assigned to it (the jacketed run before conductors break out to
     different nodes). Those shared-path ends are written onto the cable as
@@ -73,11 +83,15 @@
     conductor).
     
     **Raises:**
-    - `ValueError`: If a conductor cannot be mapped onto the network (see
-        `flattened_network.map_instance_to_segments`).
+    - `ValueError`: If a conductor cannot be mapped. Each end must name a
+        node, or a cavity whose connector group has one node. Both ends
+        resolving to the same node travel out and back on that connector's
+        free stub. No path between the ends raises.
 
 ??? info "`cable_utils.calculate_bundle_diameter(segment_instance_name)`"
 
+    Use this when a harness build needs the outer diameter of one segment from the cables on that segment.
+    
     Estimates the outer diameter of a segment from the cables it carries.
     
     Collects every cable mapped onto ``segment_instance_name`` (via

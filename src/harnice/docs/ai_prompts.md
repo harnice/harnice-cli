@@ -34,7 +34,8 @@ Paste one of these into a chatbot. The chatbot opens the raw URL in the prompt a
 1. [Device signals list](#device-signals-list-buildpy) — turn any pinout, ICD, or datasheet into device `build.py`
 2. [Part family](#part-family-library-skus) — encode a catalog into library SKUs
 3. [System build instructions](#system-build-instructions) — write or edit a system `build.py`
-4. [Harness build instructions](#harness-build-instructions) — write or edit a harness `build.py`
+4. [Harness build instructions](#harness-build-instructions) — write or edit a harness `build.py`, including layout
+5. [CAD](#cad) — write a device body, or arrange those bodies in a system
 
 ### Device signals list (`build.py`)
 
@@ -110,13 +111,11 @@ This message says the revision is a system, and what the script should do, or th
 
 https://github.com/harnice/harnice-cli
 
-Clone that repository. Follow `skills/system/SKILL.md`. The functions it may call are `skills/build-api/reference.md`. The documentation is in the same clone at `src/harnice/docs/`. Start with `index.md`.
+Clone that repository. Follow `skills/system/SKILL.md`. The calls and how to use them are in the same clone at `src/harnice/docs/`. Start with `index.md`.
 
-If you cannot clone the repository, open these URLs, read each entire file, and follow the skill:
+If you cannot clone the repository, open this URL, read the entire file, and follow the skill:
 
 https://raw.githubusercontent.com/harnice/harnice-cli/main/skills/system/SKILL.md
-
-https://raw.githubusercontent.com/harnice/harnice-cli/main/skills/build-api/reference.md
 
 If you cannot read a whole file, say so and ask me to paste it. Do not write `build.py` until you have read the skill.
 ````
@@ -125,7 +124,7 @@ If you cannot read a whole file, say so and ask me to paste it. Do not write `bu
 
 ### Harness build instructions
 
-Paste this when the revision is a harness. A system uses the prompt above. Name the revision and what the script should do.
+Paste this when the revision is a harness. A system uses the prompt above. Name the revision and what the script should do. A node move and a backshell clock are this skill.
 
 <details class="prompt" markdown="1">
 <summary>Harnice harness build instructions</summary>
@@ -139,15 +138,40 @@ This message says the revision is a harness, and what the script should do, or t
 
 https://github.com/harnice/harnice-cli
 
-Clone that repository. Follow `skills/harness/SKILL.md`. The functions it may call are `skills/build-api/reference.md`. The documentation is in the same clone at `src/harnice/docs/`. Start with `index.md`.
+Clone that repository. Follow `skills/harness/SKILL.md`. The calls and how to use them are in the same clone at `src/harnice/docs/`. Start with `index.md`.
 
-If you cannot clone the repository, open these URLs, read each entire file, and follow the skill:
+If you cannot clone the repository, open this URL, read the entire file, and follow the skill:
 
 https://raw.githubusercontent.com/harnice/harnice-cli/main/skills/harness/SKILL.md
 
-https://raw.githubusercontent.com/harnice/harnice-cli/main/skills/build-api/reference.md
-
 If you cannot read a whole file, say so and ask me to paste it. Do not write `build.py` until you have read the skill.
+````
+
+</details>
+
+### CAD
+
+Paste this when the device needs a body, or when devices in a system need to be posed and fastened. Name the shape and the dimensions, or name which connector fastens to which. A pinout uses the device signals list prompt. A system `build.py` uses the system prompt.
+
+<details class="prompt" markdown="1">
+<summary>Harnice CAD</summary>
+
+````markdown
+# Harnice CAD
+
+The procedure is a skill in the Harnice command-line repository. It is not in this message.
+
+This message says the device body to write, or which devices to fasten, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A device signals list is a different skill. A system build.py is a different skill.
+
+https://github.com/harnice/harnice-cli
+
+Clone that repository. Follow `skills/cad/SKILL.md`. The documentation is in the same clone at `src/harnice/docs/cad.md`.
+
+If you cannot clone the repository, open this URL, read the entire file, and follow it:
+
+https://raw.githubusercontent.com/harnice/harnice-cli/main/skills/cad/SKILL.md
+
+If you cannot read the whole file, say so and ask me to paste it. Do not write a body until you have read the skill.
 ````
 
 </details>

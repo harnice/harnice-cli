@@ -21,6 +21,8 @@ def run_macro(
     **kwargs,
 ):
     """
+    Use this when a harness or system build needs a library macro run for one artifact.
+
     Runs a macro script from the library with the given artifact ID.
 
     Imports a macro from the library and executes its Python script. The macro
@@ -96,6 +98,8 @@ def run_macro(
 
 def lookup_outputcsys_from_lib_used(instance, outputcsys, base_directory=None):
     """
+    Use this when a build needs the x, y, and rotation of an output coordinate system stored in a pulled part's attributes.
+
     Looks up coordinate system transform from an instance's library attributes.
 
     Reads the instance's attributes JSON file to find the specified output coordinate
@@ -168,6 +172,8 @@ def run_instruction_from_relative(
     **kwargs,
 ):
     """
+    Use this when a build needs to call one function from another project's build instructions, in this revision's folder, without running that project's script.
+
     Imports a function from a relative project's build instructions and calls it here.
 
     Locates that revision with ``repository_locations.csv`` (``relative_repo``)

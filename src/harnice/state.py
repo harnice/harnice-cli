@@ -10,7 +10,10 @@ import re
 
 # not initializing these variables so that a NameError is raised if they are not set
 def set_pn(x):
-    """Set the current part number (e.g. `"mypart"`). Called by `fileio.verify_revision_structure()`.
+    """
+    Use this when the runner records the part number of the revision that is open. verify_revision_structure calls this. A build script does not.
+
+    Set the current part number (e.g. `"mypart"`). Called by `fileio.verify_revision_structure()`.
 
     **Args:**
     - `x`: Part number string, for example ``"mypart"``. Later calls to ``partnumber`` read this value.
@@ -20,7 +23,10 @@ def set_pn(x):
 
 
 def set_rev(x):
-    """Set the current revision (number or string, e.g. 1 or \"A\"). Called by `fileio.verify_revision_structure()`.
+    """
+    Use this when the runner records the revision token of the folder that is open. verify_revision_structure calls this. A build script reads state.rev instead.
+
+    Set the current revision (number or string, e.g. 1 or \"A\"). Called by `fileio.verify_revision_structure()`.
 
     **Args:**
     - `x`: Revision number or letter, for example ``1`` or ``"A"``. ``partnumber`` formats this as ``rev1`` or ``revA``.
@@ -30,7 +36,10 @@ def set_rev(x):
 
 
 def set_project_type(x):
-    """Set the current project type (e.g. `"harness"`, `"system"`).
+    """
+    Use this when the runner records the project type of the revision that is open. A build script does not call this.
+
+    Set the current project type (e.g. `"harness"`, `"system"`).
 
     **Args:**
     - `x`: Project type name, for example ``"harness"``, ``"system"``, or ``"device"``.
@@ -40,7 +49,10 @@ def set_project_type(x):
 
 
 def set_harness(x):
-    """Set the current harness context (used during build).
+    """
+    Use this when the harness refdes of the build that is running needs to be recorded. system.build() clears it, and import_harness_from_harnice_system sets it to the harness being imported.
+
+    Set the current harness context (used during build).
 
     **Args:**
     - `x`: Harness name for this build. New instances pick it up when they do not set ``harness`` themselves.
@@ -50,7 +62,10 @@ def set_harness(x):
 
 
 def set_file_structure(x):
-    """Set the default file structure dict used by `fileio.path()` and `fileio.dirpath()`.
+    """
+    Use this when the runner records the file structure for the project type that is open. fileio.path and fileio.dirpath read it. A build script does not call this.
+
+    Set the default file structure dict used by `fileio.path()` and `fileio.dirpath()`.
 
     The CLI calls this with the current project type's `file_structure()` result.
 
@@ -62,7 +77,10 @@ def set_file_structure(x):
 
 
 def partnumber(format):
-    """Return the current part number and/or revision in the requested format.
+    """
+    Use this when a build needs the part number or revision of the open revision in one of the formats "pn", "R", "rev", or "pn-rev".
+
+    Return the current part number and/or revision in the requested format.
 
     Assumes `state.pn` and `state.rev` are set (e.g. by `fileio.verify_revision_structure()`).
     For a part `"mypart"` and rev `1`:

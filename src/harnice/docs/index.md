@@ -58,7 +58,7 @@ If your electrical system can be implemented by simple logic statements, Harnice
 
 1. **Write the rules.** Use straightforward Python for checks, part selection, channel mapping, naming, colors, and anything unique to your process.
 
-1. **Click Build.** Harnice compiles the whole design—and every output—from the same source of truth.
+1. **Click Build.** Harnice compiles the whole design—and every output—from the same source of truth. From a terminal, that build is [`harnice -b`](getting_started/command_line.md).
 
 ---
 
@@ -70,6 +70,8 @@ If your electrical system can be implemented by simple logic statements, Harnice
 - **A live map of the whole system.** Trace channels through devices, connectors, and passthroughs, then inspect the data behind every connection.
 
 ![Interactive system-wide channel map and connection data](index_images/Xnip2026-09-24_18-43-26.png)
+
+- **Device solids, fastened in the system.** A device build writes a body. The system physical model mates those bodies together. See [CAD](cad.md).
 
 - **Real routing, in context.** Lay out harnesses around your hardware in 3D, with lengths calculated from the route.
 
