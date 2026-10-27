@@ -32,6 +32,24 @@ _BLOCK_DIAGRAM_OVERLAY_HTML_COMMENT_RE = re.compile(
 )
 
 
+def blank_block_diagram_symbol_svg(contents_id):
+    """Minimal device block diagram symbol, including the locked ``{refdes}`` label."""
+    contents_id = (contents_id or "").strip() or "symbol-contents-start"
+    if contents_id.endswith("-contents-start"):
+        contents_end = contents_id[: -len("-contents-start")] + "-contents-end"
+    else:
+        contents_end = contents_id + "-contents-end"
+    view_box = "0 0 400 400"
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}" data-bbox="{view_box}">
+  <g id="{contents_id}" class="component device">
+    <text class="diagram-primitive" data-symbol-refdes="1" x="8" y="16" font-family="Helvetica" font-size="12pt" font-weight="normal" fill="black" fill-opacity="1" stroke="none" stroke-width="0.2mm" stroke-opacity="1" text-anchor="start" dominant-baseline="alphabetic" data-wrap-width="120" data-text="&quot;{{refdes}}&quot;">{{refdes}}</text>
+  </g>
+  <g id="{contents_end}"></g>
+</svg>
+'''
+
+
 def normalize_block_diagram_svg_ns0_elementtree_artifact(svg_text):
     """
     Repair SVG that mixes ``xmlns:ns0`` / ``<ns0:…>`` with unprefixed overlay markup.
@@ -524,9 +542,6 @@ def copy_matching_svg_ids(dest_parent, src_parent):
         pin = (el.get("data-pin-name") or "").strip()
         if pin:
             return ("pin", pin)
-        attr = (el.get("data-attribute-name") or "").strip()
-        if attr:
-            return ("attr", attr)
         if local == "configuration":
             return ("configuration",)
         classes = tuple(sorted((el.get("class") or "").split()))
@@ -637,13 +652,6 @@ def _refdes_from_device_group(g_el):
     rid = (g_el.get("id") or "").strip()
     if rid:
         return rid.strip("?")
-    for node in g_el.iter():
-        if _svg_local_tag(node.tag) not in ("text", "tspan"):
-            continue
-        if node.get("data-attribute-name") == "REFDES":
-            t = (node.text or "").strip()
-            if t:
-                return t.strip("?")
     return ""
 
 

@@ -633,8 +633,9 @@ BLOCK_DIAGRAM_MASTER_NAME = "block-diagram"
 _APPLIED_TRACES_GROUP_ID = "applied-traces"
 
 # Device answers live in the SVG namespace as ``<configuration>``. Inkscape does
-# not know that type (``WARNING: unknown type: svg:configuration``). Values are
-# already baked into attribute-text nodes; the element is metadata only.
+# not know that type (``WARNING: unknown type: svg:configuration``). Visible
+# strings are written into text nodes when the system builds the device; the
+# element is metadata only.
 _CONFIGURATION_ELEMENT_RE = re.compile(
     r"<((?:[\w.-]+:)?configuration)\b(?:[^>]*/>|[^>]*>.*?</\1\s*>)",
     re.IGNORECASE | re.DOTALL,

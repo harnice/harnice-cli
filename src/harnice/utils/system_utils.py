@@ -1,4 +1,3 @@
-from multiprocessing import Value
 import os
 import ast
 import csv
@@ -6,7 +5,7 @@ import json
 import math
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from harnice import cli, fileio, state
+from harnice import build_sandbox, cli, fileio, state
 from harnice.lists import circuits_list, instances_list
 from harnice.project_types import device, system
 from harnice.utils import block_diagram_utils, library_utils, svg_utils
@@ -73,23 +72,6 @@ def export_bom_from_block_diagram():
     - `list[str]`: Reference designators for each placed component and harness in the diagram.
     """
 
-    def configuration_json_from_device_group(g_el):
-        """Return compact JSON for a placed device's ``<configuration>`` child, or ``\"\"``."""
-        for child in list(g_el):
-            if block_diagram_utils._svg_local_tag(child.tag) != "configuration":
-                continue
-            raw = (child.text or "").strip()
-            if not raw:
-                return ""
-            try:
-                obj = json.loads(raw)
-            except json.JSONDecodeError:
-                return raw
-            if not isinstance(obj, dict):
-                return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
-            return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
-        return ""
-
     bom_labels = [
         "device_refdes",
         "MFG",
@@ -129,6 +111,21 @@ def export_bom_from_block_diagram():
         if not refdes:
             continue
 
+        configuration = ""
+        for child in list(el):
+            if block_diagram_utils._svg_local_tag(child.tag) != "configuration":
+                continue
+            raw = (child.text or "").strip()
+            if not raw:
+                break
+            try:
+                obj = json.loads(raw)
+            except json.JSONDecodeError:
+                configuration = raw
+            else:
+                configuration = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+            break
+
         rows.append(
             {
                 "device_refdes": refdes,
@@ -139,7 +136,7 @@ def export_bom_from_block_diagram():
                 "rev": (el.get("rev") or "").strip(),
                 "harness": "",
                 "system": "TRUE" if comp_kind == "subsystem" else "",
-                "configuration": configuration_json_from_device_group(el),
+                "configuration": configuration,
             }
         )
         refdes_list.append(refdes)
@@ -298,13 +295,6 @@ def make_connector_list():
                 parent[x] = _find(parent[x])
             return parent[x]
 
-        def _union(a, b):
-            if not a or not b or a == b:
-                return
-            ra, rb = _find(a), _find(b)
-            if ra != rb:
-                parent[rb] = ra
-
         for r in rows:
             h = (r.get("mating_harness_refdes") or "").strip()
             if _is_real_harness_refdes(h):
@@ -331,7 +321,12 @@ def make_connector_list():
                     }
                 )
                 for i in range(1, len(hs)):
-                    _union(hs[0], hs[i])
+                    a, b = hs[0], hs[i]
+                    if not a or not b or a == b:
+                        continue
+                    ra, rb = _find(a), _find(b)
+                    if ra != rb:
+                        parent[rb] = ra
 
         buckets = defaultdict(set)
         for x in parent:
@@ -431,18 +426,6 @@ def make_connector_list():
 
     hit_tol = 8.0
 
-    def closest_segment_id(wx, wy):
-        best_id, best_d = None, float("inf")
-        for h in harness_lines:
-            d = block_diagram_utils._svg_dist_point_to_segment(
-                wx, wy, h["x1"], h["y1"], h["x2"], h["y2"]
-            )
-            tol = max(h["sw"] * 2.0, hit_tol)
-            if d <= tol and d < best_d:
-                best_d = d
-                best_id = h["id"]
-        return best_id
-
     harness_refdes_by_cluster = {}
     for el in root.iter():
         if block_diagram_utils._svg_local_tag(el.tag) != "circle":
@@ -455,7 +438,16 @@ def make_connector_list():
             cy = float(el.get("cy", 0))
         except (TypeError, ValueError):
             continue
-        sid = closest_segment_id(cx, cy)
+        sid = None
+        best_d = float("inf")
+        for h in harness_lines:
+            d = block_diagram_utils._svg_dist_point_to_segment(
+                cx, cy, h["x1"], h["y1"], h["x2"], h["y2"]
+            )
+            tol = max(h["sw"] * 2.0, hit_tol)
+            if d <= tol and d < best_d:
+                best_d = d
+                sid = h["id"]
         if not sid:
             continue
         ckey = cluster_key_by_seg.get(sid)
@@ -496,17 +488,6 @@ def make_connector_list():
             }
         )
 
-    def nearest_device_connector(wx, wy):
-        mate_tol = 6.0
-        best = None
-        best_d = float("inf")
-        for c in device_connectors:
-            d = math.hypot(wx - c["wx"], wy - c["wy"])
-            if d <= mate_tol and d < best_d:
-                best_d = d
-                best = c
-        return best
-
     fieldnames = [
         "device_refdes",
         "device_connector",
@@ -530,7 +511,14 @@ def make_connector_list():
             else [(x1, y1)]
         )
         for ex, ey in endpoints:
-            match = nearest_device_connector(ex, ey)
+            match = None
+            best_d = float("inf")
+            mate_tol = 6.0
+            for c in device_connectors:
+                d = math.hypot(ex - c["wx"], ey - c["wy"])
+                if d <= mate_tol and d < best_d:
+                    best_d = d
+                    match = c
             if not match:
                 continue
             mwx = round(float(match["wx"]))
@@ -728,8 +716,14 @@ def block_diagram_harness_overlay_markup(
                 queue.append((nxt, path + [nxt]))
         return None
 
-    def junction_union_adj(spoke_nodes, adj):
-        """Adjacency of the union of pairwise shortest paths among spoke nodes."""
+    def junction_overlay_pairs(spoke_nodes, adj):
+        """Non-overlapping spoke→T and T→T pairs along the connecting harness subtree.
+
+        Stars every member to one T would redraw the span between two T's once per
+        far-side spoke. Walk the union instead: each leaf to its nearest T, and
+        each pair of adjacent T's once.
+        """
+
         unique = []
         for n in spoke_nodes:
             if n and n not in unique:
@@ -743,16 +737,6 @@ def block_diagram_harness_overlay_markup(
                 for a, b in zip(path, path[1:]):
                     union.setdefault(a, set()).add(b)
                     union.setdefault(b, set()).add(a)
-        return unique, union
-
-    def junction_overlay_pairs(spoke_nodes, adj):
-        """Non-overlapping spoke→T and T→T pairs along the connecting harness subtree.
-
-        Stars every member to one T would redraw the span between two T's once per
-        far-side spoke. Walk the union instead: each leaf to its nearest T, and
-        each pair of adjacent T's once.
-        """
-        unique, union = junction_union_adj(spoke_nodes, adj)
         if len(unique) < 2 or not union:
             return []
         hubs = [n for n, nbrs in union.items() if len(nbrs) >= 3]
@@ -1127,24 +1111,30 @@ def block_diagram_harness_overlay_markup(
         # Opacity lives on the stroke so Analyze can still show/hide the group.
         # Perpstripe overlays already set stroke-dasharray. A second one is not
         # well-formed SVG, and the next build cannot parse the diagram.
-        def _dash_crossing(el):
+        dashed = []
+        for el in trace_group:
             if "stroke-dasharray=" in el:
                 if "stroke-opacity=" in el:
-                    return el
-                return el.replace(
-                    "<path ", '<path stroke-opacity="0.6" ', 1
-                ).replace("<line ", '<line stroke-opacity="0.6" ', 1)
-            return el.replace(
-                "<path ",
-                '<path stroke-dasharray="3 2" stroke-opacity="0.6" ',
-                1,
-            ).replace(
-                "<line ",
-                '<line stroke-dasharray="3 2" stroke-opacity="0.6" ',
-                1,
-            )
-
-        trace_group = [_dash_crossing(el) for el in trace_group]
+                    dashed.append(el)
+                else:
+                    dashed.append(
+                        el.replace("<path ", '<path stroke-opacity="0.6" ', 1).replace(
+                            "<line ", '<line stroke-opacity="0.6" ', 1
+                        )
+                    )
+            else:
+                dashed.append(
+                    el.replace(
+                        "<path ",
+                        '<path stroke-dasharray="3 2" stroke-opacity="0.6" ',
+                        1,
+                    ).replace(
+                        "<line ",
+                        '<line stroke-dasharray="3 2" stroke-opacity="0.6" ',
+                        1,
+                    )
+                )
+        trace_group = dashed
         chunks.append(
             svg_utils._trace_group_open_tag(
                 {"instance_name": f"passthrough-{refdes}.{channel_id}:{group}"},
@@ -1257,15 +1247,6 @@ def find_connector_with_no_circuit(connector_list, circuits_list):
             )
 
 
-def _bom_item_type(row):
-    """Return ``harness``, ``system``, or ``device`` for a BOM row."""
-    if (row.get("harness") or "").strip().upper() == "TRUE":
-        return "harness"
-    if (row.get("system") or "").strip().upper() == "TRUE":
-        return "system"
-    return "device"
-
-
 def _import_bom_devices(update_instances_list=True):
     """
     Pull every BOM device, subsystem, or harness into ``instance_data`` and optionally the instances list.
@@ -1276,11 +1257,54 @@ def _import_bom_devices(update_instances_list=True):
     source of truth for ``channel_map.flatten()``.
     Called from ``system.build()`` after the BOM is exported from the block diagram.
     """
+
+    def bom_item_type(row):
+        if (row.get("harness") or "").strip().upper() == "TRUE":
+            return "harness"
+        if (row.get("system") or "").strip().upper() == "TRUE":
+            return "system"
+        return "device"
+
+    def evaluate_device_symbol_fstrings(refdes, namespace):
+        """Store this device's symbol text while its build namespace is live.
+
+        Does not modify the symbol file. The consuming system's diagram write
+        happens later.
+        """
+        refdes = (refdes or "").strip().strip("?")
+        results = {}
+        _device_symbol_fstring_results[refdes] = results
+        if not refdes:
+            return results
+        path = fileio.path("block diagram symbol")
+        if not path or not os.path.isfile(path):
+            return results
+        try:
+            tree = block_diagram_utils._parse_block_diagram_svg_file(path)
+        except (OSError, ET.ParseError) as exc:
+            cli.warn(f"{refdes}: could not read symbol text ({type(exc).__name__}: {exc})")
+            return results
+        ns = _symbol_fstring_namespace(namespace, refdes)
+        root = tree.getroot()
+        parent_map = {c: p for p in root.iter() for c in list(p)}
+        parent_map[root] = None
+        local = block_diagram_utils._svg_local_tag
+        for node in root.iter():
+            if local(node.tag) != "text":
+                continue
+            if is_under_system_diagram_primitive(node, parent_map):
+                continue
+            template = symbol_text_template(node)
+            if "\\n" not in template and not ("{" in template and "}" in template):
+                continue
+            results[template] = eval_symbol_fstring(template, ns)
+        return results
+
     bom_rows = fileio.read_tsv("bom")
     instance_data_root = fileio.dirpath("instance_data")
 
     for row in bom_rows:
-        item_type = _bom_item_type(row)
+        item_type = bom_item_type(row)
         is_harness = item_type == "harness"
 
         library_utils.pull(
@@ -1302,7 +1326,8 @@ def _import_bom_devices(update_instances_list=True):
             replace_destination=is_harness,
         )
 
-    # Build each BOM device that has build instructions (harnesses skipped).
+    # Build each BOM device, then evaluate its symbol text in that build's namespace.
+    clear_device_symbol_fstring_results()
     saved_cwd = os.getcwd()
     saved_pn = getattr(state, "pn", None)
     saved_rev = getattr(state, "rev", None)
@@ -1310,21 +1335,8 @@ def _import_bom_devices(update_instances_list=True):
     saved_file_structure = getattr(state, "file_structure", None)
     saved_harness = getattr(state, "harness", None)
 
-    def _restore_system_context():
-        os.chdir(saved_cwd)
-        if saved_pn is not None:
-            state.set_pn(saved_pn)
-        if saved_rev is not None:
-            state.set_rev(saved_rev)
-        if saved_project_type is not None:
-            state.set_project_type(saved_project_type)
-        if saved_file_structure is not None:
-            state.set_file_structure(saved_file_structure)
-        if saved_harness is not None:
-            state.set_harness(saved_harness)
-
     for row in bom_rows:
-        if _bom_item_type(row) != "device":
+        if bom_item_type(row) != "device":
             continue
 
         refdes = row.get("device_refdes")
@@ -1332,10 +1344,10 @@ def _import_bom_devices(update_instances_list=True):
             continue
 
         dest_dir = os.path.join(instance_data_root, "device", refdes)
-        bi_path = os.path.join(dest_dir, "build.py")
-        if not os.path.isfile(bi_path):
+        if not os.path.isdir(dest_dir):
             continue
 
+        bi_path = os.path.join(dest_dir, "build.py")
         configuration = {}
         config_text = (row.get("configuration") or "").strip()
         if config_text:
@@ -1352,15 +1364,40 @@ def _import_bom_devices(update_instances_list=True):
             state.set_rev(None)
             state.set_project_type("device")
             state.set_file_structure(device.file_structure())
+            merged = {**device._default_configuration_from_setup(), **configuration}
+            script_ns = None
+            if os.path.isfile(bi_path):
+                try:
+                    script_ns = device.build(verbose=False, configuration=configuration)
+                except Exception as e:
+                    cli.warn(
+                        f"device {refdes} build failed, continuing "
+                        f"({type(e).__name__}: {e})"
+                    )
+            if not isinstance(script_ns, dict):
+                script_ns = build_sandbox.public_globals()
+                script_ns["configuration"] = merged
+            else:
+                script_ns.setdefault("configuration", merged)
             try:
-                device.build(verbose=False, configuration=configuration)
+                evaluate_device_symbol_fstrings(refdes, script_ns)
             except Exception as e:
                 cli.warn(
-                    f"device {refdes} build failed, continuing "
+                    f"device {refdes} symbol text failed, continuing "
                     f"({type(e).__name__}: {e})"
                 )
         finally:
-            _restore_system_context()
+            os.chdir(saved_cwd)
+            if saved_pn is not None:
+                state.set_pn(saved_pn)
+            if saved_rev is not None:
+                state.set_rev(saved_rev)
+            if saved_project_type is not None:
+                state.set_project_type(saved_project_type)
+            if saved_file_structure is not None:
+                state.set_file_structure(saved_file_structure)
+            if saved_harness is not None:
+                state.set_harness(saved_harness)
 
 
 def create_instances_from_circuits_list():
@@ -2056,74 +2093,24 @@ def import_harness_from_harnice_system(
     instances_list.seed_connector_nodes()
 
 
-def instance_symbol_svg_path(item_type, refdes, artifact_id=""):
-    """
-    Absolute path to a placed instance's symbol SVG under ``instance_data``.
-
-    Devices use ``symbol.svg``. Subsystems (``item_type="system"``) resolve a
-    ``subsystem_symbol`` macro SVG by ``artifact_id`` when given, otherwise the
-    first available symbol file. Returns ``None`` when no file is found.
-    """
-    refdes = (refdes or "").strip()
-    if not refdes or not item_type:
-        return None
-    inst_dir = os.path.join(fileio.dirpath("instance_data"), item_type, refdes)
-    if not os.path.isdir(inst_dir):
-        return None
-
-    if item_type == "device":
-        path = os.path.join(inst_dir, "symbol.svg")
-        return path if os.path.isfile(path) else None
-
-    if item_type == "system":
-        from harnice.utils import system_symbol_utils
-
-        symbols = system_symbol_utils.list_system_symbols_in_directory(inst_dir)
-        aid = (artifact_id or "").strip()
-        if aid:
-            for row in symbols:
-                if row.get("artifact_id") == aid and row.get("path"):
-                    return row["path"]
-        for row in symbols:
-            if row.get("path"):
-                return row["path"]
-        flat = os.path.join(inst_dir, "symbol.svg")
-        return flat if os.path.isfile(flat) else None
-
-    return None
-
-
 def svg_element_visible_text(el):
-    """Visible character data of a ``text``/``tspan`` node, ignoring indent whitespace."""
-    return "".join(el.itertext()).strip() if el is not None else ""
-
-
-def set_svg_element_text(el, value):
-    """Set visible text on an SVG ``text``/``tspan`` node, preferring a single tspan child.
-
-    Returns True when the node was changed. Leaves structure alone when the
-    visible text already matches.
-    """
-    value = "" if value is None else str(value)
-    if svg_element_visible_text(el) == value.strip():
-        return False
+    """Visible character data of a ``text`` node. Tspan lines are joined with newlines."""
+    if el is None:
+        return ""
     local = block_diagram_utils._svg_local_tag
     tspans = [c for c in list(el) if local(c.tag) == "tspan"]
     if tspans:
-        first = tspans[0]
-        first.text = value
-        first.tail = None
-        for extra in tspans[1:]:
-            el.remove(extra)
-        for sub in list(first):
-            first.remove(sub)
-        el.text = None
-        return True
-    el.text = value
-    for child in list(el):
-        if local(child.tag) == "tspan":
-            el.remove(child)
-    return True
+        lines = []
+        for tspan in tspans:
+            if "data-line" in tspan.attrib:
+                lines.append(tspan.get("data-line") or "")
+            else:
+                line = "".join(tspan.itertext())
+                if line == "\u00a0":
+                    line = ""
+                lines.append(line)
+        return "\n".join(lines)
+    return "".join(el.itertext()).strip()
 
 
 def is_under_system_diagram_primitive(el, parent_map):
@@ -2137,17 +2124,176 @@ def is_under_system_diagram_primitive(el, parent_map):
     return False
 
 
-def patch_placed_attribute_texts(root_g):
-    """
-    Bake REFDES and configuration values onto attribute-text nodes under a placed root.
+# template -> evaluated string, captured while each device build namespace is live.
+_device_symbol_fstring_results = {}
 
-    Skips labels nested inside an embedded ``system-diagram-primitive`` (those keep
-    their source-diagram names). Configuration comes from a ``<configuration>`` child
-    on ``root_g`` (JSON object).
+
+def clear_device_symbol_fstring_results():
+    """Drop symbol f-string results from an earlier system build in this process."""
+    _device_symbol_fstring_results.clear()
+
+
+def symbol_text_template(node):
+    """F-string source for one symbol text node.
+
+    ``data-text`` when present, otherwise the visible characters.
     """
+    raw = node.get("data-text")
+    if raw is not None:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = raw
+        if isinstance(parsed, str):
+            return parsed
+    return svg_element_visible_text(node)
+
+
+def eval_symbol_fstring(template, namespace):
+    """
+    Evaluate ``template`` as a Python f-string in ``namespace``.
+
+    ``\\n`` in the text starts a new line, including inside an expression.
+    ``\\\\n`` stays as the two characters ``\\n``. Text with no braces and no
+    ``\\n`` is returned unchanged. A failed expression is warned and left as
+    the template so the diagram shows what could not be evaluated.
+    """
+    template = "" if template is None else str(template)
+    if "\\" in template:
+        out = []
+        i = 0
+        n = len(template)
+        while i < n:
+            if template[i] == "\\" and i + 1 < n:
+                nxt = template[i + 1]
+                if nxt == "n":
+                    out.append("\n")
+                    i += 2
+                    continue
+                if nxt == "\\":
+                    out.append("\\")
+                    i += 2
+                    continue
+            out.append(template[i])
+            i += 1
+        template = "".join(out)
+    if "{" not in template or "}" not in template:
+        return template
+    try:
+        value = eval("f" + repr(template), namespace)
+    except Exception as exc:
+        cli.warn(
+            f"symbol text f-string failed ({type(exc).__name__}: {exc}): {template!r}"
+        )
+        return template
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _symbol_fstring_namespace(namespace, refdes):
+    ns = dict(namespace or {})
+    if not isinstance(ns.get("configuration"), dict):
+        ns["configuration"] = {}
+    ns["refdes"] = refdes
+    return ns
+
+
+def _is_device_component_group(el):
+    local = block_diagram_utils._svg_local_tag
+    if el is None or local(el.tag) != "g":
+        return False
+    classes = set((el.get("class") or "").split())
+    if "component" not in classes or "device" not in classes:
+        return False
+    gid = (el.get("id") or "").strip().strip("?")
+    if not gid or gid.endswith("-contents-start") or gid.endswith("-contents-end"):
+        return False
+    return True
+
+
+def apply_placed_symbol_fstrings(root_g):
+    """
+    Write evaluated f-strings onto text under a placed device or subsystem.
+
+    Uses strings captured when that device was built, when present. Otherwise
+    evaluates here with ``configuration`` from the placed ``<configuration>``
+    child and ``refdes`` from the group id. Skips text inside an embedded
+    system-diagram primitive.
+    """
+
+    def set_text(el, value):
+        value = "" if value is None else str(value)
+        local = block_diagram_utils._svg_local_tag
+        if "\n" in value:
+            if svg_element_visible_text(el) == value:
+                return
+            for child in list(el):
+                if local(child.tag) == "tspan":
+                    el.remove(child)
+            el.text = None
+            raw = (el.get("font-size") or "12").strip()
+            i = 0
+            while i < len(raw) and (raw[i].isdigit() or raw[i] == "."):
+                i += 1
+            try:
+                size = float(raw[:i] or "12")
+            except ValueError:
+                size = 12.0
+                i = 0
+            unit = raw[i:].strip()
+            dy_step = f"{size * 1.2:.4f}".rstrip("0").rstrip(".") + unit
+            tag = el.tag if isinstance(el.tag, str) else ""
+            if tag.startswith("{") and "}" in tag:
+                tag = tag.split("}", 1)[0] + "}tspan"
+            else:
+                tag = "tspan"
+            x = el.get("x") or "0"
+            for index, line in enumerate(value.split("\n")):
+                tspan = ET.Element(tag)
+                tspan.set("x", x)
+                tspan.set("dy", "0" if index == 0 else dy_step)
+                tspan.set("data-line", line)
+                tspan.text = line if line else "\u00a0"
+                el.append(tspan)
+            return
+        if svg_element_visible_text(el) == value.strip():
+            return
+        tspans = [c for c in list(el) if local(c.tag) == "tspan"]
+        if tspans:
+            first = tspans[0]
+            first.text = value
+            first.tail = None
+            if "data-line" in first.attrib:
+                del first.attrib["data-line"]
+            for extra in tspans[1:]:
+                el.remove(extra)
+            for sub in list(first):
+                first.remove(sub)
+            el.text = None
+            return
+        el.text = value
+        for child in list(el):
+            if local(child.tag) == "tspan":
+                el.remove(child)
+
+    def text_in_scope(node, parent_map):
+        if is_under_system_diagram_primitive(node, parent_map):
+            return False
+        cur = parent_map.get(node)
+        enclosing = None
+        while cur is not None:
+            if _is_device_component_group(cur):
+                enclosing = cur
+                break
+            cur = parent_map.get(cur)
+        if _is_device_component_group(root_g):
+            return enclosing is root_g
+        return enclosing is None
+
     local = block_diagram_utils._svg_local_tag
     refdes = (root_g.get("id") or "").strip().strip("?")
-
+    stored = _device_symbol_fstring_results.get(refdes) or {}
     config = {}
     for child in list(root_g):
         if local(child.tag) != "configuration":
@@ -2157,128 +2303,47 @@ def patch_placed_attribute_texts(root_g):
             parsed = json.loads(raw) if raw else {}
         except json.JSONDecodeError:
             parsed = {}
-        if isinstance(parsed, dict):
-            config = parsed
+        config = parsed if isinstance(parsed, dict) else {}
         break
+    fallback_ns = None
 
     parent_map = {c: p for p in root_g.iter() for c in list(p)}
     parent_map[root_g] = None
     for node in root_g.iter():
-        if local(node.tag) not in ("text", "tspan"):
+        if local(node.tag) != "text":
             continue
-        name = (node.get("data-attribute-name") or "").strip()
-        if not name:
+        if not text_in_scope(node, parent_map):
             continue
-        if is_under_system_diagram_primitive(node, parent_map):
+        template = symbol_text_template(node)
+        if "\\n" not in template and not ("{" in template and "}" in template):
             continue
-        if name == "REFDES":
-            set_svg_element_text(node, refdes)
-        elif name in config:
-            value = config[name]
-            if value is None:
-                display = ""
-            elif isinstance(value, bool):
-                display = "true" if value else "false"
-            elif isinstance(value, (list, tuple)):
-                display = ", ".join(str(x) for x in value)
-            else:
-                display = str(value)
-            set_svg_element_text(node, display)
+        if template in stored:
+            value = stored[template]
+        else:
+            if fallback_ns is None:
+                fallback_ns = _symbol_fstring_namespace(
+                    {
+                        **build_sandbox.public_globals(),
+                        "configuration": config,
+                    },
+                    refdes,
+                )
+            value = eval_symbol_fstring(template, fallback_ns)
+        value = "" if value is None else str(value)
+        set_text(node, value)
+        if "data-text" in node.attrib:
+            node.set("data-text", json.dumps(value))
 
 
-def demote_subsystem_symbol_contents_to_primitives(placed_root):
-    """
-    Strip Harnice object semantics from nested graphics inside a subsystem symbol.
-
-    Nested ``component`` groups, harness wires, mating taps, and ICD flags become
-    plain drawing elements so only the outer placed subsystem instance counts as a
-    real BOM / connector object.
-    """
+def apply_component_symbol_fstrings(root):
+    """Evaluate symbol f-strings on each device component under ``root``."""
     local = block_diagram_utils._svg_local_tag
-
-    def strip_classes(el, drop):
-        parts = [c for c in (el.get("class") or "").split() if c and c not in drop]
-        if parts:
-            el.set("class", " ".join(parts))
-        elif "class" in el.attrib:
-            del el.attrib["class"]
-
-    for g in list(placed_root.iter()):
-        if g is placed_root or local(g.tag) != "g":
+    for g in root.iter():
+        if local(g.tag) != "g":
             continue
-        classes = (g.get("class") or "").split()
-        if "component" not in classes:
+        if not _is_device_component_group(g):
             continue
-        strip_classes(g, {"component", "device", "disconnect", "subsystem", "system"})
-        for attr in (
-            "lib_repo",
-            "lib_subpath",
-            "mpn",
-            "rev",
-            "artifact_id",
-            "mfg",
-            "MFG",
-            "disconnect",
-        ):
-            if attr in g.attrib:
-                del g.attrib[attr]
-
-    for line in placed_root.iter():
-        if local(line.tag) != "line":
-            continue
-        classes = set((line.get("class") or "").split())
-        if "wire" not in classes and "harness-wire" not in classes:
-            continue
-        strip_classes(line, {"wire", "harness-wire"})
-        for attr in ("data-from", "data-to"):
-            if attr in line.attrib:
-                del line.attrib[attr]
-
-    for el in placed_root.iter():
-        classes = set((el.get("class") or "").split())
-        if "harness-refdes-marker" in classes:
-            strip_classes(el, {"harness-refdes-marker"})
-            for attr in (
-                "data-refdes",
-                "data-pn",
-                "data-lib-repo",
-                "data-lib-subpath",
-                "data-rev",
-            ):
-                if attr in el.attrib:
-                    del el.attrib[attr]
-
-    parent_map = {c: p for p in placed_root.iter() for c in list(p)}
-    parent_map[placed_root] = None
-    for c in placed_root.iter():
-        if local(c.tag) != "circle":
-            continue
-        classes = set((c.get("class") or "").split())
-        if "mating" in classes and "connector" in classes:
-            strip_classes(c, {"mating", "connector"})
-            continue
-        if "connector" in classes and "mating" not in classes:
-            if is_under_system_diagram_primitive(c, parent_map):
-                strip_classes(c, {"connector"})
-
-    for el in placed_root.iter():
-        classes = set((el.get("class") or "").split())
-        if "external-interface-flag" not in classes:
-            continue
-        strip_classes(el, {"external-interface-flag"})
-        for attr in ("data-mating-pos", "data-conn-id"):
-            if attr in el.attrib:
-                del el.attrib[attr]
-
-    for node in placed_root.iter():
-        if local(node.tag) not in ("text", "tspan"):
-            continue
-        if not (node.get("data-attribute-name") or "").strip():
-            continue
-        if is_under_system_diagram_primitive(node, parent_map):
-            if "data-attribute-name" in node.attrib:
-                del node.attrib["data-attribute-name"]
-
+        apply_placed_symbol_fstrings(g)
 
 def refresh_block_diagram_placed_symbols(svg_text):
     """
@@ -2295,6 +2360,126 @@ def refresh_block_diagram_placed_symbols(svg_text):
     """
     if not svg_text or not str(svg_text).strip():
         return svg_text
+
+    def instance_symbol_svg_path(item_type, refdes, artifact_id=""):
+        """
+        Absolute path to a placed instance's symbol SVG under ``instance_data``.
+
+        Devices use ``symbol.svg``. Subsystems (``item_type="system"``) resolve a
+        ``subsystem_symbol`` macro SVG by ``artifact_id`` when given, otherwise the
+        first available symbol file. Returns ``None`` when no file is found.
+        """
+        refdes = (refdes or "").strip()
+        if not refdes or not item_type:
+            return None
+        inst_dir = os.path.join(fileio.dirpath("instance_data"), item_type, refdes)
+        if not os.path.isdir(inst_dir):
+            return None
+
+        if item_type == "device":
+            path = os.path.join(inst_dir, "symbol.svg")
+            return path if os.path.isfile(path) else None
+
+        if item_type == "system":
+            from harnice.utils import system_symbol_utils
+
+            symbols = system_symbol_utils.list_system_symbols_in_directory(inst_dir)
+            aid = (artifact_id or "").strip()
+            if aid:
+                for row in symbols:
+                    if row.get("artifact_id") == aid and row.get("path"):
+                        return row["path"]
+            for row in symbols:
+                if row.get("path"):
+                    return row["path"]
+            flat = os.path.join(inst_dir, "symbol.svg")
+            return flat if os.path.isfile(flat) else None
+
+        return None
+
+    def demote_subsystem_symbol_contents_to_primitives(placed_root):
+        """
+        Strip Harnice object semantics from nested graphics inside a subsystem symbol.
+
+        Nested ``component`` groups, harness wires, mating taps, and ICD flags become
+        plain drawing elements so only the outer placed subsystem instance counts as a
+        real BOM / connector object.
+        """
+        local = block_diagram_utils._svg_local_tag
+
+        def strip_classes(el, drop):
+            parts = [c for c in (el.get("class") or "").split() if c and c not in drop]
+            if parts:
+                el.set("class", " ".join(parts))
+            elif "class" in el.attrib:
+                del el.attrib["class"]
+
+        for g in list(placed_root.iter()):
+            if g is placed_root or local(g.tag) != "g":
+                continue
+            classes = (g.get("class") or "").split()
+            if "component" not in classes:
+                continue
+            strip_classes(g, {"component", "device", "disconnect", "subsystem", "system"})
+            for attr in (
+                "lib_repo",
+                "lib_subpath",
+                "mpn",
+                "rev",
+                "artifact_id",
+                "mfg",
+                "MFG",
+                "disconnect",
+            ):
+                if attr in g.attrib:
+                    del g.attrib[attr]
+
+        for line in placed_root.iter():
+            if local(line.tag) != "line":
+                continue
+            classes = set((line.get("class") or "").split())
+            if "wire" not in classes and "harness-wire" not in classes:
+                continue
+            strip_classes(line, {"wire", "harness-wire"})
+            for attr in ("data-from", "data-to"):
+                if attr in line.attrib:
+                    del line.attrib[attr]
+
+        for el in placed_root.iter():
+            classes = set((el.get("class") or "").split())
+            if "harness-refdes-marker" in classes:
+                strip_classes(el, {"harness-refdes-marker"})
+                for attr in (
+                    "data-refdes",
+                    "data-pn",
+                    "data-lib-repo",
+                    "data-lib-subpath",
+                    "data-rev",
+                ):
+                    if attr in el.attrib:
+                        del el.attrib[attr]
+
+        parent_map = {c: p for p in placed_root.iter() for c in list(p)}
+        parent_map[placed_root] = None
+        for c in placed_root.iter():
+            if local(c.tag) != "circle":
+                continue
+            classes = set((c.get("class") or "").split())
+            if "mating" in classes and "connector" in classes:
+                strip_classes(c, {"mating", "connector"})
+                continue
+            if "connector" in classes and "mating" not in classes:
+                if is_under_system_diagram_primitive(c, parent_map):
+                    strip_classes(c, {"connector"})
+
+        for el in placed_root.iter():
+            classes = set((el.get("class") or "").split())
+            if "external-interface-flag" not in classes:
+                continue
+            strip_classes(el, {"external-interface-flag"})
+            for attr in ("data-mating-pos", "data-conn-id"):
+                if attr in el.attrib:
+                    del el.attrib[attr]
 
     tree = block_diagram_utils._parse_block_diagram_svg_string(svg_text)
     root = tree.getroot()
@@ -2410,7 +2595,7 @@ def refresh_block_diagram_placed_symbols(svg_text):
             ):
                 cli.warn(f"{refdes}: {err}")
 
-        patch_placed_attribute_texts(scratch_root)
+        apply_placed_symbol_fstrings(scratch_root)
 
         if block_diagram_utils.svg_children_signature(
             dest_contents

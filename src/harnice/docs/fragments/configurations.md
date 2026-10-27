@@ -23,7 +23,7 @@ A new device gets a blank `fileio.path("configuration setup")`. Add fields only 
 | ----- | ---- | ---- |
 | Device revision | `fileio.path("configuration setup")` | Declares the form: field ids, types, defaults, validation, and `show_if` rules |
 | Device build | `fileio.path("build instructions")` | Reads `configuration["field_id"]` and writes the signals list for those answers |
-| Device symbol | `fileio.path("block diagram symbol")` | Optional attribute-text nodes whose `data-attribute-name` matches a field id |
+| Device symbol | `fileio.path("block diagram symbol")` | Text is a Python f-string. `{configuration.get("field_id")}` reads a field |
 | System block diagram | `<configuration>` under the placed device `<g>` | Instance answers as JSON |
 | System BOM | `configuration` column | Compact JSON copied from that SVG child |
 | System instances list | `device_configuration` | The same answers after the BOM is imported |
@@ -375,4 +375,14 @@ If the placed device has no `<configuration>` child yet, Harnice seeds it from t
 
 ### Showing values on the symbol
 
-In the device **block diagram symbol** editor, add attribute text whose `data-attribute-name` is `REFDES` or a configuration field `id`. The symbol stores a `{field_id}` placeholder. On the system diagram, matching fields show that instance's answers (`true` / `false` for booleans, comma-separated lists for multiselect).
+Text in the device **block diagram symbol** is a Python f-string. The symbol keeps the expression. When a system builds that device, Harnice evaluates the f-string in the device build namespace and writes the resulting string into the system diagram.
+
+`configuration` is the same dict the build instructions see. `refdes` is the instance name on the diagram. Other names already available in build instructions (`fileio`, `state`, and the list and utility modules) are available too, including names assigned while `build.py` runs.
+
+```text
+{refdes}
+{configuration.get("input_type")}
+{configuration.get("phantom_power")}
+```
+
+A missing key is `None`, so `configuration.get("input_type") or ""` leaves that blank. Lists and booleans format the way Python formats them (`True`, `False`, `['a', 'b']`). `\n` starts a new line. `\\n` stays as the two characters `\n`. Text with no `{...}` and no `\n` is left as written.

@@ -4,6 +4,7 @@ Before you polish the symbol, name your connectors in the signals list and build
 
 1. Open the Harnice console on your device and open the **block diagram symbol** editor.
 1. Arrange the symbol the way you want it to look. Do not rename pin identifiers that must match the signals list; you can change placement and appearance.
+1. Text on the symbol is a Python f-string. `{refdes}` becomes the instance name, and `{configuration.get("field_id")}` reads a configuration field, when a system builds this device. The result is written into that system's diagram. `\n` starts a new line. Text with no `{...}` and no `\n` stays as written.
 1. Save the symbol and click **Build** again to confirm the SVG still matches the signals list.
 
 When you build a device from its Signals List, Harnice creates or updates a block diagram symbol SVG in the revision directory. That symbol contains ports that match the connectors in your Signals List.

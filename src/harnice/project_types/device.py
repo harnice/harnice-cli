@@ -78,14 +78,7 @@ def _ensure_svg_symbol_exists():
     if os.path.exists(path):
         return
     contents_id = f"{state.partnumber('pn-rev')}-contents-start"
-    contents_end = contents_id.replace("-contents-start", "-contents-end")
-    view_box = "0 0 400 400"
-    svg_text = f'''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}" data-bbox="{view_box}">
-  <g id="{contents_id}" class="component device"></g>
-  <g id="{contents_end}"></g>
-</svg>
-'''
+    svg_text = block_diagram_utils.blank_block_diagram_symbol_svg(contents_id)
     _atomic_write_svg(path, svg_text.encode("utf-8"))
 
 
@@ -619,11 +612,12 @@ def build(verbose=True, configuration=None):
         # so build instructions and the subsequent signals-list validation see a complete config.
         configuration = {**_default_configuration_from_setup(), **configuration}
 
+    script_ns = None
     library_history.new()
 
     if os.path.exists(fileio.path("build instructions")):
         init_globals = {"configuration": configuration}
-        build_sandbox.run_path(
+        script_ns = build_sandbox.run_path(
             fileio.path("build instructions"),
             run_name="__main__",
             init_globals=init_globals,
@@ -636,3 +630,4 @@ def build(verbose=True, configuration=None):
     _validate_config_yaml()
     from harnice.utils import physical_body
     physical_body.require_saved_mates()
+    return script_ns

@@ -576,76 +576,11 @@ def _skip_primitive_child(el) -> bool:
     return False
 
 
-def _set_svg_text_content(el, value: str) -> None:
-    value = "" if value is None else str(value)
-    current = "".join(el.itertext()).strip() if el is not None else ""
-    if current == value.strip():
-        return
-    tspans = [
-        c for c in list(el) if block_diagram_utils._svg_local_tag(c.tag) == "tspan"
-    ]
-    if tspans:
-        first = tspans[0]
-        first.text = value
-        first.tail = None
-        for extra in tspans[1:]:
-            el.remove(extra)
-        for sub in list(first):
-            first.remove(sub)
-        el.text = None
-        return
-    el.text = value
-    for child in list(el):
-        if block_diagram_utils._svg_local_tag(child.tag) == "tspan":
-            el.remove(child)
-
-
-def _format_config_display(value) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (list, tuple)):
-        return ", ".join(str(x) for x in value)
-    return str(value)
-
-
 def _patch_component_attribute_texts(root) -> None:
-    """Bake instance REFDES (and configuration values) into attribute-text nodes."""
-    local = block_diagram_utils._svg_local_tag
-    for g in root.iter():
-        if local(g.tag) != "g":
-            continue
-        classes = set((g.get("class") or "").split())
-        if "component" not in classes:
-            continue
-        if "device" not in classes:
-            continue
-        gid = (g.get("id") or "").strip().strip("?")
-        if not gid or gid.endswith("-contents-start") or gid.endswith("-contents-end"):
-            continue
-        config = {}
-        for child in list(g):
-            if local(child.tag) != "configuration":
-                continue
-            raw = "".join(child.itertext()).strip()
-            try:
-                parsed = json.loads(raw) if raw else {}
-            except json.JSONDecodeError:
-                parsed = {}
-            if isinstance(parsed, dict):
-                config = parsed
-            break
-        for node in g.iter():
-            if local(node.tag) not in ("text", "tspan"):
-                continue
-            name = (node.get("data-attribute-name") or "").strip()
-            if not name:
-                continue
-            if name == "REFDES":
-                _set_svg_text_content(node, gid)
-            elif name in config:
-                _set_svg_text_content(node, _format_config_display(config[name]))
+    """Evaluate device-symbol f-strings inside a diagram being embedded."""
+    from harnice.utils import system_utils
+
+    system_utils.apply_component_symbol_fstrings(root)
 
 
 def system_diagram_primitive_inner_svg() -> str:
