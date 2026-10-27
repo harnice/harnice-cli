@@ -1177,6 +1177,21 @@ def write_step_file_solids(path, part_number, named_triangles, description="harn
     return path
 
 
+def _pin_step_timestamp(writer):
+    """Replace the clock time OpenCascade stores in FILE_NAME.
+
+    ISO 10303-21 requires that field. The fixed value matches the hand-written
+    STEP header so a rebuild does not change when the geometry did not.
+    """
+    from OCP.APIHeaderSection import APIHeaderSection_MakeHeader
+    from OCP.TCollection import TCollection_HAsciiString
+
+    model = writer.ChangeWriter().Model()
+    header = APIHeaderSection_MakeHeader(model)
+    header.SetTimeStamp(TCollection_HAsciiString(_STEP_TIMESTAMP))
+    header.Apply(model)
+
+
 def _ocp_write_shapes(named_shapes, path, part_number):
     from OCP.IFSelect import IFSelect_RetDone
     from OCP.Interface import Interface_Static
@@ -1202,6 +1217,7 @@ def _ocp_write_shapes(named_shapes, path, part_number):
     with _silence_stdio():
         if not writer.Transfer(doc):
             raise RuntimeError("STEPCAFControl_Writer.Transfer failed")
+        _pin_step_timestamp(writer)
         status = writer.Write(path)
     try:
         app.Close(doc)
@@ -1344,6 +1360,7 @@ def _ocp_write_shape(shape, path, part_number):
     with _silence_stdio():
         if not writer.Transfer(doc):
             raise RuntimeError("STEPCAFControl_Writer.Transfer failed")
+        _pin_step_timestamp(writer)
         status = writer.Write(path)
     try:
         app.Close(doc)
