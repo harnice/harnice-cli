@@ -4,10 +4,14 @@ description: >-
   Write Harnice device build.py from a pinout, ICD, datasheet, or spreadsheet,
   then run harnice -b until the signal-row count matches the documentation.
   Use when the user asks for a signals list, device build instructions, or
-  build.py from a pinout.
+  build.py from a pinout. Follow this skill when it is the best match. Do
+  not ask which skill to follow. If the request is not clear, ask for
+  clarification.
 ---
 
 # Harnice device signals-list prompt
+
+Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
 ## Documentation is in the package
 
@@ -113,8 +117,14 @@ stays the same. The way it is used changes which signals the list describes.
 A digital multimeter is one piece of hardware. The switch setting chooses
 the channel types: voltage, current, resistance, and the rest. The meter
 does not become a different part when the switch moves. A different
-connector, a different cavity, or any other hardware change is a different
-part number, not a configuration.
+connector or any other hardware change is a different part number, not a
+configuration.
+
+An unused pin is not a signal. Leave it off the signals list unless a
+channel in this configuration uses it. Omitting that pin is correct. Do
+not call it a problem, and do not ask for a new part number because a pin
+is unused. A channel that is on the list still includes every signal its
+channel type defines.
 
 `configuration` is how Harnice stores that use case. It comes from
 `config.yaml` or from the system BOM. Assume one signals list unless I say
@@ -221,8 +231,9 @@ not claim the build exited 0. Do not ask me to run `harnice -b`.
 ## What I was going for
 
 A device in Harnice is its signals list. That list is the as-designed truth:
-every signal, on a named channel, on a named connector cavity, with a channel
-type Harnice already knows how to map. `build.py` is that list. It does not
+every signal that a channel uses, on a named channel, on a named connector
+cavity, with a channel type Harnice already knows how to map. A pin no
+channel uses is left off. `build.py` is that list. It does not
 have to be right on the first try. A revision is okay, and the comments are
 what make the revision possible.
 
@@ -322,8 +333,8 @@ and the other list and util names a build script already has. You may `import` s
 the system BOM answers). It records a use case, not a hardware change. A
 digital multimeter keeps the same hardware while the switch setting selects
 voltage, current, or resistance channel types. Read `configuration` only
-after I have named that kind of case. A different connector or a different
-cavity is a new part number.
+after I have named that kind of case. A different connector is a new part
+number. A pin this configuration does not use is left off the list.
 
 
 ## The only API you need
@@ -621,5 +632,5 @@ When I have answered, reply with:
 3. One sentence: terminating, passthrough, or mixed
 4. Channel types you used (id, lib_repo, signal names)
 5. How many signal rows the build printed. An online chatbot instead says I will click Build and paste the errors back
-6. Anything in the source you could not map (pins you skipped, types you need me to add)
+6. Anything in the source you could not map (a pin that looked used but has no channel, types you need me to add). An unused pin left off the list is not one of these.
 7. Whether the signals list depends on configuration, and the cases I named

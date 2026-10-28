@@ -4,10 +4,14 @@ description: >-
   Add one row to a Harnice library channel_types.tsv when a device signals
   list needs a channel type that is not already in the table. Use when the
   user agrees to add a channel type, or asks for a new channel type id,
-  signals column, or compatible mate.
+  signals column, or compatible mate. Follow this skill when it is the best
+  match. Do not ask which skill to follow. If the request is not clear, ask
+  for clarification.
 ---
 
 # Harnice channel-type skill
+
+Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
 Add one channel type, and only after I have agreed to add it. This file is
 the procedure. Then go back to `skills/device-signals-list/SKILL.md` and use

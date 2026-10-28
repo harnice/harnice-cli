@@ -8,7 +8,7 @@ File formats and project layout are in this documentation. `harnice --docs` prin
 
 ## Harnice skill for agents
 
-Open your project in the agent (Claude Code, Cursor, and the rest). Paste this. It shows the agent where the skills are, and tells it to ask what to do next before it follows one.
+Open your project in the agent (Claude Code, Cursor, and the rest). Paste this. It shows the agent where the skills are, and tells it to follow the skill that best matches the request. If the request is not clear, it asks.
 
 <details class="prompt" markdown="1">
 <summary>Harnice</summary>
@@ -20,7 +20,7 @@ The skills are in the Harnice command-line repository. They are not in this mess
 
 https://github.com/harnice/harnice-cli
 
-Clone that repository. Read the description at the top of each `skills/*/SKILL.md`. Ask me what to do next: one line per skill, then wait. Follow the skill I name. Documentation is in that clone at `src/harnice/docs/`. Start with `index.md`.
+Clone that repository. Read the description at the top of each `skills/*/SKILL.md`. Follow whichever skill you think is the best match for what I asked. If it is not clear what I am asking, ask me to clarify. Documentation is in that clone at `src/harnice/docs/`. Start with `index.md`.
 ````
 
 </details>

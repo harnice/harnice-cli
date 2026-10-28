@@ -13,7 +13,7 @@ In those cases the same part is used differently without rebuilding or rewiring 
 
 A configuration does **not** filter alternate rows out of a signals list. Build instructions write **one** signals list for the answers currently in `configuration` (a dict). Validation only sees that list.
 
-Do not use configuration to change the physical part. If connectors, cavities, or the hardware build change, that is a new part number. Unused signals that are still on the connector should stay in the list.
+Do not use configuration to change the physical part. If the connector or the hardware build changes, that is a new part number. A pin is on the signals list only when a channel in this configuration uses it. Omitting a pin this configuration does not use is correct. A channel that is present still includes every signal its channel type defines.
 
 ### Where configuration lives
 

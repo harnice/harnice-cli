@@ -4,10 +4,14 @@ description: >-
   Encode a Harnice part family from a how-to-order datasheet into library
   SKUs: a chooser, attributes, and one project folder per catalog number.
   Use when the user asks for a part family, catalog SKUs, or a how-to-order
-  table turned into a library.
+  table turned into a library. Follow this skill when it is the best match.
+  Do not ask which skill to follow. If the request is not clear, ask for
+  clarification.
 ---
 
 # Harnice part-family prompt
+
+Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
 ## Documentation is in the package
 

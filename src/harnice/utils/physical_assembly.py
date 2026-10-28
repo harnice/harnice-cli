@@ -1,8 +1,10 @@
 """System physical assembly.
 
-Each placed device that has ``body.step`` is one solid in the system's
-``assembly.step``. Poses and fasten mates live in ``physical.json``, which is
-the file the console edits. The STEP file is rewritten from that.
+Each device that still has ``instance_data/device/{refdes}/body.step`` is one
+solid in the system's ``assembly.step``. A device whose instance folder is
+gone is not a solid: its placement and mates are dropped, and the STEP file
+is rewritten so it cannot keep that model. Poses and fasten mates live in
+``physical.json``, which is the file the console edits.
 
 A pose is inches and ZYX Euler degrees, the same frame as a device mate
 connector and a harness 3D node: ``R = Rx(alpha) · Ry(beta) · Rz(gamma)``.
@@ -28,6 +30,7 @@ the moving side of a mate, and its placement is left as stored.
 
 import json
 import os
+import re
 
 from harnice.utils.bundle_network_utils import (
     _euler_zyx_from_matrix,
@@ -682,21 +685,80 @@ def _write_step(step_path, discovered, placements):
     return ""
 
 
-def open_model():
-    """Load the assembly, add every device that now has a body, and refresh the STEP file."""
+_PRODUCT_NAME = re.compile(r"PRODUCT\s*\(\s*'([^']*)'")
+
+
+def _step_product_names(step_path):
+    """``PRODUCT`` names in an assembly STEP file. Missing file is an empty set."""
+    if not step_path or not os.path.isfile(step_path):
+        return set()
+    with open(step_path, "r", encoding="latin-1", errors="replace") as handle:
+        return set(_PRODUCT_NAME.findall(handle.read()))
+
+
+def _step_is_stale(step_path, discovered, body_ids):
+    """True when ``assembly.step`` does not match the instance-data bodies.
+
+    A missing solid, a solid whose instance folder is gone, or a ``body.step``
+    newer than the assembly all count. The assembly's own part number may
+    appear as an extra ``PRODUCT`` and is not a device.
+    """
+    body_set = set(body_ids)
+    if not step_path or not os.path.isfile(step_path):
+        return bool(body_set)
+    named = _step_product_names(step_path)
+    if not body_set.issubset(named):
+        return True
+    extras = named - body_set
+    if extras:
+        try:
+            from harnice import state
+
+            part = state.partnumber("pn")
+        except Exception:
+            part = None
+        if any(name != part for name in extras):
+            return True
+    step_mtime = os.path.getmtime(step_path)
+    for device in discovered:
+        if not device["has_body"]:
+            continue
+        try:
+            newer = os.path.getmtime(device["step_path"]) > step_mtime
+        except OSError:
+            return True
+        if newer:
+            return True
+    return False
+
+
+def sync_assembly():
+    """Drop devices with no instance data and rewrite ``assembly.step`` when it disagrees.
+
+    A device is included only while ``instance_data/device/{refdes}/body.step``
+    exists. Placements and mates for anything else are removed. The STEP file
+    is rewritten when that set, or a body file, no longer matches the file on
+    disk, so a deleted instance cannot leave its model behind.
+    """
     json_path, step_path = _assembly_paths()
     discovered = discover()
     saved = load_assembly(json_path)
     model, changed = reconcile(discovered, saved, strict_mates=False)
-    has_body = any(device["has_body"] for device in discovered)
-    assembly_exists = os.path.isfile(step_path)
-    needs_step = has_body != assembly_exists
+    body_ids = [device["refdes"] for device in discovered if device["has_body"]]
+    has_body = bool(body_ids)
+    assembly_exists = bool(step_path and os.path.isfile(step_path))
+    needs_step = has_body != assembly_exists or _step_is_stale(step_path, discovered, body_ids)
     step_error = ""
     if changed:
         save_assembly(model, json_path)
     if changed or needs_step:
         step_error = _write_step(step_path, discovered, model["placements"])
     return _public(discovered, model, step_path, step_error)
+
+
+def open_model():
+    """Load the assembly, add every device that now has a body, and refresh the STEP file."""
+    return sync_assembly()
 
 
 def save_model(data):

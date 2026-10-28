@@ -33,13 +33,28 @@ def instance_modified_vs_library(destination_directory, instance_name):
     are compared after the MPN→instance-name contents-id rewrite so an untouched
     pull does not count as modified.
     """
+    return bool(
+        _instance_library_file_diffs(
+            destination_directory, instance_name, stop_at_first=True
+        )
+    )
+
+
+def instance_modified_filenames_vs_library(destination_directory, instance_name):
+    """Filenames in the instance folder that differ from the library copy."""
+    return _instance_library_file_diffs(destination_directory, instance_name)
+
+
+def _instance_library_file_diffs(
+    destination_directory, instance_name, stop_at_first=False
+):
     inst_dir = destination_directory or ""
     instance_name = (instance_name or "").strip()
     if not instance_name or not os.path.isdir(inst_dir):
-        return False
+        return []
     lib_root = os.path.join(inst_dir, fileio.LIBRARY_USED_DIR)
     if not os.path.isdir(lib_root):
-        return False
+        return []
     try:
         rev_names = sorted(
             name
@@ -48,16 +63,18 @@ def instance_modified_vs_library(destination_directory, instance_name):
             and os.path.isdir(os.path.join(lib_root, name))
         )
     except OSError:
-        return False
+        return []
+    changed = []
+    seen = set()
+    mpn = _mpn_from_instances(instance_name)
     for rev_name in rev_names:
         rev_path = os.path.join(lib_root, rev_name)
-        mpn = _mpn_from_instances(instance_name)
         try:
             filenames = os.listdir(rev_path)
         except OSError:
             continue
         for filename in filenames:
-            if filename.startswith(".") or filename == ".DS_Store":
+            if filename.startswith(".") or filename == ".DS_Store" or filename in seen:
                 continue
             lib_file = os.path.join(rev_path, filename)
             if os.path.isdir(lib_file):
@@ -68,8 +85,11 @@ def instance_modified_vs_library(destination_directory, instance_name):
             if _editable_file_differs_from_library(
                 lib_file, editable, mpn, instance_name
             ):
-                return True
-    return False
+                changed.append(filename)
+                seen.add(filename)
+                if stop_at_first:
+                    return changed
+    return changed
 
 
 def _editable_file_differs_from_library(lib_file, editable_file, mpn, instance_name):

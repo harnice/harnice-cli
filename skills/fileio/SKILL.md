@@ -5,10 +5,14 @@ description: >-
   asks where a file is, which file key to pass, or how to read the revision
   history, a list, a network, repository locations, or a pulled part.
   A harness revision also follows the harness-build skill. A system
-  revision also follows the system-build skill.
+  revision also follows the system-build skill. Follow this skill when it
+  is the best match. Do not ask which skill to follow. If the request is
+  not clear, ask for clarification.
 ---
 
 # Harnice file access
+
+Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
 `fileio` is already bound. Do not import it. Do not build a path from a
 part number, a revision, and a filename. Do not modify a project file

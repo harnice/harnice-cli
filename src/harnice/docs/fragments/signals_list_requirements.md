@@ -35,7 +35,9 @@ The signals list is not a pile of alternate rows that get filtered. Build instru
     - Complete endpoints, unique `(channel_id, signal, repeat_channel_id)`, one connector per endpoint. Validation only sees the list for this configuration.
 
   - **Do not use configuration to change the physical part**
-    - If connectors, cavities, or the build of the device change, that is a new part number, not a configuration. Unused signals that are still on the connector should stay in the list.
+    - If the connector or the hardware build changes, that is a new part number, not a configuration.
+  - **Unused pins stay off the list**
+    - A pin is on the signals list only when a channel in this configuration uses it. Omitting a pin this configuration does not use is correct. A channel that is present still includes every signal its channel type defines.
 
 ### Passthrough Signals List Rules
 

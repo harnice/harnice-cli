@@ -5,10 +5,14 @@ description: >-
   the user asks for a physical model, body.step, a mate connector, a rack
   chassis or enclosure, cad.new, sketch, extrude, or a system assembly.
   A device pinout uses the device-signals-list skill. System build.py uses
-  the system-build skill.
+  the system-build skill. Follow this skill when it is the best match. Do not
+  ask which skill to follow. If the request is not clear, ask for
+  clarification.
 ---
 
 # Mechanical CAD for Building Physical Models
+
+Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
 This file is the procedure for a device solid and for posing those solids
 in a system. The page that explains the frames, the macros, and the `cad`

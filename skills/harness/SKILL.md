@@ -8,10 +8,13 @@ description: >-
   chosen network, a formboard, a node move, or a backshell clock. A system
   revision uses the system-build skill. A device pinout uses the
   device-signals-list skill. A catalog of library SKUs uses the part-family
-  skill.
+  skill. Follow this skill when it is the best match. Do not ask which skill
+  to follow. If the request is not clear, ask for clarification.
 ---
 
 # Harnice harness build instructions
+
+Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
 This file is the procedure for a **harness** `build.py`. The pages you
 may call are listed below. Each page is the list of calls and how to

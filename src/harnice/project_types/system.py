@@ -268,6 +268,9 @@ def build():
 
         from harnice.utils import physical_assembly
 
+        # Instance folders are final at this point. Rewrite the assembly so a
+        # device that no longer has instance data is not left in assembly.step.
+        physical_assembly.sync_assembly()
         physical_assembly.sync_mating_connector_nodes()
     except Exception:
         pdf_drawings_utils.watermark_existing_pdfs_incomplete_rebuild()
