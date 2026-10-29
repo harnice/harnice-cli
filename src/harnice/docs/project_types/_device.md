@@ -47,13 +47,17 @@ When a Device is built in Harnice, here's what happens:
 1. A block diagram symbol SVG that can represent this device in a system block diagram is generated or updated based on the signals list.
 1. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate connector with that same id.
 
+The first build writes these instructions when `build.py` does not exist yet.
+
+{% include-markdown "fragments/_device_default_build_instructions.md" %}
+
 ---
 
 ## Physical model
 
 A device body is `fileio.path("body")` (`body.step`). Mate connectors live in `attributes.json` under `mate_connectors`. How to write the solid, place mates, paste a face picture, and arrange devices in a system is [CAD](../cad.md).
 
-Open **physical model** to move mate connectors on the solid the build wrote, and to paste a picture on a face. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate with that same id. A device with no `mate_connectors` still builds. Opening the page writes that key and puts any missing required mate at the origin.
+Open **physical model** to move mate connectors on the solid the build wrote, and to paste a picture on a face. A pasted picture stays through the next build when `images` names that file, or when the macro that rewrites `body.step` is commented out. The PNG stays in `body_images/` either way. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate with that same id. A device with no `mate_connectors` still builds. Opening the page writes that key and puts any missing required mate at the origin.
 
 
 ---

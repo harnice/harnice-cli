@@ -231,28 +231,69 @@ scale = 0.1
 
 build_utils.run_macro(
     "subsystem_symbol",
-    "library/macros/system_artifacts",
+    "macros/system_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="subsystem-symbol-1",
     scale=scale,
 )
 
 # Orthographic drawing of the physical assembly. One view per call.
-# scale here is the drawing scale, not the symbol scale above.
+# scale is the drawing scale. lineweight is the sheet stroke in px.
 build_utils.run_macro(
     "physical_model_drawing",
-    "library/macros/system_artifacts",
+    "macros/system_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="physical-1",
     scale=1,
+    lineweight=1,
     hidden_instances=[],
     orientation="front",
+)
+
+# Store the default trace layout styles into a variable to be used later when
+# generating the GUI block diagram layouts if desired.
+default_trace_overlay_style = dict(svg_utils.trace_overlay_style)
+
+# Example of how to edit the trace layouts for various outputs. Copy and paste
+# svg_utils.regenerate_trace_overlays and modify the style dict before a macro
+# to modify that macro's trace layout appearance.
+svg_utils.regenerate_trace_overlays(
+    style={
+        "label_font_size": 0.5,
+        "segment_spacing": 1.5,
+        "stroke_width": 0.5 / 96,
+        "min_label_segment_length": None,
+        "network_segment_stroke_width": 1.8,
+        "network_segment_font_size": 11,
+        "network_node_radius": 2.2,
+        "network_node_font_size": 10,
+    },
+)
+
+# Block diagram sheet. Writes {artifact_id}-master.svg for the PDF generator.
+# scale is the drawing scale. Each show_* flag is one of the old sheet
+# checkboxes: True draws that layer, False hides it.
+build_utils.run_macro(
+    "block-diagram-svg-exporter",
+    "macros/system_artifacts",
+    "https://github.com/harnice/harnice-general-library",
+    artifact_id="block-diagram-1",
+    scale=1,
+    show_boundary=True,
+    show_devices=True,
+    show_subsystems=True,
+    show_harnesses=True,
+    show_mating_connectors=True,
+    show_external_interface_flags=True,
+    show_harness_labels=True,
+    show_channel_traces=True,
+    show_circuit_traces=True,
 )
 
 # Each run_macro call is one PDF file.
 build_utils.run_macro(
     "pdf_generator",
-    "library/macros/harness_artifacts",
+    "macros/harness_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="pdf_drawing-1",
     page_setup={
@@ -260,7 +301,7 @@ build_utils.run_macro(
             {
                 "tblock_mpn": "harnice_tblock",
                 "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
-                "tblock_lib_subpath": "library/titleblocks/",
+                "tblock_lib_subpath": "titleblocks/",
                 "page_size_in": [11.0, 8.5],
                 "tblock_anchor": "bottom-right",
                 "tblock_offset_px": [40.0, 40.0],
@@ -386,3 +427,7 @@ def connector_chooser():
                 "lib_rev_used_here": None,
             },
         )
+
+# Reset the trace overlay style to default saved earlier to set the gui trace
+# overlay style.
+svg_utils.trace_overlay_style.update(default_trace_overlay_style)

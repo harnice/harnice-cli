@@ -51,7 +51,7 @@ From build instructions (or any other Python Harnice is already running):
 ```python
 build_utils.run_macro(
     "standard_harnice_formboard",              # MPN of the macro in the library
-    "library/macros/harness_artifacts",        # path from that library root to the MPN folder
+    "macros/harness_artifacts",        # path from that library root to the MPN folder
     "https://github.com/harnice/harnice-general-library",      # library repo URL from library_locations.csv
     artifact_id="formboard-overview",          # unique instance name for *this* run
     scale=0.25,                                # extra kwargs become globals inside the macro
@@ -62,7 +62,7 @@ build_utils.run_macro(
 **Required arguments**
 
 - `macro_part_number` — the MPN folder name in the library (`standard_harnice_formboard`, `bom_exporter_bottom_up`, …).
-- `lib_subpath` — directories between the library root and the MPN folder. Shipped Harnice macros use `library/macros/harness_artifacts`, `library/macros/system_artifacts`, or `library/macros/device_artifacts`.
+- `lib_subpath` — directories between the library root and the MPN folder. Shipped Harnice macros use `macros/harness_artifacts`, `macros/system_artifacts`, or `macros/device_artifacts`.
 - `lib_repo` — the repo URL as listed in `library_locations.csv`, or `"local"` for a project-local library.
 - `artifact_id` — the instance name of this run. Must be unique in the current project's library history unless you pass `rerun=True`.
 
@@ -112,10 +112,10 @@ The parent project type (harness, system, …) never has to know the macro's fil
 
 ## Where macros live in a library
 
-Shipped Harnice macros are in the [general library](https://github.com/harnice/harnice-general-library) under `library/macros/`, grouped by what they produce:
+Shipped Harnice macros are in the [general library](https://github.com/harnice/harnice-general-library) under `macros/`, grouped by what they produce:
 
 ```
-library/macros/
+macros/
 ├── device_artifacts/      # macros that write a device body
 ├── harness_artifacts/     # macros that write harness deliverables (drawings, tables, STEP, …)
 └── system_artifacts/      # macros that write system deliverables (subsystem symbol, …)
@@ -124,7 +124,7 @@ library/macros/
 Each MPN is a library part:
 
 ```
-library/macros/harness_artifacts/bom_exporter_bottom_up/
+macros/harness_artifacts/bom_exporter_bottom_up/
 ├── bom_exporter_bottom_up-revision_history.tsv
 └── rev1/
     └── bom_exporter_bottom_up.py
@@ -155,7 +155,7 @@ Copy this template into a new `{mpn}/rev1/{mpn}.py` (or into an AI tool) and fil
 # for example, the caller build instructions should define the arguments like this:
 # build_utils.run_macro(
 #    "standard_harnice_formboard",
-#    "library/macros/harness_artifacts",
+#    "macros/harness_artifacts",
 #    "https://github.com/harnice/harnice-general-library",
 #    artifact_id="formboard-overview",
 #    scale=scales.get("A"),
@@ -225,24 +225,24 @@ These are the macros that ship in the general library. Unless noted, `lib_repo` 
 
 | MPN | Library folder | Who calls it by default |
 |---|---|---|
-| `bom_exporter_bottom_up` | `library/macros/harness_artifacts` | default harness build (`artifact_id="bom-1"`) |
-| `tooling_list_exporter` | `library/macros/harness_artifacts` | default harness build (`artifact_id="tool_list-1"`) |
-| `standard_harnice_formboard` | `library/macros/harness_artifacts` | default harness build, twice (overview + detail) |
-| `basic_segment_generator` | `library/macros/harness_artifacts` | `standard_harnice_formboard`, once per segment |
-| `trace_layout_visualizer` | `library/macros/harness_artifacts` | default harness build, twice (conductors + cables) |
-| `circuit_visualizer` | `library/macros/harness_artifacts` | default harness build (`artifact_id="circuitviz-1"`) |
-| `revision_history_table` | `library/macros/harness_artifacts` | default harness build (`artifact_id="revhistory-1"`) |
-| `build_notes_table` | `library/macros/harness_artifacts` | default harness build (`artifact_id="build_notes_table-1"`) |
-| `wirelist_exporter` | `library/macros/harness_artifacts` | default harness build (`artifact_id="wirelist-1"`) |
-| `harness_step_builder` | `library/macros/harness_artifacts` | default harness build (`artifact_id="harness-step-1"`) |
-| `cutlist_exporter_bottom_up` | `library/macros/harness_artifacts` | not in the default script; call it yourself |
-| `pdf_generator` | `library/macros/harness_artifacts` | default harness and system build (`artifact_id="pdf_drawing-1"`) |
-| `subsystem_symbol` | `library/macros/system_artifacts` | default system build (`artifact_id="subsystem-symbol-1"`) |
-| `physical_model_drawing` | `library/macros/system_artifacts` | default system build (`artifact_id="physical-1"`, before `pdf_generator`) |
-| `build_rectangular_physical_model` | `library/macros/device_artifacts` | device build, when you want a rectangular body (`artifact_id="body-1"`) |
-| `build_rackmount_physical_model` | `library/macros/device_artifacts` | device build, when you want a rack chassis (`artifact_id="body-1"`) |
-| `build_rackmount_enclosure` | `library/macros/device_artifacts` | device build, when you want a rack enclosure (`artifact_id="body-1"`) |
-| `build_physical_model_from_step` | `library/macros/device_artifacts` | device build, when the body is an existing STEP file (`artifact_id="body-1"`) |
+| `bom_exporter_bottom_up` | `macros/harness_artifacts` | default harness build (`artifact_id="bom-1"`) |
+| `tooling_list_exporter` | `macros/harness_artifacts` | default harness build (`artifact_id="tool_list-1"`) |
+| `standard_harnice_formboard` | `macros/harness_artifacts` | default harness build, twice (overview + detail) |
+| `basic_segment_generator` | `macros/harness_artifacts` | `standard_harnice_formboard`, once per segment |
+| `trace_layout_visualizer` | `macros/harness_artifacts` | default harness build, twice (conductors + cables) |
+| `circuit_visualizer` | `macros/harness_artifacts` | default harness build (`artifact_id="circuitviz-1"`) |
+| `revision_history_table` | `macros/harness_artifacts` | default harness build (`artifact_id="revhistory-1"`) |
+| `build_notes_table` | `macros/harness_artifacts` | default harness build (`artifact_id="build_notes_table-1"`) |
+| `wirelist_exporter` | `macros/harness_artifacts` | default harness build (`artifact_id="wirelist-1"`) |
+| `harness_step_builder` | `macros/harness_artifacts` | default harness build (`artifact_id="harness-step-1"`) |
+| `cutlist_exporter_bottom_up` | `macros/harness_artifacts` | not in the default script; call it yourself |
+| `pdf_generator` | `macros/harness_artifacts` | default harness and system build (`artifact_id="pdf_drawing-1"`) |
+| `subsystem_symbol` | `macros/system_artifacts` | default system build (`artifact_id="subsystem-symbol-1"`) |
+| `physical_model_drawing` | `macros/system_artifacts` | default system build (`artifact_id="physical-1"`, before `pdf_generator`) |
+| `build_rectangular_physical_model` | `macros/device_artifacts` | device build, when you want a rectangular body (`artifact_id="body-1"`) |
+| `build_rackmount_physical_model` | `macros/device_artifacts` | device build, when you want a rack chassis (`artifact_id="body-1"`) |
+| `build_rackmount_enclosure` | `macros/device_artifacts` | device build, when you want a rack enclosure (`artifact_id="body-1"`) |
+| `build_physical_model_from_step` | `macros/device_artifacts` | device build, when the body is an existing STEP file (`artifact_id="body-1"`) |
 
 
 
@@ -433,17 +433,18 @@ A face photo that faces the camera is an SVG `<image>` link to the PNG already s
 **Args:**
 
 - `scale` — drawing scale, the same numbers as a formboard. `1` is full size (96 px per model inch, then this factor).
+- `lineweight` — stroke thickness on the sheet, in px. `1` is the default. It stays that thick when `scale` changes.
 - `hidden_instances` — device names to omit. A list, or one name.
 - `orientation` — `front`, `back`, `left`, `right`, `top`, or `bottom`, or the viewport as `alpha`, `beta`, `gamma` (a dict or a 3-number list). `(0, 0, 0)` is the front view: look along +Y, with +X to the right and +Z up. The rotation is `R = Rx(α) · Ry(β) · Rz(γ)`, the same convention as a device pose. Named views look straight at that face, with the photo upright the way the physical-model viewer shows it.
 
 **Writes:** `{artifact_id}-master.svg`.
 
-Default system build calls it once (`artifact_id="physical-1"`, `scale=1`, `orientation="front"`), before `pdf_generator`.
+Default system build calls it once (`artifact_id="physical-1"`, `scale=1`, `lineweight=1`, `orientation="front"`), before `pdf_generator`.
 
 
 ### Device body macros
 
-`build_rectangular_physical_model`, `build_rackmount_physical_model`, `build_rackmount_enclosure`, and `build_physical_model_from_step` live in `library/macros/device_artifacts`. A device build calls one of them. The macro writes `fileio.path("body")`, the device's `body.step`. Arguments, the inch frame, and mate connectors are on the [CAD](../cad.md) page.
+`build_rectangular_physical_model`, `build_rackmount_physical_model`, `build_rackmount_enclosure`, and `build_physical_model_from_step` live in `macros/device_artifacts`. A device build calls one of them. The macro writes `fileio.path("body")`, the device's `body.step`. Arguments, the inch frame, and mate connectors are on the [CAD](../cad.md) page.
 
 Default call: `artifact_id="body-1"`.
 

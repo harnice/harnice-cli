@@ -74,7 +74,7 @@ the assembly STEP is current until that page has been opened.
 Use a shipped macro when the shape is one of these. The calls are the
 ones in `cad.md`. `lib_repo` is
 `https://github.com/harnice/harnice-general-library`. `lib_subpath` is
-`library/macros/device_artifacts`. `artifact_id` is `"body-1"`.
+`macros/device_artifacts`. `artifact_id` is `"body-1"`.
 
 | Shape | Macro | Arguments |
 | --- | --- | --- |
@@ -87,9 +87,21 @@ One body macro per device. Ask me which shape, and ask for every dimension
 I did not give. Do not invent a rack unit count, a depth, or a STEP path.
 A blatantly stated size is not a question. Write it in a comment.
 
-`images` maps a surface name to a PNG that already exists. A missing file
-makes `attach_png` raise. Omit `images` until I have put the file in
-`body_images/`. A path stored in the STEP file cannot contain a space.
+`images` on the rectangular and rack-chassis macros is how a face picture
+survives the next build. Point each face at a PNG that already exists under
+`body_images/`. A missing file makes `attach_png` raise. Omit `images` until
+that file is there. A path stored in the STEP file cannot contain a space.
+Pasting on the physical model page writes `body_images/{face}.png` and a
+comment in the current `body.step`. The next `save_step` drops that comment
+unless this run attaches the same file. Tell me to paste onto a face that
+`images` names. A face that `images` does not name loses its link on the
+next build. The PNG file stays.
+
+`build_rackmount_enclosure` and `build_physical_model_from_step` take no
+`images` argument. Each run replaces `body.step` and drops pasted face
+links. After the first build that writes the solid I asked for, comment
+out that `run_macro` before I paste. Tell me that. Leave the call in
+`build.py` only when I still want the macro to replace the body.
 
 The rectangular macro writes no mates. The two rack macros write `U1`
 upward, and the enclosure also writes `B1` on the back. Those ids are
@@ -100,7 +112,9 @@ Follow the example and the function table in `cad.md`. Then:
 
 1. `cad.new()`, `cad.sketch`, `cad.extrude`. `extrude` distance is greater
    than zero, along the plane normal.
-2. `cad.attach_png` only for a file that exists.
+2. `cad.attach_png` only for a file that exists. A face I paste that this
+   script does not attach loses its link on the next build. The PNG stays
+   in `body_images/`.
 3. `cad.save_step(model, fileio.path("body"))`.
 4. `cad.mate` for connectors this script owns.
 5. `physical_body.load_body` and `cad.keep_gui_mates` before
@@ -144,6 +158,8 @@ page so Harnice solves the mates and writes it.
 
 - [ ] The body is one shipped macro, or a `cad` script that matches `cad.md`
 - [ ] Dimensions I did not give were asked, and the ones I gave are in a comment
+- [ ] Face pictures on a rectangular or rack-chassis body are in `images`, and the PNG exists before the build that attaches it
+- [ ] An enclosure or imported STEP that will take pasted faces has that `run_macro` commented out after the solid is written
 - [ ] A custom script calls `keep_gui_mates` before `save_mates` when it saves mates
 - [ ] `body.step` and `assembly.step` were not written by hand
 - [ ] An agent ran the device build after changing `build.py`, or said it could not

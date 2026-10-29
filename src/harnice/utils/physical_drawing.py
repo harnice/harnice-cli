@@ -182,7 +182,7 @@ def _face_corners(bounds, face, angle, points=None):
     }
 
 
-def render_svg(artifact_id, devices, scale=1, orientation="front"):
+def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1):
     """SVG text for devices that are already posed in the system frame.
 
     Each device is ``{"refdes", "shape", "photos"}``. ``shape`` is an
@@ -482,6 +482,9 @@ def render_svg(artifact_id, devices, scale=1, orientation="front"):
     factor = _number("scale", 1 if scale is None else scale)
     if factor <= 0:
         raise ValueError("scale must be greater than zero")
+    weight = _number("lineweight", 1 if lineweight is None else lineweight)
+    if weight < 0:
+        raise ValueError("lineweight must be zero or greater")
     view, right, up = view_basis(orientation)
     prepared = []
     for device in devices:
@@ -544,7 +547,7 @@ def render_svg(artifact_id, devices, scale=1, orientation="front"):
     if not points:
         page_w = page_h = 1000.0
 
-    stroke = 1.0 / factor
+    stroke = weight / factor
     font = 12.0 / factor
     lines = [
         '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
@@ -599,7 +602,9 @@ def render_svg(artifact_id, devices, scale=1, orientation="front"):
     return "\n".join(lines)
 
 
-def render_system_drawing(artifact_id, scale=1, orientation="front", hidden_instances=None):
+def render_system_drawing(
+    artifact_id, scale=1, orientation="front", hidden_instances=None, lineweight=1
+):
     """Master SVG of the open system's physical model."""
 
     def load_devices(hidden_instances=None):
@@ -699,4 +704,10 @@ def render_system_drawing(artifact_id, scale=1, orientation="front", hidden_inst
     if not str(artifact_id or "").strip():
         raise ValueError("artifact_id is required")
     devices = load_devices(hidden_instances)
-    return render_svg(artifact_id, devices, scale=scale, orientation=orientation)
+    return render_svg(
+        artifact_id,
+        devices,
+        scale=scale,
+        orientation=orientation,
+        lineweight=lineweight,
+    )

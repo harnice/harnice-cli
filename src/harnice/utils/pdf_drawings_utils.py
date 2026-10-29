@@ -29,7 +29,7 @@ _WATERMARK_SKIP_DIRS = {
 _BLANK_PAGE = {
     "tblock_mpn": "harnice_tblock",
     "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
-    "tblock_lib_subpath": "library/titleblocks/",
+    "tblock_lib_subpath": "titleblocks/",
     "page_size_in": [11.0, 8.5],
     # Titleblock local origin is bottom-right of the artwork (extends -x/-y).
     # Anchor = which page corner to dock to; offset_px = inset from that corner
@@ -629,7 +629,6 @@ def _svg_has_matching_master_group(svg_path: str, master_name: str) -> bool:
     return f'id="{master_name}-contents-start"' in text
 
 
-BLOCK_DIAGRAM_MASTER_NAME = "block-diagram"
 _APPLIED_TRACES_GROUP_ID = "applied-traces"
 
 # Device answers live in the SVG namespace as ``<configuration>``. Inkscape does
@@ -741,16 +740,10 @@ def rasterize_linked_images(svg_text, svg_directory=None, search_roots=None):
 def extra_project_masters() -> list[dict[str, str]]:
     """Cloneable SVGs that are not ``*-master.svg`` files.
 
-    Systems expose the block diagram in the PDF palette even though it is not a
-    master drawing. The name is an XML id (``block-diagram``), not the file key.
+    The system block diagram is a normal master from
+    ``block-diagram-svg-exporter``. Nothing else is added to the palette.
     """
-    try:
-        path = fileio.path("block diagram")
-    except Exception:
-        return []
-    if not path or not os.path.isfile(path):
-        return []
-    return [{"name": BLOCK_DIAGRAM_MASTER_NAME, "path": path}]
+    return []
 
 
 def _svg_root_open_tag(svg_text: str) -> re.Match[str] | None:
@@ -852,11 +845,33 @@ def copy_svg_inner_into_group(
     Uses the document ``{pn-rev}-contents-start`` inner markup, not the whole
     ``<svg>``. Dumping the root would paste an XML id that starts with a digit
     (invalid) and drop ``xmlns:schem``, which makes page SVGs unparseable.
+
+    Block-diagram traces are drawn into the copied markup from the current
+    ``svg_utils.trace_overlay_style``. The diagram file itself is left for the
+    write after the script, which uses whatever style is still set then.
     """
+    def block_diagram_for_pdf(path, text):
+        """Traces for this copy, from the style set right now. The file stays as it is."""
+        try:
+            diagram = fileio.path("block diagram")
+        except Exception:
+            return text
+        if not diagram or os.path.abspath(diagram) != os.path.abspath(path):
+            return text
+        from harnice.utils import system_utils
+
+        try:
+            return system_utils.apply_block_diagram_trace_overlays(text)
+        except ValueError as exc:
+            if "No harness wire segments" in str(exc):
+                return text
+            raise
+
     from harnice.utils import svg_utils
 
     with open(source_svg_path, encoding="utf-8") as f:
         source = f.read()
+    source = block_diagram_for_pdf(source_svg_path, source)
     source_group = _contents_group_name_from_svg(source)
     svg_utils.find_and_replace_svg_group(
         source_svg_path, source_group, dest_svg_path, dest_group_name
@@ -885,7 +900,6 @@ def list_masters_from_disk() -> list[dict[str, str]]:
 
     Only includes files whose inner group id matches the filename stem
     (``{name}-master.svg`` requires ``id="{name}-contents-start"``).
-    Also prepends :func:`extra_project_masters` (system block diagram).
     """
     directory_to_search = fileio.dirpath(None)
     masters: list[tuple[str, str]] = []

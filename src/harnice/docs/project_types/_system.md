@@ -56,6 +56,10 @@ System data is stored in the following file formats.
 
 The `subsystem_symbol` macro runs in build instructions, so it reads the ICD from the previous build and runs device signals-list / symbol-pin verification against it. After ICD changes, build twice. That lag is expected.
 
+The first build writes these instructions when `build.py` does not exist yet.
+
+{% include-markdown "fragments/_system_default_build_instructions.md" %}
+
 
 ---
 

@@ -91,13 +91,19 @@ for connector_name in ["in1", "in2", "out1", "out2"]:
 # Define the physical model of your device in this section. Choose from
 # default macros or import your own STEP file. 
 # Each macro saves with fileio.path("body"), the device's body.step.
+# A paste on the physical model page writes body_images/<face>.png and a
+# comment in body.step. The next macro run rewrites body.step. Rectangular
+# and rack-chassis macros link again only the faces named in images=.
+# The enclosure and STEP-import macros take no images argument. Comment
+# that call out after the body is right, then paste. Leaving it in build.py
+# drops those face links on the next run. The PNG files stay either way.
 # Rectangular sketch surface "front" is the face at y = 0.
 # images = {
 #     "front": os.path.join(fileio.dirpath("body_images"), "front.png"),
 # }
 # build_utils.run_macro(
 #     "build_rectangular_physical_model",
-#     "library/macros/device_artifacts",
+#     "macros/device_artifacts",
 #     "https://github.com/harnice/harnice-general-library",
 #     artifact_id="body-1",
 #     params={"width": 4, "height": 2, "depth": 6},
@@ -109,25 +115,29 @@ for connector_name in ["in1", "in2", "out1", "out2"]:
 # }
 # build_utils.run_macro(
 #     "build_rackmount_physical_model",
-#     "library/macros/device_artifacts",
+#     "macros/device_artifacts",
 #     "https://github.com/harnice/harnice-general-library",
 #     artifact_id="body-1",
 #     params={"u": 2, "depth": 10},
 #     images=images,
 # )
 # Rack enclosure. depth and units are the macro arguments. The front panel is
-# 19 inches wide and the body is 19 inches wide. 1U is 1.75in tall. 
+# 19 inches wide and the body is 19 inches wide. 1U is 1.75in tall.
+# No images argument. Comment this call out before pasting face pictures.
 # build_utils.run_macro(
 #     "build_rackmount_enclosure",
-#     "library/macros/device_artifacts",
+#     "macros/device_artifacts",
 #     "https://github.com/harnice/harnice-general-library",
 #     artifact_id="body-1",
 #     depth=10,
 #     units=2,
 # )
+# Imported STEP. No images argument. Comment this call out after the copy
+# looks right, then paste face pictures. The next run recopies the vendor
+# file and drops those links.
 # build_utils.run_macro(
 #     "build_physical_model_from_step",
-#     "library/macros/device_artifacts",
+#     "macros/device_artifacts",
 #     "https://github.com/harnice/harnice-general-library",
 #     artifact_id="body-1",
 #     path_to_step="vendor/chassis.step",

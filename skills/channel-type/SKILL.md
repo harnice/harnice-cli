@@ -39,9 +39,11 @@ Search that file for a row with the same signal names and the same
 direction. If one exists, tell me its id and stop. Do not add a second name
 for a type the file already has.
 
-Do not edit `https://github.com/harnice/harnice-general-library` unless I said
-this type belongs in the public library and the checkout is my branch of
-that repo.
+Do not edit the public general library unless I said this type belongs
+there. Its files live in `harnice-general-library/` in the Harnice source
+repository. `lib_repo` stays
+`https://github.com/harnice/harnice-general-library`. A merge to `main`
+publishes that directory to the public library repository.
 
 
 ## What you still need from me

@@ -27,6 +27,11 @@
     A system import also copies ``maps/channels.tsv`` to the instance. That file
     is the source of truth for a parent system's flattened channel map.
     
+    If the library cannot be found and the destination already contains instance
+    data, the existing files are kept and a warning is printed. The build
+    continues. The same error is still raised when the destination has no
+    instance data.
+    
     **Args:**
     - `input_dict` (dict): Dictionary containing part information with required keys:
         - `instance_name` (str): Name for this instance in the project
@@ -51,7 +56,10 @@
     
     **Raises:**
     - `ValueError`: If required fields (`lib_repo`, `mpn`, `item_type`) are blank.
-    - `FileNotFoundError`: If no revision folders are found for the part number in the library.
+        Also if the library repository cannot be resolved and the destination has
+        no instance data.
+    - `FileNotFoundError`: If the library part or revision cannot be found and the
+        destination has no instance data.
 
 ??? info "`library_utils.get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None)`"
 
@@ -61,7 +69,9 @@
     
     Reads the `repository_locations.csv` file to find the mapping between a library
     repository URL and its local filesystem path. If the CSV file doesn't exist,
-    it creates one with a default entry for the `harnice-library-public` repository.
+    it creates one whose general-library row points at ``harnice-general-library/``
+    in this Harnice checkout. The URL stays
+    ``https://github.com/harnice/harnice-general-library``.
     
     The lookup is case-insensitive. The local path is expanded (e.g., `~` is expanded
     to the user's home directory).

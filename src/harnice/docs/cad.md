@@ -2,13 +2,13 @@
 
 A device build writes a solid. A system poses those solids and fastens their mate connectors. Distances in the model are inches. `body.step` and `assembly.step` are millimetres, which is what the viewer reads.
 
-The build writes the solid. The **physical model** page places mate connectors on it, and pastes a picture on a face.
+The build writes the solid. The **physical model** page places mate connectors on it, and pastes a picture on a face. A pasted picture stays through the next build when that build attaches the same file, or when the macro that rewrites `body.step` is commented out.
 
 ---
 
 ## Give a device a body
 
-Call one macro from the device `build.py`. All four live in `library/macros/device_artifacts` on `https://github.com/harnice/harnice-general-library`. Each saves with `fileio.path("body")`, the device's `body.step`, and uses `artifact_id="body-1"`.
+Call one macro from the device `build.py`. All four live in `macros/device_artifacts` on `https://github.com/harnice/harnice-general-library`. Each saves with `fileio.path("body")`, the device's `body.step`, and uses `artifact_id="body-1"`.
 
 `cad`, `physical_body`, `fileio`, and `build_utils` are already in the build namespace. A device `build.py` uses those names as they stand. Import `os` when a path is joined. A macro file may import `harnice.utils.cad`.
 
@@ -24,7 +24,7 @@ images = {
 }
 build_utils.run_macro(
     "build_rectangular_physical_model",
-    "library/macros/device_artifacts",
+    "macros/device_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="body-1",
     params={"width": 4, "height": 2, "depth": 6},
@@ -50,7 +50,7 @@ images = {
 }
 build_utils.run_macro(
     "build_rackmount_physical_model",
-    "library/macros/device_artifacts",
+    "macros/device_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="body-1",
     params={"u": 2, "depth": 10},
@@ -66,10 +66,12 @@ build_utils.run_macro(
 
 The opening starts 1 inch above z = 0. `F1` is the center of the bottom unit on the front face, so a full unit puts it at `[0, 0, 1.875]`, with gamma −90 so its +X points out the front and +Z points up. `B1` is the center of that unit on the back, at y = depth, with gamma 90 so its +X points out the back and +Z still points up. Both are `build` mates.
 
+This macro takes no `images` argument. Each run replaces `body.step`. Comment it out after the enclosure is the size you want if you paste face pictures. Leaving the call in `build.py` drops those links on the next run. See [Face pictures](#face-pictures).
+
 ```python
 build_utils.run_macro(
     "build_rackmount_enclosure",
-    "library/macros/device_artifacts",
+    "macros/device_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="body-1",
     depth=10,
@@ -79,12 +81,12 @@ build_utils.run_macro(
 
 ### An existing STEP file
 
-`build_physical_model_from_step` copies `path_to_step` onto `body.step`. The bytes stay as they are. The copy is not a `cad` model, so this macro attaches no images. A STEP file that already contains Harnice image comments keeps them. You can still paste a face picture on the physical model page.
+`build_physical_model_from_step` copies `path_to_step` onto `body.step`. The bytes stay as they are. The copy is not a `cad` model, so this macro attaches no images. A vendor file that already contains Harnice image comments keeps those comments, because the bytes are copied unchanged. A picture pasted on the physical model page is a comment in the device `body.step`, not in the vendor file. The next run copies the vendor file again and drops that comment. After the import looks right, comment out this `run_macro`, then paste. Later builds leave `body.step` alone. Put the call back only when you mean to replace the body.
 
 ```python
 build_utils.run_macro(
     "build_physical_model_from_step",
-    "library/macros/device_artifacts",
+    "macros/device_artifacts",
     "https://github.com/harnice/harnice-general-library",
     artifact_id="body-1",
     path_to_step="vendor/chassis.step",
@@ -155,11 +157,15 @@ On the device page, select a mate and drag its triad, or type the numbers. The p
 
 ## Face pictures
 
-`images` maps a surface uuid to a file, usually under `fileio.dirpath("body_images")`. The path is stored in `body.step` as a comment. A file inside the revision is stored relative to that folder. The path cannot contain a space.
+On the physical model page, click a face and paste a screenshot. The PNG is stored under `body_images/` (for example `body_images/front.png`) and linked from the current `body.step` as a comment. **Clear image** removes that link and deletes the file when it lives in `body_images/`. Select two faces to read the distance between them, in inches, when they are parallel, or the angle between them when they are not. Pasting shows a reminder: comment out the macro that built this body before rebuilding, when that macro would replace `body.step`.
 
-On the physical model page, click a face and paste a screenshot. The PNG is stored under `body_images/` and linked from the STEP file. **Clear image** removes that link. Select two faces to read the distance between them, in inches, when they are parallel, or the angle between them when they are not.
+The PNG file stays when the body is rebuilt. The comment in `body.step` does not, unless that run attaches the file again. `cad.save_step` writes a new STEP file and links only the surfaces this run passed to `cad.attach_png`.
 
-An imported STEP file can take a pasted picture the same way. The import macro itself does not attach one.
+`images` on `build_rectangular_physical_model` and `build_rackmount_physical_model` is that attachment. It maps a surface uuid to a file, usually under `fileio.dirpath("body_images")`. A file inside the revision is stored relative to that folder. The path cannot contain a space. Paste on the page fills the file. The next run links every face named in `images`. A face you paste that `images` does not name loses its link. Omit `images`, or omit a face, until that PNG exists. A missing file fails the build.
+
+`build_rackmount_enclosure` and `build_physical_model_from_step` take no `images` argument. Each run replaces `body.step`, so a pasted face link is gone afterward. After the solid is the one you want, comment out that `run_macro`. Later builds leave `body.step` in place, and pastes stay.
+
+A custom script does the same. Call `cad.attach_png` for each face that should survive `cad.save_step`. `cad.keep_gui_mates` keeps mate poses. It does not keep face pictures.
 
 ---
 
@@ -218,7 +224,7 @@ These names are on the `cad` module.
 | `cad.extrude(model, uuid, distance)` | A solid along that plane's normal. `distance` is inches and greater than zero. Returns a body. |
 | `cad.boolean_subtract(tools, targets)` | Cuts tool bodies out of target bodies. Each argument is a body or a list of bodies. Both are rectangular prisms. |
 | `cad.attach_png(model, uuid, filepath, orientation)` | Stores an image path and an orientation, in degrees, on a surface. The file has to exist. |
-| `cad.save_step(model, path)` | Writes the solids. Image links are comments in that file. |
+| `cad.save_step(model, path)` | Writes the solids. Image links are comments in that file, only for images attached on this run. |
 | `cad.mate(model, uuid, location, alpha=0, beta=0, gamma=0, source="build")` | Adds a mate connector. `location` is `[x, y, z]` inches. |
 | `cad.keep_gui_mates(model, saved)` | Copies `gui` mates onto the model. A `gui` mate replaces a `build` mate with the same id. |
 | `cad.save_mates(model, path)` | Writes this model's mates into `attributes.json`. |

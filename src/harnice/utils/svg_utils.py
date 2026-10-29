@@ -1,8 +1,218 @@
 import os
 import re
 import math
+
 from harnice import cli
 from harnice.utils import appearance
+
+
+# Defaults for harness Analyze overlays and system block-diagram traces.
+# ``trace_overlay_style`` starts as a copy of this at each build. A script
+# writes that object; ``regenerate_trace_overlays`` writes it and redraws.
+# Trace thickness is in inches (``draw_styled_path`` multiplies by 96). The
+# other lengths are SVG user units in the same space as the network.
+TRACE_OVERLAY_STYLE = {
+    "label_font_size": 0.5,
+    "segment_spacing": 1.5,
+    "stroke_width": 0.5 / 96,
+    "min_label_segment_length": None,
+    "network_segment_stroke_width": 1.8,
+    "network_segment_font_size": 11,
+    "network_node_radius": 2.2,
+    "network_node_font_size": 10,
+}
+
+class _TraceOverlayStyle:
+    """Live overlay style for the build that is running.
+
+    Harness and system builds reset this to the defaults before the script.
+    Read it with ``trace_overlay_style()`` or ``trace_overlay_style.stroke_width``.
+    Write it with an attribute, an item, or ``update``. A later conductor or
+    cable layout drawing, and the block diagram copied into a PDF, use the
+    values still set when they run. The Analyze overlays and the block diagram
+    file are drawn again after the script with whatever is left.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """Restore every key to the defaults."""
+        object.__setattr__(self, "_values", dict(TRACE_OVERLAY_STYLE))
+
+    def _merge(self, base, style):
+        """Return ``base`` with ``style`` applied. Does not store it."""
+        if not isinstance(style, dict):
+            raise TypeError(
+                "trace overlay style must be a dict; "
+                f"got {type(style).__name__}"
+            )
+        unknown = [str(key) for key in style if key not in TRACE_OVERLAY_STYLE]
+        if unknown:
+            known = ", ".join(TRACE_OVERLAY_STYLE)
+            raise ValueError(
+                "unknown trace overlay style keys: "
+                + ", ".join(unknown)
+                + f". Keys are: {known}"
+            )
+        merged = dict(base)
+        for key, value in style.items():
+            if value is None and key != "min_label_segment_length":
+                merged[key] = TRACE_OVERLAY_STYLE[key]
+                continue
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, (int, float))
+            ):
+                none_ok = " or None" if key == "min_label_segment_length" else ""
+                raise TypeError(
+                    f"trace overlay style {key} must be a number{none_ok}; "
+                    f"got {value!r}"
+                )
+            if value is not None and not math.isfinite(float(value)):
+                raise ValueError(f"trace overlay style {key} must be a finite number")
+            merged[key] = value
+        return merged
+
+    def __call__(self, style=None):
+        """Copy of the style. A dict changes only the returned copy."""
+        if style is None:
+            return dict(self._values)
+        return self._merge(self._values, style)
+
+    def keys(self):
+        return self._values.keys()
+
+    def __getitem__(self, key):
+        if key not in TRACE_OVERLAY_STYLE:
+            raise KeyError(key)
+        return self._values[key]
+
+    def __setitem__(self, key, value):
+        self.update({key: value})
+
+    def __getattr__(self, key):
+        if key in TRACE_OVERLAY_STYLE:
+            return self._values[key]
+        raise AttributeError(key)
+
+    def __setattr__(self, key, value):
+        if key in TRACE_OVERLAY_STYLE:
+            self.update({key: value})
+            return
+        object.__setattr__(self, key, value)
+
+    def update(self, style):
+        """Merge ``style`` into the live values. ``None`` restores a key's default, except ``min_label_segment_length``."""
+        object.__setattr__(self, "_values", self._merge(self._values, style))
+        return self
+
+
+# Reset to the defaults at the start of each harness or system build.
+trace_overlay_style = _TraceOverlayStyle()
+
+
+# Placed by the build-instructions ribbon. Keys match TRACE_OVERLAY_STYLE.
+REGENERATE_TRACE_OVERLAYS_SNIPPET = """\
+svg_utils.regenerate_trace_overlays(
+    style={
+        # Live style for this build. Assign svg_utils.trace_overlay_style.stroke_width
+        # or call .update({...}) to change it without redrawing. A later conductor
+        # or cable layout, and the block diagram copied into a PDF, read it then.
+        # A key left at its default keeps that sheet's existing number.
+        # This call also redraws the overlays now. After the script they are drawn
+        # again with whatever is still set.
+        "label_font_size": 0.5,  # SVG user units
+        "segment_spacing": 1.5,  # gap between parallel traces, network units
+        "stroke_width": 0.5 / 96,  # inches
+        "min_label_segment_length": None,  # None sizes this from the network span
+        # Harness Analyze skeleton. A system block diagram ignores these.
+        "network_segment_stroke_width": 1.8,
+        "network_segment_font_size": 11,
+        "network_node_radius": 2.2,
+        "network_node_font_size": 10,
+    },
+)
+"""
+
+
+def regenerate_trace_overlays(style=None):
+    """
+    Use this when a harness or system build should regenerate trace overlays now, or change their font size, spacing, and thickness partway through the script.
+
+    Harness builds write the Analyze overlays: the network skeleton, conductor
+    traces, and cable traces. System builds replace the block-diagram
+    ``applied-traces`` layers. The build draws these again after the script
+    finishes, using whatever ``trace_overlay_style`` still holds.
+
+    The same object is what a conductor or cable layout drawing reads, and what
+    is drawn onto the block diagram when a PDF copies it. Write it without
+    redrawing by assigning ``svg_utils.trace_overlay_style.stroke_width`` or
+    calling ``svg_utils.trace_overlay_style.update({...})``. Set the numbers
+    before that drawing runs. Write the saved defaults back afterward when the
+    GUI should keep them. A key left at its overlay default keeps the sheet
+    drawing's existing thickness, spacing, or label size. ``stroke_width`` is
+    inches. On those sheets, ``segment_spacing`` and ``label_font_size`` are
+    in the drawing's own units (the layout label size is the printed px size).
+
+    Omit ``style`` to regenerate with the style already set. Keys you leave out
+    keep their current values. ``None`` restores a key's default, except
+    ``min_label_segment_length``, where ``None`` means the length is chosen
+    from the network span. The ribbon inserts this call with every key filled
+    in. ``dict(svg_utils.trace_overlay_style)`` is the current style;
+    ``dict(svg_utils.TRACE_OVERLAY_STYLE)`` is the starting point.
+
+    **Args:**
+    - `style` (dict, optional): Overlay settings.
+        - `label_font_size`: trace label height in SVG user units. Default ``0.5``.
+        - `segment_spacing`: gap between parallel traces, in network units. Default ``1.5``.
+        - `stroke_width`: trace thickness in inches. Default ``0.5 / 96``.
+        - `min_label_segment_length`: shortest sub-segment that gets a midpoint label, in network units. Default ``None`` (from the network span).
+        - `network_segment_stroke_width`: harness Analyze segment stroke, in SVG user units. Default ``1.8``. A system block diagram ignores this.
+        - `network_segment_font_size`: harness Analyze segment-id label size. Default ``11``.
+        - `network_node_radius`: harness Analyze node marker radius. Default ``2.2``.
+        - `network_node_font_size`: harness Analyze node-id label size. Default ``10``.
+
+    **Returns:**
+    - `dict`: Paths written. A harness returns ``flattened network svg``,
+      ``circuits overlay``, ``cable overlay``, and ``trace overlays``.
+      A system returns ``block diagram``.
+
+    **Raises:**
+    - `TypeError`: If ``style`` is not a dict, or a value is not a number.
+    - `ValueError`: If ``style`` contains an unknown key, or this build is not a harness or system.
+    """
+    from harnice import state
+
+    if style is not None:
+        trace_overlay_style._merge(trace_overlay_style._values, style)
+    project_type = getattr(state, "project_type", None)
+    if project_type == "harness":
+        writer_name = "harness"
+    elif project_type == "system":
+        writer_name = "system"
+    else:
+        raise ValueError(
+            "svg_utils.regenerate_trace_overlays regenerates harness Analyze overlays "
+            "or system block-diagram traces. "
+            f"This project type is {project_type!r}."
+        )
+    if style is not None:
+        trace_overlay_style.update(style)
+    if writer_name == "harness":
+        from harnice.lists import flattened_network
+
+        return flattened_network.write_trace_overlays_svg()
+    from harnice import fileio
+    from harnice.utils import system_utils
+
+    bd_path = fileio.path("block diagram")
+    with open(bd_path, "r", encoding="utf-8") as f:
+        original = f.read()
+    updated = system_utils.apply_block_diagram_trace_overlays(original)
+    if updated != original:
+        with open(bd_path, "w", encoding="utf-8") as f:
+            f.write(updated)
+    return {"block diagram": bd_path}
 
 
 def add_entire_svg_file_contents_to_group(filepath, new_group_name):
@@ -147,6 +357,10 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
     Call as if you were appending any other element to an svg group.
 
     Spline points are a list of dictionaries with x and y coordinates. [{"x": 0, "y": 0, "tangent": 0}, {"x": 1, "y": 1, "tangent": 0}]
+    A span whose travel tangents stay within 12° of each other, or both lean off
+    the same side of the chord, is drawn as that chord. A real corner or U-turn
+    (tangents on opposite sides of the chord, bend above 12°) keeps a half-chord
+    handle along each tangent.
     Plots physical geometry from an engineering appearance dict (conductor, cable,
     segment). Keys: base_color, outline_color, parallelstripe, perpstripe, slash_lines.
     Slash lines: direction, angle, step, color, slash_width_inches.
@@ -175,16 +389,7 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
         path = f"M {points[0]['x']:.3f},{-points[0]['y']:.3f}"
         for i in range(len(points) - 1):
             p0, p1 = points[i], points[i + 1]
-            t0, t1 = (
-                math.radians(p0.get("tangent", 0)),
-                math.radians(p1.get("tangent", 0)),
-            )
-            d = math.hypot(p1["x"] - p0["x"], p1["y"] - p0["y"])
-            ctrl_dist = d * 0.5
-            c1x = p0["x"] + math.cos(t0) * ctrl_dist
-            c1y = p0["y"] + math.sin(t0) * ctrl_dist
-            c2x = p1["x"] - math.cos(t1) * ctrl_dist
-            c2y = p1["y"] - math.sin(t1) * ctrl_dist
+            c1x, c1y, c2x, c2y = _cubic_controls(p0, p1)
             path += f" C {c1x:.3f},{-c1y:.3f} {c2x:.3f},{-c2y:.3f} {p1['x']:.3f},{-p1['y']:.3f}"
         return path
 
@@ -257,12 +462,9 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
         for i in range(len(points) - 1):
             p0 = (points[i]["x"], points[i]["y"])
             p1 = (points[i + 1]["x"], points[i + 1]["y"])
-            t0 = math.radians(points[i].get("tangent", 0))
-            t1 = math.radians(points[i + 1].get("tangent", 0))
-            d = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
-            ctrl_dist = d * 0.5
-            c1 = (p0[0] + math.cos(t0) * ctrl_dist, p0[1] + math.sin(t0) * ctrl_dist)
-            c2 = (p1[0] - math.cos(t1) * ctrl_dist, p1[1] - math.sin(t1) * ctrl_dist)
+            c1x, c1y, c2x, c2y = _cubic_controls(points[i], points[i + 1])
+            c1 = (c1x, c1y)
+            c2 = (c2x, c2y)
 
             L = bezier_length(p0, c1, c2, p1)
             num_steps = max(1, int(L / step_dist))
@@ -1220,6 +1422,14 @@ def _trace_group_open_tag(instance, group_opacity=None):
 # ``n * spacing`` vibe (≈ 2× half-width for a full fan).
 _TRACE_CIRCLE_FAN_HALF_ANGLE_DEG = 30.0
 
+# A bend this small is a waypoint, and a spline span this straight is the chord.
+# 12° is about a 1:5 slope.
+_TRACE_STRAIGHT_TURN_DEG = 12.0
+
+# Junction circle radius stops at this fraction of the shortest traced segment
+# at the node, so two neighboring circles (0.45 + 0.45) leave a straight run.
+_TRACE_JUNCTION_RADIUS_SEGMENT_FRACTION = 0.45
+
 
 def _channel_type_default_appearance(item, channel_type, signal):
     """Appearance from channel_types.tsv for a channel trace or a signal trace."""
@@ -1306,6 +1516,98 @@ def _trace_circle_radius_for_half_width(half_width):
     if half_width <= 1e-12:
         return 0.0
     return half_width / math.sin(math.radians(_TRACE_CIRCLE_FAN_HALF_ANGLE_DEG))
+
+
+def _angle_delta_deg(a, b):
+    """Smallest absolute difference between two headings, in degrees."""
+    delta = (float(a) - float(b)) % 360.0
+    if delta > 180.0:
+        delta = 360.0 - delta
+    return abs(delta)
+
+
+def _departure_turn_deg(away_a, away_b):
+    """Bend from a straight line for two away-from-node headings, in degrees."""
+    return abs(180.0 - _angle_delta_deg(away_a, away_b))
+
+
+def _signed_angle_delta_rad(a, b):
+    """Signed ``a - b`` wrapped to (-π, π]."""
+    return (a - b + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _cubic_controls(p0, p1):
+    """Control points for one styled-path cubic, in the point chain's space.
+
+    A shallow bend, and a span whose tangents both lean off the same side of
+    the chord, is drawn as the straight chord. That is the close-junction bow:
+    the half-chord handle is long and the two tangents agree, so the curve
+    leaves the harness. A real corner or a U-turn has the tangents on opposite
+    sides of the chord and keeps a half-chord handle along each tangent. A
+    tangent that faces back along the chord contributes no handle.
+    """
+    x0 = p0["x"]
+    y0 = p0["y"]
+    x1 = p1["x"]
+    y1 = p1["y"]
+    dx = x1 - x0
+    dy = y1 - y0
+    dist = math.hypot(dx, dy)
+    if dist < 1e-9:
+        return x0, y0, x1, y1
+    t0 = math.radians(p0.get("tangent", 0.0) or 0.0)
+    t1 = math.radians(p1.get("tangent", 0.0) or 0.0)
+    chord = math.atan2(dy, dx)
+    d0 = _signed_angle_delta_rad(t0, chord)
+    d1 = _signed_angle_delta_rad(t1, chord)
+    turn = abs(_signed_angle_delta_rad(t0, t1))
+    same_side = d0 * d1 > 0.0
+    if same_side or turn <= math.radians(_TRACE_STRAIGHT_TURN_DEG):
+        return (x0 + dx * 0.5, y0 + dy * 0.5, x1 - dx * 0.5, y1 - dy * 0.5)
+
+    def handle(delta):
+        # Opposite-side bends keep the half-chord fillet. A tangent that faces
+        # back along the chord (cos < 0) is a loop, so that handle goes away.
+        if math.cos(delta) < -1e-6:
+            return 0.0
+        return dist * 0.5
+
+    ctrl0 = handle(d0)
+    ctrl1 = handle(d1)
+    return (
+        x0 + math.cos(t0) * ctrl0,
+        y0 + math.sin(t0) * ctrl0,
+        x1 - math.cos(t1) * ctrl1,
+        y1 - math.sin(t1) * ctrl1,
+    )
+
+
+def _is_collinear_passthrough(info):
+    """Degree-2 node whose wires continue within ``_TRACE_STRAIGHT_TURN_DEG``."""
+    if info.get("degree") != 2:
+        return False
+    segs = info["segments"]
+    return (
+        _departure_turn_deg(info["angles"][segs[0]], info["angles"][segs[1]])
+        <= _TRACE_STRAIGHT_TURN_DEG
+    )
+
+
+def _capped_junction_radius(info):
+    """Fan radius limited to 0.45× the shortest incident segment."""
+    half_w = 0.0
+    lengths = []
+    for seg in info["segments"]:
+        span = info["seg_length"].get(seg, 0.0)
+        if span > 1e-9:
+            lengths.append(span)
+        if not info["seg_instances"].get(seg):
+            continue
+        half_w = max(half_w, info["seg_half_width"].get(seg, 0.0))
+    r_fan = _trace_circle_radius_for_half_width(half_w)
+    if r_fan <= 1e-12 or not lengths:
+        return 0.0
+    return min(r_fan, _TRACE_JUNCTION_RADIUS_SEGMENT_FRACTION * min(lengths))
 
 
 def _trace_lateral_offsets(num_on_seg, segment_spacing):
@@ -1647,11 +1949,21 @@ def draw_segments_across_paths(
     Junction geometry:
         - Degree-1 nodes (path endpoints): traces terminate on the line through the
           node perpendicular to the incident segment — no circle.
-        - Degree ≥ 2 nodes: traces meet a junction circle. Radius is sized so the
-          outermost parallel wire sits at ±30° from the segment axis
-          (``R = half_width / sin(30°)``). Overlapping circles are merged into one
-          larger circle (centroid center, radius covering member nodes and fan-out);
-          segments internal to a merge are skipped so traces do not zigzag.
+        - Degree-2 nodes whose two segments are within 12° of a straight line are
+          waypoints on that line (same perpendicular offset, no circle), so a run
+          of close collinear splits stays on the harness.
+        - Other degree ≥ 2 nodes: traces meet a junction circle. Radius is sized so
+          the outermost parallel wire sits at ±30° from the segment axis
+          (``R = half_width / sin(30°)``), then capped to 0.45× the shortest
+          incident segment. A cap below the fan radius
+          compresses lane spacing at that node so the fan still fits; the bundle
+          necks down through the short segment and spreads out again on a longer
+          one. Circles that still overlap merge (centroid center). The merged
+          radius stays within the member caps unless it must grow to cover the
+          member nodes, and segments internal to a merge are skipped.
+        - A spline span whose tangents differ by at most 12°, or both lean off the
+          same side of the chord, is drawn as that chord so a small tangent error
+          cannot bow the trace off the segment.
 
     Args:
         input_instances: list of instance dicts, each with:
@@ -1829,8 +2141,9 @@ def draw_segments_across_paths(
     # --- Phase 2: Offset point calculation at each node ---
     # points_to_pass_through[node_id][seg_uuid][inst_name] = {'x': ..., 'y': ... (Y-flipped)}
     #
-    # Degree-1 nodes get a flat perpendicular cap. Degree ≥ 2 nodes get junction
-    # circles; overlapping circles merge into one so traces stay tangent-clean.
+    # Degree-1 nodes and nearly straight degree-2 nodes get a flat perpendicular
+    # cap. Sharper junctions get a circle capped to the shortest incident
+    # segment; circles that still overlap merge so traces stay tangent-clean.
     points_to_pass_through = {}
 
     # Per-node incident geometry and per-segment trace lists (shared by both styles).
@@ -1840,6 +2153,7 @@ def draw_segments_across_paths(
         node_segment_angles = []
         flip_sort = {}
         other_node_of_seg = {}
+        seg_length = {}
 
         for seg_uuid, seg_info in graph["segments"].items():
             node_a = seg_info["node_at_end_a"]
@@ -1866,6 +2180,7 @@ def draw_segments_across_paths(
             node_segments.append(seg_uuid)
             node_segment_angles.append(math.degrees(math.atan2(dy, dx)))
             other_node_of_seg[seg_uuid] = other_id
+            seg_length[seg_uuid] = math.hypot(dx, dy)
 
         if not node_segments:
             continue
@@ -1899,7 +2214,7 @@ def draw_segments_across_paths(
         if not any_trace:
             continue
 
-        node_incident[node_id] = {
+        record = {
             "x": node_coords["x"],
             "y": node_coords["y"],
             "segments": node_segments,
@@ -1908,34 +2223,42 @@ def draw_segments_across_paths(
             "other_node": other_node_of_seg,
             "seg_instances": seg_instances,
             "seg_half_width": seg_half_width,
+            "seg_length": seg_length,
             "max_half_width": max(seg_half_width.values()) if seg_half_width else 0.0,
             "degree": len(node_segments),
         }
+        record["collinear"] = _is_collinear_passthrough(record)
+        record["capped_radius"] = _capped_junction_radius(record)
+        node_incident[node_id] = record
 
-    # --- Endpoints: flat perpendicular caps (no circle) ---
+    # --- Endpoints and straight splits: flat perpendicular caps (no circle) ---
+    def _place_flat(node_id, info):
+        for seg_uuid in info["segments"]:
+            instances_using_segment = info["seg_instances"].get(seg_uuid) or []
+            if not instances_using_segment:
+                continue
+            seg_angle = info["angles"][seg_uuid]
+            perp = math.radians(seg_angle + 90.0)
+            ux, uy = math.cos(perp), math.sin(perp)
+            offsets = _trace_lateral_offsets(
+                len(instances_using_segment), segment_spacing
+            )
+            for inst_name, center_offset in zip(instances_using_segment, offsets):
+                x_pt = info["x"] + center_offset * ux
+                y_pt = info["y"] + center_offset * uy
+                points_to_pass_through.setdefault(node_id, {}).setdefault(
+                    seg_uuid, {}
+                )[inst_name] = {"x": x_pt, "y": -y_pt}
+
     for node_id, info in node_incident.items():
-        if info["degree"] != 1:
-            continue
-        seg_uuid = info["segments"][0]
-        instances_using_segment = info["seg_instances"].get(seg_uuid) or []
-        if not instances_using_segment:
-            continue
-        seg_angle = info["angles"][seg_uuid]
-        perp = math.radians(seg_angle + 90.0)
-        ux, uy = math.cos(perp), math.sin(perp)
-        offsets = _trace_lateral_offsets(
-            len(instances_using_segment), segment_spacing
-        )
-        for inst_name, center_offset in zip(instances_using_segment, offsets):
-            x_pt = info["x"] + center_offset * ux
-            y_pt = info["y"] + center_offset * uy
-            points_to_pass_through.setdefault(node_id, {}).setdefault(seg_uuid, {})[
-                inst_name
-            ] = {"x": x_pt, "y": -y_pt}
+        if info["degree"] == 1 or info["collinear"]:
+            _place_flat(node_id, info)
 
-    # --- Junctions: sized circles, merge overlaps, place on circumference ---
+    # --- Junctions: capped circles, merge only what still overlaps ---
     junction_ids = [
-        nid for nid, info in node_incident.items() if info["degree"] >= 2
+        nid
+        for nid, info in node_incident.items()
+        if info["degree"] >= 2 and not info["collinear"]
     ]
     if junction_ids:
         parent = {nid: nid for nid in junction_ids}
@@ -1969,22 +2292,42 @@ def draw_segments_across_paths(
                 )
                 member_set = set(members)
                 half_w = 0.0
+                external_lengths = []
                 for m in members:
-                    for seg_uuid in node_incident[m]["segments"]:
-                        other = node_incident[m]["other_node"][seg_uuid]
+                    inc = node_incident[m]
+                    for seg_uuid in inc["segments"]:
+                        other = inc["other_node"][seg_uuid]
                         if other in member_set:
                             continue
+                        span = inc["seg_length"].get(seg_uuid, 0.0)
+                        if span > 1e-9:
+                            external_lengths.append(span)
+                        if not inc["seg_instances"].get(seg_uuid):
+                            continue
                         half_w = max(
-                            half_w, node_incident[m]["seg_half_width"].get(seg_uuid, 0.0)
+                            half_w, inc["seg_half_width"].get(seg_uuid, 0.0)
                         )
                 r_fan = _trace_circle_radius_for_half_width(half_w)
-                radius = max(extent, r_fan)
-                if half_w > 0:
-                    radius = max(radius, half_w * 1.0001)
+                member_r = max(node_incident[m]["capped_radius"] for m in members)
+                # Cover the member nodes, but do not grow past the larger
+                # capped circle or past 0.45× the shortest segment that leaves
+                # the cluster. A short segment therefore keeps a straight run.
+                radius = max(extent, member_r)
+                if external_lengths:
+                    exit_cap = (
+                        _TRACE_JUNCTION_RADIUS_SEGMENT_FRACTION
+                        * min(external_lengths)
+                    )
+                    radius = min(radius, max(extent, min(r_fan, exit_cap)))
+                if r_fan > 1e-12:
+                    scale = min(1.0, radius / r_fan)
+                else:
+                    scale = 1.0
                 geom[root] = {
                     "cx": cx,
                     "cy": cy,
                     "R": radius,
+                    "scale": scale,
                     "members": members,
                     "member_set": member_set,
                 }
@@ -2037,7 +2380,8 @@ def draw_segments_across_paths(
                 seg_angle = math.degrees(math.atan2(oy - cy, ox - cx))
 
                 offsets = _trace_lateral_offsets(
-                    len(instances_using_segment), segment_spacing
+                    len(instances_using_segment),
+                    segment_spacing * cluster["scale"],
                 )
                 for inst_name, center_offset in zip(
                     instances_using_segment, offsets

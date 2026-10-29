@@ -31,6 +31,8 @@ Inside the build instructions file is where you can write your rules on how to b
 
 {% include-markdown "fragments/_system_default_build_instructions.md" %}
 
+{% include-markdown "fragments/_device_default_build_instructions.md" %}
+
 # :octicons-table-16: Instances Lists, Signals Lists *(project as-designed)*
 
 While having a concise set of rules is important to the definition of a project, it is not always sufficient as complete digital representation of the project. There's a difference between "as-intended" (build instructions) vs "as-designed". Harnice produces "as-designed" documentation for projects in various formats depending on the project type, but the following is a core Harnice design requirement:

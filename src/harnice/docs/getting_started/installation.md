@@ -35,7 +35,7 @@ Coming online every few weeks is enough to keep the license current indefinitely
 
 ## :material-download: Download
 
-Download Harnice for [Mac](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-macOS.dmg) or [Windows](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-windows.zip). On a Mac, open the DMG and drag Harnice into Applications. On Windows, unzip and run `Harnice.exe` (keep the unzipped folder together).
+Download Harnice for [Mac](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-macOS.dmg) or [Windows](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-windows.zip). On a Mac, open the DMG and drag Harnice into Applications. On Windows, unzip and run `Harnice.exe` (keep the unzipped folder together). Avoid extracting into a filepath with spaces.
 
 Open Harnice. On first launch it creates the files it needs on this computer (your name and library locations) and opens the setup checklist: your name, git, Inkscape, and the standard libraries. You can open that list again from the gear menu → **Help setting up git, Inkscape, and libraries**. [Inkscape](#inkscape) is only needed to export drawing pages to PDF.
 

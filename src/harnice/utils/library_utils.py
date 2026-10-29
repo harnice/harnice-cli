@@ -3,7 +3,7 @@ import re
 import shutil
 import filecmp
 import json
-from harnice import fileio
+from harnice import cli, fileio
 from harnice.lists import instances_list, library_history, rev_history
 
 def _mpn_from_instances(instance_name):
@@ -256,6 +256,21 @@ def resolve_mpn_revision(source_lib_path, mpn, lib_rev_used_here=None):
     return tip_folder, highest_source_rev, highest_source_rev, tip_folder
 
 
+def _instance_data_files_exist(destination_directory):
+    """True when ``destination_directory`` already holds instance data.
+
+    An empty folder, including one created for this import, does not count.
+    Dotfiles such as ``.DS_Store`` do not count.
+    """
+    if not destination_directory or not os.path.isdir(destination_directory):
+        return False
+    for _dirpath, dirnames, filenames in os.walk(destination_directory):
+        dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+        if any(not name.startswith(".") for name in filenames):
+            return True
+    return False
+
+
 def pull(
     input_dict,
     update_instances_list=True,
@@ -288,6 +303,11 @@ requested files have been validated.
 A system import also copies ``maps/channels.tsv`` to the instance. That file
 is the source of truth for a parent system's flattened channel map.
 
+If the library cannot be found and the destination already contains instance
+data, the existing files are kept and a warning is printed. The build
+continues. The same error is still raised when the destination has no
+instance data.
+
 **Args:**
 - `input_dict` (dict): Dictionary containing part information with required keys:
     - `instance_name` (str): Name for this instance in the project
@@ -312,7 +332,10 @@ is the source of truth for a parent system's flattened channel map.
 
 **Raises:**
 - `ValueError`: If required fields (`lib_repo`, `mpn`, `item_type`) are blank.
-- `FileNotFoundError`: If no revision folders are found for the part number in the library.
+    Also if the library repository cannot be resolved and the destination has
+    no instance data.
+- `FileNotFoundError`: If the library part or revision cannot be found and the
+    destination has no instance data.
     """
     # throw errors if required fields are blank
     if input_dict.get("instance_name") in [None, ""]:
@@ -328,7 +351,8 @@ is the source of truth for a parent system's flattened channel map.
             f"when importing {input_dict.get('instance_name')} 'mpn' is required but blank"
         )
 
-    # determine destination directory
+    # determine destination directory. Do not create it until the library is
+    # found, so a failed import does not look like existing instance data.
     if destination_directory is None:
         destination_directory = os.path.join(
             fileio.dirpath(None),
@@ -336,38 +360,48 @@ is the source of truth for a parent system's flattened channel map.
             input_dict.get("item_type"),
             input_dict.get("instance_name"),
         )
-    os.makedirs(destination_directory, exist_ok=True)
 
     # ``lib_repo`` in instances / library history is the traceable URL (or
     # ``"local"``). Resolve a filesystem root separately for the copy.
     lib_repo_key = input_dict.get("lib_repo")
-    if lib_repo_key == "local":
-        lib_local_root = os.path.join(fileio.part_directory(), "library")
-    else:
-        lib_local_root = get_local_path(
-            lib_repo_key,
-            instance_name=input_dict.get("instance_name"),
-            mpn=input_dict.get("mpn"),
-            lib_subpath=input_dict.get("lib_subpath", ""),
-        )
+    try:
+        if lib_repo_key == "local":
+            lib_local_root = os.path.join(fileio.part_directory(), "library")
+        else:
+            lib_local_root = get_local_path(
+                lib_repo_key,
+                instance_name=input_dict.get("instance_name"),
+                mpn=input_dict.get("mpn"),
+                lib_subpath=input_dict.get("lib_subpath", ""),
+            )
 
-    # determine source library path
-    source_lib_path = os.path.join(
-        lib_local_root,
-        input_dict.get("lib_subpath", ""),
-        input_dict.get("mpn"),
-    )
-    if not os.path.isdir(source_lib_path):
-        raise FileNotFoundError(
-            f"No library part {input_dict.get('mpn')!r} at {source_lib_path}"
+        # determine source library path
+        source_lib_path = os.path.join(
+            lib_local_root,
+            input_dict.get("lib_subpath", ""),
+            input_dict.get("mpn"),
         )
+        if not os.path.isdir(source_lib_path):
+            raise FileNotFoundError(
+                f"No library part {input_dict.get('mpn')!r} at {source_lib_path}"
+            )
 
-    # === Find revision folders and choose tip or explicit rev (see resolve_mpn_revision)
-    source_folder_name, rev_to_use, highest_source_rev, _tip_folder = resolve_mpn_revision(
-        source_lib_path,
-        input_dict.get("mpn"),
-        input_dict.get("lib_rev_used_here"),
-    )
+        # === Find revision folders and choose tip or explicit rev (see resolve_mpn_revision)
+        source_folder_name, rev_to_use, highest_source_rev, _tip_folder = resolve_mpn_revision(
+            source_lib_path,
+            input_dict.get("mpn"),
+            input_dict.get("lib_rev_used_here"),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        if _instance_data_files_exist(destination_directory):
+            cli.warn(
+                f"{input_dict.get('instance_name')} (mpn {input_dict.get('mpn')}): "
+                f"library was not found ({exc}). Keeping existing instance data."
+            )
+            return destination_directory
+        raise
+
+    os.makedirs(destination_directory, exist_ok=True)
 
     # === Import library contents freshly every time
     lib_used_path = os.path.join(destination_directory, fileio.LIBRARY_USED_DIR)
@@ -614,7 +648,9 @@ def get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None):
 
     Reads the `repository_locations.csv` file to find the mapping between a library
     repository URL and its local filesystem path. If the CSV file doesn't exist,
-    it creates one with a default entry for the `harnice-library-public` repository.
+    it creates one whose general-library row points at ``harnice-general-library/``
+    in this Harnice checkout. The URL stays
+    ``https://github.com/harnice/harnice-general-library``.
 
     The lookup is case-insensitive. The local path is expanded (e.g., `~` is expanded
     to the user's home directory).
@@ -658,18 +694,11 @@ def get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None):
     # If file does not exist, auto-generate with default
     # ----------------------------------------------------
     if not os.path.exists(csv_path):
-        # Determine base directory of the Harnice repo
-        # (__file__) → .../harnice/utils/library_utils.py
-        # dirname 3 times → repo root
-        repo_root = os.path.dirname(
-            os.path.dirname(
-                os.path.dirname(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                )
-            )
-        )
+        from harnice.runtime import source_checkout_root
 
-        default_local_path = os.path.join(repo_root, "harnice-library-public")
+        default_local_path = os.path.join(
+            str(source_checkout_root()), "harnice-general-library"
+        )
 
         # Ensure the directory exists for the CSV
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
@@ -680,7 +709,7 @@ def get_local_path(lib_repo, instance_name=None, mpn=None, lib_subpath=None):
             f.write(f"https://github.com/harnice/harnice-general-library,{normalized_path}\n")
 
         print(f"[harnice] Created '{csv_path}'")
-        print(f"[harnice] Default library-public location: {default_local_path}")
+        print(f"[harnice] Default general library location: {default_local_path}")
 
     # ----------------------------------------------------
     # Normal lookup (with BOM-safe decoding)

@@ -1248,8 +1248,11 @@ def overlay_view_box(network):
     return min_x, min_y, width, height
 
 
-def build_flattened_network_master_svg_text(rows=None):
+def build_flattened_network_master_svg_text(rows=None, style=None):
     """Network skeleton overlay (nodes, edges, labels) — no conductor/cable traces."""
+    from harnice.utils import svg_utils
+
+    style = svg_utils.trace_overlay_style(style)
 
     def overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
         """
@@ -1296,6 +1299,14 @@ def build_flattened_network_master_svg_text(rows=None):
         )
 
     def base_network_markup(network):
+        def overlay_len(value):
+            """SVG number that stays ``1.8`` and ``11`` at the historical defaults."""
+            number = float(value)
+            if number == int(number):
+                return str(int(number))
+            text = f"{number:.6f}".rstrip("0").rstrip(".")
+            return text or "0"
+
         def polyline_midpoint(points):
             """Point halfway along a polyline of ``{"x", "y"}`` vertices."""
             if not points:
@@ -1325,6 +1336,14 @@ def build_flattened_network_master_svg_text(rows=None):
                 covered += dist
             return {"x": points[-1]["x"], "y": points[-1]["y"]}
 
+        seg_stroke = overlay_len(style["network_segment_stroke_width"])
+        seg_font = float(style["network_segment_font_size"])
+        seg_font_attr = overlay_len(seg_font)
+        seg_label_gap = 9.0 * (seg_font / 11.0)
+        node_radius = overlay_len(style["network_node_radius"])
+        node_font = float(style["network_node_font_size"])
+        node_font_attr = overlay_len(node_font)
+        node_label_gap = 11.0 * (node_font / 10.0)
         lines = []
         for seg_id, seg in network.get("segments", {}).items():
             na = network["nodes"].get(seg.get("node_at_end_a"))
@@ -1336,14 +1355,14 @@ def build_flattened_network_master_svg_text(rows=None):
             lines.append(
                 f'<polyline data-segment-id="{xml_escape(seg_id)}" '
                 f'points="{points_attr}" fill="none" '
-                f'stroke="#3a6ea5" stroke-width="1.8" stroke-linecap="round" '
+                f'stroke="#3a6ea5" stroke-width="{seg_stroke}" stroke-linecap="round" '
                 f'stroke-linejoin="round" opacity="0.35"/>'
             )
             mid = polyline_midpoint(path)
             mx, my = mid["x"], mid["y"]
             lines.append(
-                f'<text x="{mx:.3f}" y="{my - 9:.3f}" text-anchor="middle" '
-                f'font-size="11" fill="#7a8fa8" opacity="0.45">{xml_escape(seg_id)}</text>'
+                f'<text x="{mx:.3f}" y="{my - seg_label_gap:.3f}" text-anchor="middle" '
+                f'font-size="{seg_font_attr}" fill="#7a8fa8" opacity="0.45">{xml_escape(seg_id)}</text>'
             )
         drawn = set()
         for nid, pos in network.get("nodes", {}).items():
@@ -1351,12 +1370,12 @@ def build_flattened_network_master_svg_text(rows=None):
                 continue
             drawn.add(nid)
             lines.append(
-                f'<circle cx="{pos["x"]:.3f}" cy="{pos["y"]:.3f}" r="2.2" '
+                f'<circle cx="{pos["x"]:.3f}" cy="{pos["y"]:.3f}" r="{node_radius}" '
                 f'fill="#c73652" opacity="0.4"/>'
             )
             lines.append(
-                f'<text x="{pos["x"]:.3f}" y="{pos["y"] - 11:.3f}" text-anchor="middle" '
-                f'font-size="10" fill="#ccc">{xml_escape(nid)}</text>'
+                f'<text x="{pos["x"]:.3f}" y="{pos["y"] - node_label_gap:.3f}" text-anchor="middle" '
+                f'font-size="{node_font_attr}" fill="#ccc">{xml_escape(nid)}</text>'
             )
         return "\n".join(lines)
 
@@ -1374,8 +1393,11 @@ def build_flattened_network_master_svg_text(rows=None):
     )
 
 
-def build_circuits_overlay_master_svg_text(rows=None):
+def build_circuits_overlay_master_svg_text(rows=None, style=None):
     """Conductor-trace overlay only (no network skeleton)."""
+    from harnice.utils import svg_utils
+
+    style = svg_utils.trace_overlay_style(style)
 
     def overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
         """
@@ -1418,7 +1440,14 @@ def build_circuits_overlay_master_svg_text(rows=None):
     min_x, min_y, width, height = overlay_view_box(network)
     return overlay_svg_text(
         CONDUCTOR_TRACES_GROUP_ID,
-        trace_layer_markup(network, "conductor"),
+        trace_layer_markup(
+            network,
+            "conductor",
+            stroke_width=style["stroke_width"],
+            segment_spacing=style["segment_spacing"],
+            label_font_size=style["label_font_size"],
+            min_label_segment_length=style.get("min_label_segment_length"),
+        ),
         min_x,
         min_y,
         width,
@@ -1426,8 +1455,11 @@ def build_circuits_overlay_master_svg_text(rows=None):
     )
 
 
-def build_cable_overlay_master_svg_text(rows=None):
+def build_cable_overlay_master_svg_text(rows=None, style=None):
     """Cable-trace overlay only (no network skeleton)."""
+    from harnice.utils import svg_utils
+
+    style = svg_utils.trace_overlay_style(style)
 
     def overlay_svg_text(layer_group_id, inner_markup, min_x, min_y, width, height):
         """
@@ -1470,7 +1502,14 @@ def build_cable_overlay_master_svg_text(rows=None):
     min_x, min_y, width, height = overlay_view_box(network)
     return overlay_svg_text(
         CABLE_TRACES_GROUP_ID,
-        trace_layer_markup(network, "cable"),
+        trace_layer_markup(
+            network,
+            "cable",
+            stroke_width=style["stroke_width"],
+            segment_spacing=style["segment_spacing"],
+            label_font_size=style["label_font_size"],
+            min_label_segment_length=style.get("min_label_segment_length"),
+        ),
         min_x,
         min_y,
         width,
@@ -1653,6 +1692,10 @@ def write_trace_overlays_svg(rows=None):
     Call at the end of harness build. Also writes the combined ``trace_overlays.svg``
     that Analyze serves directly. These are not PDF masters: they have no
     contents-start/end wrapper and are laid out at console scale.
+
+    Stroke, spacing, and label size come from ``svg_utils.trace_overlay_style``.
+    A build script writes that object, or passes a style to
+    ``svg_utils.regenerate_trace_overlays``.
     """
     if rows is None:
         rows = read_rows()

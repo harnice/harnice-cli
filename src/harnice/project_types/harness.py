@@ -315,13 +315,15 @@ def build():
     # ======================================================================
     # 3. Run build instructions
     # ======================================================================
-    from harnice.utils import pdf_drawings_utils
+    from harnice.utils import pdf_drawings_utils, svg_utils
 
     pdf_drawings_utils.reset_pdf_generator_runs()
+    svg_utils.trace_overlay_style.reset()
     try:
         build_sandbox.run_path(fileio.path("build instructions"), run_name="__main__")
 
         # Persist Analyze overlays (same role as system block-diagram applied-traces).
+        # Uses whatever svg_utils.trace_overlay_style still holds.
         from harnice.lists import flattened_network
 
         flattened_network.write_trace_overlays_svg()

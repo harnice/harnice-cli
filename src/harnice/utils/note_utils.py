@@ -12,7 +12,7 @@ def new_note(
     note_number=None,
     bubble_text=None,
     shape_mpn=None,
-    shape_lib_subpath="library/flagnotes/",
+    shape_lib_subpath="flagnotes/",
     shape_lib_repo="https://github.com/harnice/harnice-general-library",
     affectedinstances=None,
 ):
@@ -32,7 +32,7 @@ def new_note(
     - `note_number`: Number stored on the note. Optional.
     - `bubble_text`: Text drawn in the bubble (``print_name``). Optional.
     - `shape_mpn`: Library part for the note shape. Optional; defaults to ``note_type``.
-    - `shape_lib_subpath`: Library subpath of the shape. Optional; defaults to ``library/flagnotes/``.
+    - `shape_lib_subpath`: Library subpath of the shape. Optional; defaults to ``flagnotes/``.
     - `shape_lib_repo`: Library repository URL, or ``"local"``. Optional; defaults to the general library, https://github.com/harnice/harnice-general-library.
     - `affectedinstances`: Instance names this note applies to. Optional on a new note. When a note with the same type and text already exists, both this list and the existing one must be non-empty so they can be merged; an empty list on either side raises.
     """
@@ -167,7 +167,7 @@ def make_rev_history_notes(rev):
             bubble_text=rev.get("rev"),
             shape_mpn="rev_change_callout",
             shape_lib_repo="https://github.com/harnice/harnice-general-library",
-            shape_lib_subpath="library/flagnotes/",
+            shape_lib_subpath="flagnotes/",
             affectedinstances=affected_instances,
         )
 
@@ -204,7 +204,7 @@ def make_bom_flagnote(affected_instance, output_csys_name):
         "note_type": "bom_item",
         "note_affected_instances": [affected_instance.get("instance_name")],
         "lib_repo": "https://github.com/harnice/harnice-general-library",
-        "lib_subpath": "library/flagnotes/"
+        "lib_subpath": "flagnotes/"
     }
 
 
@@ -244,7 +244,7 @@ def make_part_name_flagnote(affected_instance, output_csys_name):
         "note_type": "part_name",
         "note_affected_instances": [affected_instance.get("instance_name")],
         "lib_repo": "https://github.com/harnice/harnice-general-library",
-        "lib_subpath": "library/flagnotes/"
+        "lib_subpath": "flagnotes/"
     }
 
 
@@ -281,7 +281,7 @@ def make_buildnote_flagnote(note_instance, affected_instance, output_csys_name):
         "note_type": "build_note",
         "note_affected_instances": [affected_instance.get("instance_name")],
         "lib_repo": "https://github.com/harnice/harnice-general-library",
-        "lib_subpath": "library/flagnotes/"
+        "lib_subpath": "flagnotes/"
     }
 
 
@@ -318,7 +318,7 @@ def make_rev_change_flagnote(note_instance, affected_instance, output_csys_name)
         "note_type": "rev_change_callout",
         "note_affected_instances": [affected_instance.get("instance_name")],
         "lib_repo": "https://github.com/harnice/harnice-general-library",
-        "lib_subpath": "library/flagnotes/"
+        "lib_subpath": "flagnotes/"
     }
 
 

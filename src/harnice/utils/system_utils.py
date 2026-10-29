@@ -604,7 +604,8 @@ def make_connector_list():
 
 # Block-diagram overlay trace labels: one value in SVG **user units**. ``label_svg`` uses
 # it for text ``font-size`` and scales the background rect and inner margin proportionally.
-BLOCK_DIAGRAM_TRACE_LABEL_SIZE = 0.5
+# The same number is ``label_font_size`` in ``svg_utils.TRACE_OVERLAY_STYLE``.
+BLOCK_DIAGRAM_TRACE_LABEL_SIZE = svg_utils.TRACE_OVERLAY_STYLE["label_font_size"]
 
 
 def _self_hop_endpoint(endpoint_contacts, inst_name, node_id, channel_id):
@@ -632,7 +633,7 @@ def _self_hop_endpoint(endpoint_contacts, inst_name, node_id, channel_id):
 
 
 def block_diagram_harness_overlay_markup(
-    instances, *, include_multi_ch_junction_overlays=True
+    instances, *, include_multi_ch_junction_overlays=True, style=None
 ):
     """
     Return raw SVG markup for harness routing overlays (paths/labels) from the block diagram
@@ -678,6 +679,9 @@ def block_diagram_harness_overlay_markup(
     - ``include_multi_ch_junction_overlays`` (bool): When True (default), also
       draw channel-level multi-ch-junction overlays from the channel map.
       Circuit-level junction overlays still follow from circuit instances.
+    - ``style`` (dict): Optional overlay style. ``None`` uses
+      ``svg_utils.trace_overlay_style``, which a build script writes directly
+      or sets with ``svg_utils.regenerate_trace_overlays``.
 
     **Raises:**
     - ``FileNotFoundError``: If the block diagram SVG is missing.
@@ -1000,10 +1004,14 @@ def block_diagram_harness_overlay_markup(
     ys = [c["y"] for c in graph["nodes"].values()]
     span = max(max(xs) - min(xs), max(ys) - min(ys)) if xs else 1.0
     span = max(span, 1.0)
-    min_lab = max(15.0, span / 80.0)
+    draw_style = svg_utils.trace_overlay_style(style)
+    if draw_style.get("min_label_segment_length") is None:
+        min_lab = max(15.0, span / 80.0)
+    else:
+        min_lab = float(draw_style["min_label_segment_length"])
 
-    _stroke_in = 0.5 / 96
-    _spacing = 1.5
+    _stroke_in = float(draw_style["stroke_width"])
+    _spacing = float(draw_style["segment_spacing"])
     endpoint_contacts = {}
     markup = svg_utils.draw_segments_across_paths(
         input_instances=overlay_instances,
@@ -1011,7 +1019,7 @@ def block_diagram_harness_overlay_markup(
         stroke_width=_stroke_in,
         segment_spacing=_spacing,
         min_label_segment_length=min_lab,
-        label_font_size=BLOCK_DIAGRAM_TRACE_LABEL_SIZE,
+        label_font_size=float(draw_style["label_font_size"]),
         trace_group_opacity=1,
         endpoint_contacts=endpoint_contacts,
     )
@@ -1151,6 +1159,31 @@ def block_diagram_harness_overlay_markup(
         return crossing
     # Before the harness traces: their label boxes must paint over this stroke.
     return crossing + "\n" + markup
+
+
+def apply_block_diagram_trace_overlays(svg_text, style=None):
+    """Replace channel and circuit traces in a block-diagram SVG string."""
+    instances = instances_list.read()
+    channel_instances = []
+    circuit_instances = []
+    for instance in instances:
+        if instance.get("item_type") == "harness-channel":
+            channel_instances.append(instance)
+        elif instance.get("item_type") == "circuit":
+            circuit_instances.append(instance)
+    channel_overlay = block_diagram_harness_overlay_markup(
+        channel_instances,
+        include_multi_ch_junction_overlays=True,
+        style=style,
+    )
+    circuit_overlay = block_diagram_harness_overlay_markup(
+        circuit_instances,
+        include_multi_ch_junction_overlays=False,
+        style=style,
+    )
+    return block_diagram_utils.replace_block_diagram_applied_traces(
+        svg_text, channel_overlay, circuit_overlay
+    )
 
 
 def connector_of_channel(key):

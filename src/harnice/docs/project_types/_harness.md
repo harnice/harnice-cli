@@ -20,6 +20,10 @@ A physical assembly that contains a set of electrical circuits that satisfies a 
 
 If the harness was created from a system position, build instructions already import that harness. Connector and M85049 backshell policy belong on the system as ``connector_chooser`` and ``m85049_chooser``; the harness default build rules call them after the import.
 
+The first build writes these instructions when `build.py` does not exist yet.
+
+{% include-markdown "fragments/_harness_default_build_instructions.md" %}
+
 
 ## File Structure
 

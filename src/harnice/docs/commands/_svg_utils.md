@@ -2,6 +2,52 @@
 ---
 ##Commands
 *These functions are already available in build instructions as `svg_utils`. Use them as written.*
+??? info "`svg_utils.regenerate_trace_overlays(style=None)`"
+
+    Use this when a harness or system build should regenerate trace overlays now, or change their font size, spacing, and thickness partway through the script.
+    
+    Harness builds write the Analyze overlays: the network skeleton, conductor
+    traces, and cable traces. System builds replace the block-diagram
+    ``applied-traces`` layers. The build draws these again after the script
+    finishes, using whatever ``trace_overlay_style`` still holds.
+    
+    The same object is what a conductor or cable layout drawing reads, and what
+    is drawn onto the block diagram when a PDF copies it. Write it without
+    redrawing by assigning ``svg_utils.trace_overlay_style.stroke_width`` or
+    calling ``svg_utils.trace_overlay_style.update({...})``. Set the numbers
+    before that drawing runs. Write the saved defaults back afterward when the
+    GUI should keep them. A key left at its overlay default keeps the sheet
+    drawing's existing thickness, spacing, or label size. ``stroke_width`` is
+    inches. On those sheets, ``segment_spacing`` and ``label_font_size`` are
+    in the drawing's own units (the layout label size is the printed px size).
+    
+    Omit ``style`` to regenerate with the style already set. Keys you leave out
+    keep their current values. ``None`` restores a key's default, except
+    ``min_label_segment_length``, where ``None`` means the length is chosen
+    from the network span. The ribbon inserts this call with every key filled
+    in. ``dict(svg_utils.trace_overlay_style)`` is the current style;
+    ``dict(svg_utils.TRACE_OVERLAY_STYLE)`` is the starting point.
+    
+    **Args:**
+    - `style` (dict, optional): Overlay settings.
+        - `label_font_size`: trace label height in SVG user units. Default ``0.5``.
+        - `segment_spacing`: gap between parallel traces, in network units. Default ``1.5``.
+        - `stroke_width`: trace thickness in inches. Default ``0.5 / 96``.
+        - `min_label_segment_length`: shortest sub-segment that gets a midpoint label, in network units. Default ``None`` (from the network span).
+        - `network_segment_stroke_width`: harness Analyze segment stroke, in SVG user units. Default ``1.8``. A system block diagram ignores this.
+        - `network_segment_font_size`: harness Analyze segment-id label size. Default ``11``.
+        - `network_node_radius`: harness Analyze node marker radius. Default ``2.2``.
+        - `network_node_font_size`: harness Analyze node-id label size. Default ``10``.
+    
+    **Returns:**
+    - `dict`: Paths written. A harness returns ``flattened network svg``,
+      ``circuits overlay``, ``cable overlay``, and ``trace overlays``.
+      A system returns ``block diagram``.
+    
+    **Raises:**
+    - `TypeError`: If ``style`` is not a dict, or a value is not a number.
+    - `ValueError`: If ``style`` contains an unknown key, or this build is not a harness or system.
+
 ??? info "`svg_utils.add_entire_svg_file_contents_to_group(filepath, new_group_name)`"
 
     Use this when a build that is writing an SVG needs the contents of another SVG file wrapped in a new group.
@@ -342,11 +388,21 @@
     Junction geometry:
         - Degree-1 nodes (path endpoints): traces terminate on the line through the
           node perpendicular to the incident segment — no circle.
-        - Degree ≥ 2 nodes: traces meet a junction circle. Radius is sized so the
-          outermost parallel wire sits at ±30° from the segment axis
-          (``R = half_width / sin(30°)``). Overlapping circles are merged into one
-          larger circle (centroid center, radius covering member nodes and fan-out);
-          segments internal to a merge are skipped so traces do not zigzag.
+        - Degree-2 nodes whose two segments are within 12° of a straight line are
+          waypoints on that line (same perpendicular offset, no circle), so a run
+          of close collinear splits stays on the harness.
+        - Other degree ≥ 2 nodes: traces meet a junction circle. Radius is sized so
+          the outermost parallel wire sits at ±30° from the segment axis
+          (``R = half_width / sin(30°)``), then capped to 0.45× the shortest
+          incident segment. A cap below the fan radius
+          compresses lane spacing at that node so the fan still fits; the bundle
+          necks down through the short segment and spreads out again on a longer
+          one. Circles that still overlap merge (centroid center). The merged
+          radius stays within the member caps unless it must grow to cover the
+          member nodes, and segments internal to a merge are skipped.
+        - A spline span whose tangents differ by at most 12°, or both lean off the
+          same side of the chord, is drawn as that chord so a small tangent error
+          cannot bow the trace off the segment.
     
     Args:
         input_instances: list of instance dicts, each with:
@@ -427,6 +483,10 @@
     Call as if you were appending any other element to an svg group.
     
     Spline points are a list of dictionaries with x and y coordinates. [{"x": 0, "y": 0, "tangent": 0}, {"x": 1, "y": 1, "tangent": 0}]
+    A span whose travel tangents stay within 12° of each other, or both lean off
+    the same side of the chord, is drawn as that chord. A real corner or U-turn
+    (tangents on opposite sides of the chord, bend above 12°) keeps a half-chord
+    handle along each tangent.
     Plots physical geometry from an engineering appearance dict (conductor, cable,
     segment). Keys: base_color, outline_color, parallelstripe, perpstripe, slash_lines.
     Slash lines: direction, angle, step, color, slash_width_inches.

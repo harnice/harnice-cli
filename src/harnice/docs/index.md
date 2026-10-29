@@ -13,7 +13,7 @@ It designs harnesses for you... and does so much more... *nicely*!
 
 **Buy a license:** [Purchase Harnice](https://buy.stripe.com/dRmaER6AK2Eh5hs2KFb7y00) — **$50/seat/month** (subscription; set quantity at checkout for multiple seats)
 
-Download Harnice: [Mac](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-macOS.dmg) · [Windows](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-windows.zip)
+Download Harnice: [Mac](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-macOS.dmg) · [Windows](https://github.com/harnice/harnice-app-releases/releases/latest/download/Harnice-windows.zip) — avoid extracting into a filepath with spaces.
 
 After purchase, check your email for a license key. Open Harnice and paste it on the activation screen (internet needed once per machine). Each seat covers one activated machine. See [Installation](getting_started/installation.md#offline-use) for how long a machine can stay offline between license refreshes.
 

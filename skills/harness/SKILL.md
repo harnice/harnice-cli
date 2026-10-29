@@ -362,7 +362,7 @@ A `note` row is `item_type` `"note"`. `new_note` names it
 `note-{n}` and stores `note_type`, `note_text`, `note_number`,
 `print_name` (the bubble), `mpn` (the flagnote shape, defaulting to
 `note_type`), and `note_affected_instances`. The shape is pulled from
-`library/flagnotes/` in `https://github.com/harnice/harnice-general-library`.
+`flagnotes/` in `https://github.com/harnice/harnice-general-library`.
 The same `note_type` and `note_text` update the existing row. Merging
 requires both the old and the new affected-instance lists to be
 non-empty. `assign_buildnote_numbers` then sets `note_number` and
@@ -377,7 +377,7 @@ on the output CSYS passed as the last argument. Stock parts expose
 over on each part. `print_name` is the BOM line, the part's
 `print_name` (or its instance name when the print name is blank), or
 the note's bubble. `mpn` is `bom_item`, `part_name`, `build_note`, or
-`rev_change_callout` under `library/flagnotes/`.
+`rev_change_callout` under `flagnotes/`.
 
 ### Files a harness script reaches
 
@@ -607,7 +607,7 @@ formboard list. It does not write `instances.tsv`.
 
 `build_utils.run_macro` takes the macro MPN, the library subpath, and
 the library repo, then keyword arguments. Harness macros use
-`"library/macros/harness_artifacts"` and
+`"macros/harness_artifacts"` and
 `https://github.com/harnice/harnice-general-library`. The stock script
 calls these so the drawings exist. Remove a call the project does not
 need:
@@ -639,7 +639,7 @@ need:
 `page_setup` is a dict in this script, not a file. The stock drawing
 is three letter pages, overview, to-from table, and channel map, each
 anchored `bottom-right` on title block `harnice_tblock` from
-`library/titleblocks/` in the general library. `text_replacements`
+`titleblocks/` in the general library. `text_replacements`
 fills `tblock-key-pagedesc`, `tblock-key-desc`, `tblock-key-pn`,
 `tblock-key-drawnby`, `tblock-key-rev`, `tblock-key-scale`, and
 `tblock-key-sheet`. Description, part number, drawn-by, and rev come

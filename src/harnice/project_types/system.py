@@ -219,9 +219,10 @@ def build():
     channel_map.new()
 
     # run build instructions
-    from harnice.utils import pdf_drawings_utils
+    from harnice.utils import pdf_drawings_utils, svg_utils
 
     pdf_drawings_utils.reset_pdf_generator_runs()
+    svg_utils.trace_overlay_style.reset()
     try:
         build_sandbox.run_path(fileio.path("build instructions"))
 
@@ -232,8 +233,9 @@ def build():
         generate_icd()
 
         # Append derived trace overlays under ``applied-traces`` (``channel_traces`` / ``circuit_traces``).
-        # Markup comes from ``block_diagram_harness_overlay_markup``; ``replace_block_diagram_applied_traces``
-        # strips prior derived layers before writing.
+        # Prior derived layers are stripped first. Stroke, spacing, and label
+        # size come from svg_utils.trace_overlay_style, which the script may
+        # have changed before a PDF copy and then put back.
         bd_path = fileio.path("block diagram")
         with open(bd_path, "r", encoding="utf-8") as f:
             svg_diagram = f.read()
@@ -242,25 +244,7 @@ def build():
         # edits (or device builds that update pins) land in the block diagram this build.
         svg_diagram = system_utils.refresh_block_diagram_placed_symbols(svg_diagram)
         svg_diagram = block_diagram_utils.ensure_system_boundary_rect(svg_diagram)
-
-        instances = instances_list.read()
-        channel_instances = []
-        circuit_instances = []
-        for instance in instances:
-            if instance.get("item_type") == "harness-channel":
-                channel_instances.append(instance)
-            elif instance.get("item_type") == "circuit":
-                circuit_instances.append(instance)
-
-        channel_overlay = system_utils.block_diagram_harness_overlay_markup(
-            channel_instances, include_multi_ch_junction_overlays=True
-        )
-        circuit_overlay = system_utils.block_diagram_harness_overlay_markup(
-            circuit_instances, include_multi_ch_junction_overlays=False
-        )
-        svg_diagram = block_diagram_utils.replace_block_diagram_applied_traces(
-            svg_diagram, channel_overlay, circuit_overlay
-        )
+        svg_diagram = system_utils.apply_block_diagram_trace_overlays(svg_diagram)
 
         if svg_diagram != original_svg:
             with open(bd_path, "w", encoding="utf-8") as f:
