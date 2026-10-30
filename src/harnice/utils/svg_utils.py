@@ -380,6 +380,36 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
     else:
         appearance_dict = parsed_appearance
 
+    def cubic_controls(p0, p1):
+        # A shallow bend, or tangents that both lean off the same side of the
+        # chord, is the straight chord. A corner or U-turn keeps a half-chord
+        # handle. A tangent facing back along the chord gets no handle.
+        x0 = p0["x"]
+        y0 = p0["y"]
+        x1 = p1["x"]
+        y1 = p1["y"]
+        dx = x1 - x0
+        dy = y1 - y0
+        dist = math.hypot(dx, dy)
+        if dist < 1e-9:
+            return x0, y0, x1, y1
+        t0 = math.radians(p0.get("tangent", 0.0) or 0.0)
+        t1 = math.radians(p1.get("tangent", 0.0) or 0.0)
+        chord = math.atan2(dy, dx)
+        d0 = (t0 - chord + math.pi) % (2.0 * math.pi) - math.pi
+        d1 = (t1 - chord + math.pi) % (2.0 * math.pi) - math.pi
+        turn = abs((t0 - t1 + math.pi) % (2.0 * math.pi) - math.pi)
+        if d0 * d1 > 0.0 or turn <= math.radians(_TRACE_STRAIGHT_TURN_DEG):
+            return (x0 + dx * 0.5, y0 + dy * 0.5, x1 - dx * 0.5, y1 - dy * 0.5)
+        ctrl0 = 0.0 if math.cos(d0) < -1e-6 else dist * 0.5
+        ctrl1 = 0.0 if math.cos(d1) < -1e-6 else dist * 0.5
+        return (
+            x0 + math.cos(t0) * ctrl0,
+            y0 + math.sin(t0) * ctrl0,
+            x1 - math.cos(t1) * ctrl1,
+            y1 - math.sin(t1) * ctrl1,
+        )
+
     # ---------------------------------------------------------------------
     # --- spline_to_path
     # ---------------------------------------------------------------------
@@ -389,7 +419,7 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
         path = f"M {points[0]['x']:.3f},{-points[0]['y']:.3f}"
         for i in range(len(points) - 1):
             p0, p1 = points[i], points[i + 1]
-            c1x, c1y, c2x, c2y = _cubic_controls(p0, p1)
+            c1x, c1y, c2x, c2y = cubic_controls(p0, p1)
             path += f" C {c1x:.3f},{-c1y:.3f} {c2x:.3f},{-c2y:.3f} {p1['x']:.3f},{-p1['y']:.3f}"
         return path
 
@@ -462,7 +492,7 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
         for i in range(len(points) - 1):
             p0 = (points[i]["x"], points[i]["y"])
             p1 = (points[i + 1]["x"], points[i + 1]["y"])
-            c1x, c1y, c2x, c2y = _cubic_controls(points[i], points[i + 1])
+            c1x, c1y, c2x, c2y = cubic_controls(points[i], points[i + 1])
             c1 = (c1x, c1y)
             c2 = (c2x, c2y)
 
@@ -1417,18 +1447,8 @@ def _trace_group_open_tag(instance, group_opacity=None):
     return f'<g id="{group_id}" data-harnice-trace-label="{esc}"{op_attr}>'
 
 
-# Outermost parallel wire sits at ±this angle from the segment axis on a junction circle.
-# R = half_width / sin(θ) keeps asin() well-conditioned and matches the old
-# ``n * spacing`` vibe (≈ 2× half-width for a full fan).
-_TRACE_CIRCLE_FAN_HALF_ANGLE_DEG = 30.0
-
-# A bend this small is a waypoint, and a spline span this straight is the chord.
-# 12° is about a 1:5 slope.
+# A spline span this straight is drawn as the chord (about a 1:5 slope).
 _TRACE_STRAIGHT_TURN_DEG = 12.0
-
-# Junction circle radius stops at this fraction of the shortest traced segment
-# at the node, so two neighboring circles (0.45 + 0.45) leave a straight run.
-_TRACE_JUNCTION_RADIUS_SEGMENT_FRACTION = 0.45
 
 
 def _channel_type_default_appearance(item, channel_type, signal):
@@ -1511,105 +1531,6 @@ def _multi_ch_junction_dot_radius(jid, instances, stroke_width_inches, appearanc
     return width
 
 
-def _trace_circle_radius_for_half_width(half_width):
-    """Junction-circle radius so the outermost offset wire sits at ±30° on the fan."""
-    if half_width <= 1e-12:
-        return 0.0
-    return half_width / math.sin(math.radians(_TRACE_CIRCLE_FAN_HALF_ANGLE_DEG))
-
-
-def _angle_delta_deg(a, b):
-    """Smallest absolute difference between two headings, in degrees."""
-    delta = (float(a) - float(b)) % 360.0
-    if delta > 180.0:
-        delta = 360.0 - delta
-    return abs(delta)
-
-
-def _departure_turn_deg(away_a, away_b):
-    """Bend from a straight line for two away-from-node headings, in degrees."""
-    return abs(180.0 - _angle_delta_deg(away_a, away_b))
-
-
-def _signed_angle_delta_rad(a, b):
-    """Signed ``a - b`` wrapped to (-π, π]."""
-    return (a - b + math.pi) % (2.0 * math.pi) - math.pi
-
-
-def _cubic_controls(p0, p1):
-    """Control points for one styled-path cubic, in the point chain's space.
-
-    A shallow bend, and a span whose tangents both lean off the same side of
-    the chord, is drawn as the straight chord. That is the close-junction bow:
-    the half-chord handle is long and the two tangents agree, so the curve
-    leaves the harness. A real corner or a U-turn has the tangents on opposite
-    sides of the chord and keeps a half-chord handle along each tangent. A
-    tangent that faces back along the chord contributes no handle.
-    """
-    x0 = p0["x"]
-    y0 = p0["y"]
-    x1 = p1["x"]
-    y1 = p1["y"]
-    dx = x1 - x0
-    dy = y1 - y0
-    dist = math.hypot(dx, dy)
-    if dist < 1e-9:
-        return x0, y0, x1, y1
-    t0 = math.radians(p0.get("tangent", 0.0) or 0.0)
-    t1 = math.radians(p1.get("tangent", 0.0) or 0.0)
-    chord = math.atan2(dy, dx)
-    d0 = _signed_angle_delta_rad(t0, chord)
-    d1 = _signed_angle_delta_rad(t1, chord)
-    turn = abs(_signed_angle_delta_rad(t0, t1))
-    same_side = d0 * d1 > 0.0
-    if same_side or turn <= math.radians(_TRACE_STRAIGHT_TURN_DEG):
-        return (x0 + dx * 0.5, y0 + dy * 0.5, x1 - dx * 0.5, y1 - dy * 0.5)
-
-    def handle(delta):
-        # Opposite-side bends keep the half-chord fillet. A tangent that faces
-        # back along the chord (cos < 0) is a loop, so that handle goes away.
-        if math.cos(delta) < -1e-6:
-            return 0.0
-        return dist * 0.5
-
-    ctrl0 = handle(d0)
-    ctrl1 = handle(d1)
-    return (
-        x0 + math.cos(t0) * ctrl0,
-        y0 + math.sin(t0) * ctrl0,
-        x1 - math.cos(t1) * ctrl1,
-        y1 - math.sin(t1) * ctrl1,
-    )
-
-
-def _is_collinear_passthrough(info):
-    """Degree-2 node whose wires continue within ``_TRACE_STRAIGHT_TURN_DEG``."""
-    if info.get("degree") != 2:
-        return False
-    segs = info["segments"]
-    return (
-        _departure_turn_deg(info["angles"][segs[0]], info["angles"][segs[1]])
-        <= _TRACE_STRAIGHT_TURN_DEG
-    )
-
-
-def _capped_junction_radius(info):
-    """Fan radius limited to 0.45× the shortest incident segment."""
-    half_w = 0.0
-    lengths = []
-    for seg in info["segments"]:
-        span = info["seg_length"].get(seg, 0.0)
-        if span > 1e-9:
-            lengths.append(span)
-        if not info["seg_instances"].get(seg):
-            continue
-        half_w = max(half_w, info["seg_half_width"].get(seg, 0.0))
-    r_fan = _trace_circle_radius_for_half_width(half_w)
-    if r_fan <= 1e-12 or not lengths:
-        return 0.0
-    return min(r_fan, _TRACE_JUNCTION_RADIUS_SEGMENT_FRACTION * min(lengths))
-
-
 def _trace_lateral_offsets(num_on_seg, segment_spacing):
     """Centered lateral offsets for ``num_on_seg`` parallel traces on one segment."""
     return [
@@ -1658,15 +1579,31 @@ def _node_is_self_hop_free(node_id, connector_node_ids):
     return False
 
 
-def _self_hop_outbound(graph, node_id, connector_node_ids=None):
-    """Segment path from a connector out to the farthest free wire end.
+def _free_node_distance(graph, origin_id, node_id):
+    """Euclidean distance from ``origin_id`` to ``node_id``, or ``inf`` if unknown."""
+    nodes = graph.get("nodes") or {}
+    origin = nodes.get(origin_id) or {}
+    node = nodes.get(node_id) or {}
+    try:
+        return math.hypot(
+            float(node["x"]) - float(origin["x"]),
+            float(node["y"]) - float(origin["y"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return float("inf")
 
-    Walks wire junctions, and harness nodes that are not in
-    ``connector_node_ids``, so the turnaround stops before another connector.
-    Returns ``(segments, directions)`` from ``node_id`` toward that end, or
-    ``None`` when the connector has no free stub.
+
+def _self_hop_outbound(graph, node_id, connector_node_ids=None):
+    """One segment from a connector to the nearest free wire end.
+
+    The loop turns on the free node reached in the fewest segments. Every
+    free neighbor is one hop, so that is the adjacent wire junction (or
+    harness node outside ``connector_node_ids``) closest to ``node_id``.
+    The walk stops before another connector. Returns ``(segments,
+    directions)`` toward that end, or ``None`` when the connector has no
+    free stub.
     """
-    adj = {}
+    neighbors = []
     for seg_uuid, info in (graph.get("segments") or {}).items():
         a = info.get("node_at_end_a")
         b = info.get("node_at_end_b")
@@ -1675,59 +1612,18 @@ def _self_hop_outbound(graph, node_id, connector_node_ids=None):
         a_free = _node_is_self_hop_free(a, connector_node_ids)
         b_free = _node_is_self_hop_free(b, connector_node_ids)
         if a == node_id and b_free:
-            adj.setdefault(a, []).append((b, seg_uuid, "a_to_b"))
+            neighbors.append((b, seg_uuid, "a_to_b"))
         elif b == node_id and a_free:
-            adj.setdefault(b, []).append((a, seg_uuid, "b_to_a"))
-        elif a_free and b_free:
-            adj.setdefault(a, []).append((b, seg_uuid, "a_to_b"))
-            adj.setdefault(b, []).append((a, seg_uuid, "b_to_a"))
-    if node_id not in adj:
+            neighbors.append((a, seg_uuid, "b_to_a"))
+    if not neighbors:
         return None
 
-    parent = {node_id: None}
-    order = [node_id]
-    queue = [node_id]
-    while queue:
-        cur = queue.pop(0)
-        for nxt, seg, direction in adj.get(cur, []):
-            if nxt in parent:
-                continue
-            parent[nxt] = (cur, seg, direction)
-            order.append(nxt)
-            queue.append(nxt)
+    def rank(item):
+        nxt, seg, _direction = item
+        return (_free_node_distance(graph, node_id, nxt), str(nxt), str(seg))
 
-    leaves = []
-    for node in order:
-        if node == node_id:
-            continue
-        if len(adj.get(node, [])) <= 1:
-            leaves.append(node)
-    candidates = leaves or [node for node in order if node != node_id]
-    if not candidates:
-        return None
-
-    def hops(node):
-        n = 0
-        cur = node
-        while parent.get(cur):
-            cur = parent[cur][0]
-            n += 1
-        return n
-
-    far = max(candidates, key=lambda node: (hops(node), str(node)))
-    segs = []
-    dirs = []
-    cur = far
-    while parent.get(cur):
-        prev, seg, direction = parent[cur]
-        segs.append(seg)
-        dirs.append(direction)
-        cur = prev
-    segs.reverse()
-    dirs.reverse()
-    if not segs:
-        return None
-    return segs, dirs
+    _nxt, seg, direction = min(neighbors, key=rank)
+    return [seg], [direction]
 
 
 def _self_hop_fallback_direction(graph, node_id):
@@ -1865,7 +1761,12 @@ def _orient_self_hop_chains(out_chain, back_chain, node_xy, other_node_xy, other
 
 
 def _assemble_trace_point_chain(
-    graph, points_to_pass_through, path_segments, path_directions, inst_name
+    graph,
+    points_to_pass_through,
+    path_segments,
+    path_directions,
+    inst_name,
+    lane_offsets=None,
 ):
     """Offset point chain for one already-routed path, in ``draw_styled_path`` space."""
     point_chain = []
@@ -1887,12 +1788,16 @@ def _assemble_trace_point_chain(
             _trace_span_tangent(geom[i], geom[i + 1]) for i in range(len(geom) - 1)
         ] or [0.0]
         tangents.append(tangents[-1])
+        offset = 0.0
+        if lane_offsets is not None:
+            offset = lane_offsets.get(seg_uuid, {}).get(inst_name, 0.0)
+            if direction != "a_to_b":
+                offset = -offset
 
         def append_node_contact(nid, tangent):
             try:
                 pt = points_to_pass_through[nid][seg_uuid][inst_name]
             except KeyError:
-                # Missing on purpose for segments internal to a merged circle.
                 return
             point_chain.append(
                 {
@@ -1905,24 +1810,26 @@ def _assemble_trace_point_chain(
 
         append_node_contact(start_id, tangents[0])
         for mid_index, waypoint in enumerate(midpoints):
-            # Two coincident points so the spline drawer keeps each span
-            # straight. One tangent cannot enter and leave a corner.
-            point_chain.append(
-                {
-                    "x": waypoint["x"],
-                    "y": -waypoint["y"],
-                    "tangent": tangents[mid_index],
-                    "seg_uuid": seg_uuid,
-                }
-            )
-            point_chain.append(
-                {
-                    "x": waypoint["x"],
-                    "y": -waypoint["y"],
-                    "tangent": tangents[mid_index + 1],
-                    "seg_uuid": seg_uuid,
-                }
-            )
+            # Same lateral offset as the node contacts, so a polyline stays a
+            # parallel lane instead of diving onto the harness centerline.
+            # Two points keep each span straight through a corner.
+            for span_i, tangent in (
+                (mid_index, tangents[mid_index]),
+                (mid_index + 1, tangents[mid_index + 1]),
+            ):
+                p0 = geom[span_i]
+                p1 = geom[min(span_i + 1, len(geom) - 1)]
+                away = math.atan2(p1["y"] - p0["y"], p1["x"] - p0["x"])
+                ox = offset * math.cos(away + math.pi / 2.0)
+                oy = offset * math.sin(away + math.pi / 2.0)
+                point_chain.append(
+                    {
+                        "x": waypoint["x"] + ox,
+                        "y": -(waypoint["y"] + oy),
+                        "tangent": tangent,
+                        "seg_uuid": seg_uuid,
+                    }
+                )
         append_node_contact(end_id, tangents[len(midpoints)])
     return point_chain
 
@@ -1947,23 +1854,14 @@ def draw_segments_across_paths(
     at shared nodes, draws each path and its labels, and returns raw SVG markup.
 
     Junction geometry:
-        - Degree-1 nodes (path endpoints): traces terminate on the line through the
-          node perpendicular to the incident segment — no circle.
-        - Degree-2 nodes whose two segments are within 12° of a straight line are
-          waypoints on that line (same perpendicular offset, no circle), so a run
-          of close collinear splits stays on the harness.
-        - Other degree ≥ 2 nodes: traces meet a junction circle. Radius is sized so
-          the outermost parallel wire sits at ±30° from the segment axis
-          (``R = half_width / sin(30°)``), then capped to 0.45× the shortest
-          incident segment. A cap below the fan radius
-          compresses lane spacing at that node so the fan still fits; the bundle
-          necks down through the short segment and spreads out again on a longer
-          one. Circles that still overlap merge (centroid center). The merged
-          radius stays within the member caps unless it must grow to cover the
-          member nodes, and segments internal to a merge are skipped.
-        - A spline span whose tangents differ by at most 12°, or both lean off the
-          same side of the chord, is drawn as that chord so a small tangent error
-          cannot bow the trace off the segment.
+        - Every node contact sits on the line through the node perpendicular to
+          its incident segment, at a fixed multiple of ``segment_spacing``. The
+          same offset is applied to interior waypoints, so each lane stays
+          parallel to its harness segment at constant spacing.
+        - At a bend or T, the path steps from one segment's offset contact to the
+          next; a shallow spline span (tangents within 12°, or both leaning off
+          the same side of the chord) is drawn as that chord so the corner does
+          not bow off the harness.
 
     Args:
         input_instances: list of instance dicts, each with:
@@ -2001,9 +1899,10 @@ def draw_segments_across_paths(
             stub) as well as on ``wirejunction-`` nodes, so two loopbacks on one
             connector take separate lanes. With the set omitted, only
             ``wirejunction-`` nodes are free ends.
-            A trace whose ends are the same node is drawn out along the free harness
-            stub and back on the next lane (a short local U when that connector has
-            no stub). Both contacts are kept: the node entry is the outbound
+            A trace whose ends are the same node is drawn out one segment to the
+            nearest free end — fewest hops from that connector, then the closest
+            node — and back on the next lane (a short local U when that connector
+            has no stub). Both contacts are kept: the node entry is the outbound
             contact, and ``__self_hop__`` holds ``start`` (from-channel) and
             ``end`` (to-channel).
 
@@ -2138,22 +2037,17 @@ def draw_segments_across_paths(
             "path_directions": path_directions,
         }
 
-    # --- Phase 2: Offset point calculation at each node ---
+    # --- Phase 2: constant lateral offsets at every node ---
     # points_to_pass_through[node_id][seg_uuid][inst_name] = {'x': ..., 'y': ... (Y-flipped)}
-    #
-    # Degree-1 nodes and nearly straight degree-2 nodes get a flat perpendicular
-    # cap. Sharper junctions get a circle capped to the shortest incident
-    # segment; circles that still overlap merge so traces stay tangent-clean.
+    # lane_offsets[seg_uuid][inst_name] = signed offset used for waypoints too.
     points_to_pass_through = {}
-
-    # Per-node incident geometry and per-segment trace lists (shared by both styles).
+    lane_offsets = {}
     node_incident = {}
     for node_id, node_coords in graph["nodes"].items():
         node_segments = []
         node_segment_angles = []
         flip_sort = {}
         other_node_of_seg = {}
-        seg_length = {}
 
         for seg_uuid, seg_info in graph["segments"].items():
             node_a = seg_info["node_at_end_a"]
@@ -2180,13 +2074,11 @@ def draw_segments_across_paths(
             node_segments.append(seg_uuid)
             node_segment_angles.append(math.degrees(math.atan2(dy, dx)))
             other_node_of_seg[seg_uuid] = other_id
-            seg_length[seg_uuid] = math.hypot(dx, dy)
 
         if not node_segments:
             continue
 
         seg_instances = {}
-        seg_half_width = {}
         any_trace = False
         for seg_uuid in node_segments:
             instances_using_segment = []
@@ -2199,22 +2091,17 @@ def draw_segments_across_paths(
                     instances_using_segment.append(name)
             if not instances_using_segment:
                 seg_instances[seg_uuid] = []
-                seg_half_width[seg_uuid] = 0.0
                 continue
             any_trace = True
             instances_using_segment.sort()
             if flip_sort.get(seg_uuid):
                 instances_using_segment = instances_using_segment[::-1]
             seg_instances[seg_uuid] = instances_using_segment
-            n = len(instances_using_segment)
-            seg_half_width[seg_uuid] = (
-                ((n - 1) / 2.0) * segment_spacing if n > 0 else 0.0
-            )
 
         if not any_trace:
             continue
 
-        record = {
+        node_incident[node_id] = {
             "x": node_coords["x"],
             "y": node_coords["y"],
             "segments": node_segments,
@@ -2222,17 +2109,10 @@ def draw_segments_across_paths(
             "flip_sort": flip_sort,
             "other_node": other_node_of_seg,
             "seg_instances": seg_instances,
-            "seg_half_width": seg_half_width,
-            "seg_length": seg_length,
-            "max_half_width": max(seg_half_width.values()) if seg_half_width else 0.0,
             "degree": len(node_segments),
         }
-        record["collinear"] = _is_collinear_passthrough(record)
-        record["capped_radius"] = _capped_junction_radius(record)
-        node_incident[node_id] = record
 
-    # --- Endpoints and straight splits: flat perpendicular caps (no circle) ---
-    def _place_flat(node_id, info):
+    for node_id, info in node_incident.items():
         for seg_uuid in info["segments"]:
             instances_using_segment = info["seg_instances"].get(seg_uuid) or []
             if not instances_using_segment:
@@ -2244,196 +2124,39 @@ def draw_segments_across_paths(
                 len(instances_using_segment), segment_spacing
             )
             for inst_name, center_offset in zip(instances_using_segment, offsets):
+                # End-a order is the a_to_b lane; b_to_a travel negates it.
+                if not info["flip_sort"].get(seg_uuid):
+                    lane_offsets.setdefault(seg_uuid, {})[inst_name] = center_offset
                 x_pt = info["x"] + center_offset * ux
                 y_pt = info["y"] + center_offset * uy
                 points_to_pass_through.setdefault(node_id, {}).setdefault(
                     seg_uuid, {}
                 )[inst_name] = {"x": x_pt, "y": -y_pt}
 
+    inst_by_name = {inst.get("instance_name"): inst for inst in input_instances}
+    junction_dots = []
+    seen_dot = set()
     for node_id, info in node_incident.items():
-        if info["degree"] == 1 or info["collinear"]:
-            _place_flat(node_id, info)
-
-    # --- Junctions: capped circles, merge only what still overlaps ---
-    junction_ids = [
-        nid
-        for nid, info in node_incident.items()
-        if info["degree"] >= 2 and not info["collinear"]
-    ]
-    if junction_ids:
-        parent = {nid: nid for nid in junction_ids}
-
-        def _find(a):
-            while parent[a] != a:
-                parent[a] = parent[parent[a]]
-                a = parent[a]
-            return a
-
-        def _union(a, b):
-            ra, rb = _find(a), _find(b)
-            if ra == rb:
-                return False
-            parent[rb] = ra
-            return True
-
-        def _cluster_geometry():
-            members_by_root = {}
-            for nid in junction_ids:
-                members_by_root.setdefault(_find(nid), []).append(nid)
-            geom = {}
-            for root, members in members_by_root.items():
-                cx = sum(node_incident[m]["x"] for m in members) / len(members)
-                cy = sum(node_incident[m]["y"] for m in members) / len(members)
-                extent = max(
-                    math.hypot(
-                        node_incident[m]["x"] - cx, node_incident[m]["y"] - cy
-                    )
-                    for m in members
-                )
-                member_set = set(members)
-                half_w = 0.0
-                external_lengths = []
-                for m in members:
-                    inc = node_incident[m]
-                    for seg_uuid in inc["segments"]:
-                        other = inc["other_node"][seg_uuid]
-                        if other in member_set:
-                            continue
-                        span = inc["seg_length"].get(seg_uuid, 0.0)
-                        if span > 1e-9:
-                            external_lengths.append(span)
-                        if not inc["seg_instances"].get(seg_uuid):
-                            continue
-                        half_w = max(
-                            half_w, inc["seg_half_width"].get(seg_uuid, 0.0)
-                        )
-                r_fan = _trace_circle_radius_for_half_width(half_w)
-                member_r = max(node_incident[m]["capped_radius"] for m in members)
-                # Cover the member nodes, but do not grow past the larger
-                # capped circle or past 0.45× the shortest segment that leaves
-                # the cluster. A short segment therefore keeps a straight run.
-                radius = max(extent, member_r)
-                if external_lengths:
-                    exit_cap = (
-                        _TRACE_JUNCTION_RADIUS_SEGMENT_FRACTION
-                        * min(external_lengths)
-                    )
-                    radius = min(radius, max(extent, min(r_fan, exit_cap)))
-                if r_fan > 1e-12:
-                    scale = min(1.0, radius / r_fan)
-                else:
-                    scale = 1.0
-                geom[root] = {
-                    "cx": cx,
-                    "cy": cy,
-                    "R": radius,
-                    "scale": scale,
-                    "members": members,
-                    "member_set": member_set,
-                }
-            return geom
-
-        changed = True
-        while changed:
-            changed = False
-            geom = _cluster_geometry()
-            roots = list(geom.keys())
-            for i in range(len(roots)):
-                for j in range(i + 1, len(roots)):
-                    g1 = geom[roots[i]]
-                    g2 = geom[roots[j]]
-                    dist = math.hypot(g1["cx"] - g2["cx"], g1["cy"] - g2["cy"])
-                    if dist < g1["R"] + g2["R"] - 1e-9:
-                        if _union(roots[i], roots[j]):
-                            changed = True
-
-        geom = _cluster_geometry()
-        node_cluster = {}
-        for g in geom.values():
-            for m in g["members"]:
-                node_cluster[m] = g
-
-        for node_id in junction_ids:
-            info = node_incident[node_id]
-            cluster = node_cluster[node_id]
-            cx, cy, radius = cluster["cx"], cluster["cy"], cluster["R"]
-            member_set = cluster["member_set"]
-
-            for seg_uuid in info["segments"]:
-                instances_using_segment = info["seg_instances"].get(seg_uuid) or []
-                if not instances_using_segment:
+        if info["degree"] < 3:
+            continue
+        segs_by_jid = {}
+        for seg_uuid in info["segments"]:
+            for inst_name in info["seg_instances"].get(seg_uuid) or []:
+                jid = (
+                    (inst_by_name.get(inst_name) or {}).get("multi_ch_junction_id")
+                    or ""
+                ).strip()
+                if not jid:
                     continue
-                other_id = info["other_node"][seg_uuid]
-                if other_id in member_set:
-                    # Segment lies inside the merged circle — no contact points.
-                    continue
-
-                # Face the neighboring junction cluster center when present so
-                # adjacent circles stay radially aligned (tangency-preserving).
-                if other_id in node_cluster:
-                    ox = node_cluster[other_id]["cx"]
-                    oy = node_cluster[other_id]["cy"]
-                else:
-                    other_coords = graph["nodes"][other_id]
-                    ox = other_coords["x"]
-                    oy = other_coords["y"]
-                seg_angle = math.degrees(math.atan2(oy - cy, ox - cx))
-
-                offsets = _trace_lateral_offsets(
-                    len(instances_using_segment),
-                    segment_spacing * cluster["scale"],
-                )
-                for inst_name, center_offset in zip(
-                    instances_using_segment, offsets
-                ):
-                    if radius <= 1e-12:
-                        delta_angle = 0.0
-                        x_pt, y_pt = cx, cy
-                    else:
-                        ratio = max(-1.0, min(1.0, center_offset / radius))
-                        delta_angle = math.degrees(math.asin(ratio))
-                        final_angle = seg_angle + delta_angle
-                        x_pt = cx + radius * math.cos(math.radians(final_angle))
-                        y_pt = cy + radius * math.sin(math.radians(final_angle))
-
-                    points_to_pass_through.setdefault(node_id, {}).setdefault(
-                        seg_uuid, {}
-                    )[inst_name] = {"x": x_pt, "y": -y_pt}
-
-        inst_by_name = {
-            inst.get("instance_name"): inst for inst in input_instances
-        }
-        junction_dots = []
-        seen_dot = set()
-        for cluster in geom.values():
-            segs_by_jid = {}
-            for member in cluster["members"]:
-                info = node_incident[member]
-                for seg_uuid in info["segments"]:
-                    if info["other_node"][seg_uuid] in cluster["member_set"]:
-                        continue
-                    for inst_name in info["seg_instances"].get(seg_uuid) or []:
-                        jid = (
-                            (inst_by_name.get(inst_name) or {}).get(
-                                "multi_ch_junction_id"
-                            )
-                            or ""
-                        ).strip()
-                        if not jid:
-                            continue
-                        segs_by_jid.setdefault(jid, set()).add(seg_uuid)
-            for jid, segs in segs_by_jid.items():
-                if len(segs) < 3:
-                    continue
-                key = (round(cluster["cx"], 5), round(cluster["cy"], 5), jid)
-                if key in seen_dot:
-                    continue
-                seen_dot.add(key)
-                junction_dots.append(
-                    (cluster["cx"], cluster["cy"], cluster["R"], jid)
-                )
-    else:
-        junction_dots = []
+                segs_by_jid.setdefault(jid, set()).add(seg_uuid)
+        for jid, segs in segs_by_jid.items():
+            if len(segs) < 3:
+                continue
+            key = (round(info["x"], 5), round(info["y"], 5), jid)
+            if key in seen_dot:
+                continue
+            seen_dot.add(key)
+            junction_dots.append((info["x"], info["y"], 0.0, jid))
 
     # --- Phase 3: Assemble point chains, draw paths and labels ---
     svg_elements = []
@@ -2466,6 +2189,7 @@ def draw_segments_across_paths(
                     out_info.get("path_segments", []),
                     out_info.get("path_directions", []),
                     hop["out_name"],
+                    lane_offsets,
                 )
                 back_chain = _assemble_trace_point_chain(
                     graph,
@@ -2473,6 +2197,7 @@ def draw_segments_across_paths(
                     back_info.get("path_segments", []),
                     back_info.get("path_directions", []),
                     hop["back_name"],
+                    lane_offsets,
                 )
                 if out_chain and back_chain:
                     # Joining the lanes with their own tangents is the U at the
@@ -2509,6 +2234,7 @@ def draw_segments_across_paths(
                 path_segments,
                 path_directions,
                 inst_name,
+                lane_offsets,
             )
 
         if not point_chain:

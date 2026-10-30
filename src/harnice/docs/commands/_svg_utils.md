@@ -386,23 +386,14 @@
     at shared nodes, draws each path and its labels, and returns raw SVG markup.
     
     Junction geometry:
-        - Degree-1 nodes (path endpoints): traces terminate on the line through the
-          node perpendicular to the incident segment — no circle.
-        - Degree-2 nodes whose two segments are within 12° of a straight line are
-          waypoints on that line (same perpendicular offset, no circle), so a run
-          of close collinear splits stays on the harness.
-        - Other degree ≥ 2 nodes: traces meet a junction circle. Radius is sized so
-          the outermost parallel wire sits at ±30° from the segment axis
-          (``R = half_width / sin(30°)``), then capped to 0.45× the shortest
-          incident segment. A cap below the fan radius
-          compresses lane spacing at that node so the fan still fits; the bundle
-          necks down through the short segment and spreads out again on a longer
-          one. Circles that still overlap merge (centroid center). The merged
-          radius stays within the member caps unless it must grow to cover the
-          member nodes, and segments internal to a merge are skipped.
-        - A spline span whose tangents differ by at most 12°, or both lean off the
-          same side of the chord, is drawn as that chord so a small tangent error
-          cannot bow the trace off the segment.
+        - Every node contact sits on the line through the node perpendicular to
+          its incident segment, at a fixed multiple of ``segment_spacing``. The
+          same offset is applied to interior waypoints, so each lane stays
+          parallel to its harness segment at constant spacing.
+        - At a bend or T, the path steps from one segment's offset contact to the
+          next; a shallow spline span (tangents within 12°, or both leaning off
+          the same side of the chord) is drawn as that chord so the corner does
+          not bow off the harness.
     
     Args:
         input_instances: list of instance dicts, each with:
@@ -440,9 +431,10 @@
             stub) as well as on ``wirejunction-`` nodes, so two loopbacks on one
             connector take separate lanes. With the set omitted, only
             ``wirejunction-`` nodes are free ends.
-            A trace whose ends are the same node is drawn out along the free harness
-            stub and back on the next lane (a short local U when that connector has
-            no stub). Both contacts are kept: the node entry is the outbound
+            A trace whose ends are the same node is drawn out one segment to the
+            nearest free end — fewest hops from that connector, then the closest
+            node — and back on the next lane (a short local U when that connector
+            has no stub). Both contacts are kept: the node entry is the outbound
             contact, and ``__self_hop__`` holds ``start`` (from-channel) and
             ``end`` (to-channel).
     

@@ -3,6 +3,7 @@ import ast
 import csv
 import json
 import math
+import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from harnice import build_sandbox, cli, fileio, state
@@ -2378,6 +2379,398 @@ def apply_component_symbol_fstrings(root):
             continue
         apply_placed_symbol_fstrings(g)
 
+def apply_device_text_unmirror(device):
+    """
+    Keep symbol letters upright under a device flip.
+
+    A flip is a negative scale on the device group. That scale mirrors every
+    child, including text. Each label is wrapped in ``harnice-glyph`` whose
+    scale is the device scale conjugated by the transforms between the device
+    and the text, so a connector rotated 90° is countered with ``scale(1,-1)``
+    in its own axes. The text's rotate center moves with its anchor.
+
+    No-op when the device scale is not a mirror (including scale(-1,-1), which
+    is a 180° turn). Running this again on the same tree leaves it unchanged.
+    """
+    _TRANSFORM_OP_RE = re.compile(r"(translate|rotate|scale|matrix)\(([^)]*)\)")
+    _ROTATE_RE = re.compile(
+        r"rotate\(\s*([^)\s,]+)(?:[\s,]+([^)\s,]+)[\s,]+([^)\s,]+))?\s*\)"
+    )
+    _TRANSLATE_RE = re.compile(r"translate\(\s*([^,\s]+)[\s,]+([^)]+)\)")
+
+
+    def _has_class(el, name):
+        return name in [part for part in (el.get("class") or "").split() if part]
+
+
+    def _parse_transform_ops(transform):
+        ops = []
+        for match in _TRANSFORM_OP_RE.finditer(transform or ""):
+            args = []
+            for piece in re.split(r"[\s,]+", match.group(2).strip()):
+                if not piece:
+                    continue
+                try:
+                    args.append(float(piece))
+                except ValueError:
+                    args.append(float("nan"))
+            ops.append((match.group(1), args))
+        return ops
+
+
+    def _rebase_rotate(transform, dx, dy):
+        if not transform or (dx == 0 and dy == 0):
+            return transform or ""
+
+        def format_user_num(n):
+            if not math.isfinite(n):
+                return "0"
+            rounded = round(float(n) * 1e6) / 1e6
+            if abs(rounded) < 5e-7:
+                return "0"
+            text = f"{rounded:.6f}".rstrip("0").rstrip(".")
+            if text in ("-0", ""):
+                return "0"
+            return text
+
+        def repl(match):
+            ang = match.group(1)
+            try:
+                cx = float(match.group(2)) if match.group(2) is not None else 0.0
+            except ValueError:
+                cx = 0.0
+            try:
+                cy = float(match.group(3)) if match.group(3) is not None else 0.0
+            except ValueError:
+                cy = 0.0
+            x = cx + dx
+            y = cy + dy
+            if abs(x) < 1e-6 and abs(y) < 1e-6:
+                return f"rotate({ang})"
+            return f"rotate({ang} {format_user_num(x)} {format_user_num(y)})"
+
+        return _ROTATE_RE.sub(repl, transform)
+
+
+    def _translate_pair(transform):
+        match = _TRANSLATE_RE.search(transform or "")
+        if not match:
+            return "0", "0", 0.0, 0.0
+        ax = match.group(1).strip()
+        ay = match.group(2).strip()
+        try:
+            axn = float(ax)
+        except ValueError:
+            axn = 0.0
+        try:
+            ayn = float(ay)
+        except ValueError:
+            ayn = 0.0
+        if not math.isfinite(axn):
+            axn = 0.0
+        if not math.isfinite(ayn):
+            ayn = 0.0
+        return ax, ay, axn, ayn
+
+
+    def _letter_wrap(text, parent_map):
+        glyph = parent_map.get(text)
+        if glyph is None or not _has_class(glyph, "harnice-glyph"):
+            return None
+        outer = parent_map.get(glyph)
+        if outer is None or not _has_class(outer, "harnice-text"):
+            return None
+        return outer, glyph
+
+
+    def _local_counter_scale(device, text, parent_map, dsx, dsy):
+        """Device scale in the text's axes. Identity when the mirrors cancel."""
+
+        def transform_linear(transform):
+            # Rightmost operation applies first.
+            a, b, c, d = 1.0, 0.0, 0.0, 1.0
+            for name, args in reversed(_parse_transform_ops(transform)):
+                if name == "translate":
+                    continue
+                if name == "scale":
+                    na = args[0] if args and math.isfinite(args[0]) else 1.0
+                    nd = args[1] if len(args) > 1 and math.isfinite(args[1]) else na
+                    nb, nc = 0.0, 0.0
+                elif name == "rotate":
+                    angle = args[0] if args and math.isfinite(args[0]) else 0.0
+                    rad = math.radians(angle)
+                    cos = math.cos(rad)
+                    sin = math.sin(rad)
+                    na, nb, nc, nd = cos, sin, -sin, cos
+                elif name == "matrix" and len(args) >= 4:
+                    na, nb, nc, nd = args[0], args[1], args[2], args[3]
+                else:
+                    continue
+                oa, ob, oc, od = a, b, c, d
+                a = na * oa + nc * ob
+                b = nb * oa + nd * ob
+                c = na * oc + nc * od
+                d = nb * oc + nd * od
+            return (a, b, c, d)
+
+        def multiply_linear(m1, m2):
+            a1, b1, c1, d1 = m1
+            a2, b2, c2, d2 = m2
+            return (
+                a1 * a2 + c1 * b2,
+                b1 * a2 + d1 * b2,
+                a1 * c2 + c1 * d2,
+                b1 * c2 + d1 * d2,
+            )
+
+        def ancestor_linear():
+            node = parent_map.get(text)
+            if node is not None and _has_class(node, "harnice-glyph"):
+                outer = parent_map.get(node)
+                if outer is not None and _has_class(outer, "harnice-text"):
+                    node = parent_map.get(outer)
+                else:
+                    node = outer
+            acc = (1.0, 0.0, 0.0, 1.0)
+            while node is not None and node is not device:
+                acc = multiply_linear(transform_linear(node.get("transform")), acc)
+                node = parent_map.get(node)
+            return acc
+
+        if dsx * dsy > 0:
+            return 1, 1
+        ancestor = ancestor_linear()
+        device_scale = transform_linear(f"scale({dsx},{dsy})")
+        combined = multiply_linear(device_scale, ancestor)
+        det = combined[0] * combined[3] - combined[2] * combined[1]
+        if not det < -1e-6:
+            return 1, 1
+        a, b, c, d = ancestor
+        adjugate = a * d - c * b
+        if abs(adjugate) < 1e-8:
+            return dsx, dsy
+        ia, ib, ic, id_ = d / adjugate, -b / adjugate, -c / adjugate, a / adjugate
+        sa, sb, sc, sd = dsx * a, dsy * b, dsx * c, dsy * d
+        out_a = ia * sa + ic * sb
+        out_d = ib * sc + id_ * sd
+        return (-1 if out_a < -1e-6 else 1), (-1 if out_d < -1e-6 else 1)
+
+
+    def _remember_text_alignment(text):
+        if text.get("data-harnice-text-anchor") is None:
+            had = "text-anchor" in text.attrib
+            text.set("data-harnice-text-anchor", text.get("text-anchor") if had else "start")
+            text.set("data-harnice-text-anchor-set", "1" if had else "0")
+        if text.get("data-harnice-dominant-baseline") is None:
+            had = "dominant-baseline" in text.attrib
+            text.set(
+                "data-harnice-dominant-baseline",
+                text.get("dominant-baseline") if had else "auto",
+            )
+            text.set("data-harnice-baseline-set", "1" if had else "0")
+
+
+    def _set_tspan_x(text, value):
+        local = block_diagram_utils._svg_local_tag
+        for child in text.iter():
+            if child is text or local(child.tag) != "tspan":
+                continue
+            if "x" in child.attrib:
+                child.set("x", value)
+
+
+    def _repair_wrapped_rotate(text, outer):
+        def rotate_center_matches(transform, ax, ay):
+            if abs(ax) < 1e-4 and abs(ay) < 1e-4:
+                return False
+            for match in _ROTATE_RE.finditer(transform or ""):
+                try:
+                    cx = float(match.group(2)) if match.group(2) is not None else 0.0
+                    cy = float(match.group(3)) if match.group(3) is not None else 0.0
+                except ValueError:
+                    continue
+                if abs(cx - ax) < 1e-4 and abs(cy - ay) < 1e-4:
+                    return True
+            return False
+
+        _ax, _ay, axn, ayn = _translate_pair(outer.get("transform"))
+        transform = text.get("transform")
+        if not transform or not rotate_center_matches(transform, axn, ayn):
+            return
+        text.set("transform", _rebase_rotate(transform, -axn, -ayn))
+
+
+    def _ensure_letter_wrap(text, parent_map):
+        found = _letter_wrap(text, parent_map)
+        if found:
+            outer, glyph = found
+            _repair_wrapped_rotate(text, outer)
+            return glyph
+        ax = text.get("x") if text.get("x") is not None else "0"
+        ay = text.get("y") if text.get("y") is not None else "0"
+        try:
+            axn = float(ax)
+        except ValueError:
+            axn = 0.0
+        try:
+            ayn = float(ay)
+        except ValueError:
+            ayn = 0.0
+        if not math.isfinite(axn):
+            axn = 0.0
+        if not math.isfinite(ayn):
+            ayn = 0.0
+        parent = parent_map.get(text)
+        if parent is None:
+            return None
+        tag = text.tag if isinstance(text.tag, str) else ""
+        gtag = tag.split("}", 1)[0] + "}g" if tag.startswith("{") and "}" in tag else "g"
+        outer = ET.Element(gtag)
+        outer.set("class", "harnice-text")
+        outer.set("transform", f"translate({ax},{ay})")
+        glyph = ET.Element(gtag)
+        glyph.set("class", "harnice-glyph")
+        glyph.set("transform", "scale(1,1)")
+        index = list(parent).index(text)
+        parent.remove(text)
+        parent.insert(index, outer)
+        outer.append(glyph)
+        glyph.append(text)
+        parent_map[outer] = parent
+        parent_map[glyph] = outer
+        parent_map[text] = glyph
+        _remember_text_alignment(text)
+        if text.get("transform"):
+            text.set("transform", _rebase_rotate(text.get("transform"), -axn, -ayn))
+        text.set("x", "0")
+        text.set("y", "0")
+        _set_tspan_x(text, "0")
+        return glyph
+
+
+    def _unwrap_letter(text, parent_map):
+        found = _letter_wrap(text, parent_map)
+        if not found:
+            return
+        outer, glyph = found
+        _repair_wrapped_rotate(text, outer)
+        ax, ay, axn, ayn = _translate_pair(outer.get("transform"))
+        grand = parent_map.get(outer)
+        if grand is None:
+            return
+        index = list(grand).index(outer)
+        grand.remove(outer)
+        grand.insert(index, text)
+        parent_map[text] = grand
+        parent_map.pop(outer, None)
+        parent_map.pop(glyph, None)
+        if text.get("transform"):
+            updated = _rebase_rotate(text.get("transform"), axn, ayn)
+            if updated:
+                text.set("transform", updated)
+            else:
+                del text.attrib["transform"]
+        text.set("x", ax)
+        text.set("y", ay)
+        _set_tspan_x(text, ax)
+        anchor_set = text.get("data-harnice-text-anchor-set")
+        if anchor_set == "1":
+            text.set("text-anchor", text.get("data-harnice-text-anchor") or "start")
+        elif anchor_set == "0" and "text-anchor" in text.attrib:
+            del text.attrib["text-anchor"]
+        baseline_set = text.get("data-harnice-baseline-set")
+        if baseline_set == "1":
+            text.set("dominant-baseline", text.get("data-harnice-dominant-baseline") or "auto")
+        elif baseline_set == "0" and "dominant-baseline" in text.attrib:
+            del text.attrib["dominant-baseline"]
+        for key in (
+            "data-harnice-text-anchor",
+            "data-harnice-text-anchor-set",
+            "data-harnice-dominant-baseline",
+            "data-harnice-baseline-set",
+        ):
+            if key in text.attrib:
+                del text.attrib[key]
+
+
+    def _apply_mirrored_alignment(text, sx, sy):
+        def effective_text_anchor(authored):
+            anchor = authored or "start"
+            if not sx < 0:
+                return anchor
+            if anchor == "start":
+                return "end"
+            if anchor == "end":
+                return "start"
+            return anchor
+
+        def effective_baseline(authored):
+            baseline = authored or "auto"
+            if not sy < 0:
+                return baseline
+            if baseline in ("auto", "alphabetic"):
+                return "hanging"
+            if baseline == "hanging":
+                return "alphabetic"
+            return baseline
+
+        _remember_text_alignment(text)
+        text.set("text-anchor", effective_text_anchor(text.get("data-harnice-text-anchor")))
+        baseline = effective_baseline(text.get("data-harnice-dominant-baseline"))
+        if not baseline or baseline == "auto":
+            if "dominant-baseline" in text.attrib:
+                del text.attrib["dominant-baseline"]
+        else:
+            text.set("dominant-baseline", baseline)
+
+    if device is None:
+        return
+    sx, sy = 1.0, 1.0
+    for name, args in _parse_transform_ops(device.get("transform")):
+        if name != "scale" or not args or not math.isfinite(args[0]):
+            continue
+        sx = args[0]
+        sy = args[1] if len(args) > 1 and math.isfinite(args[1]) else sx
+    dsx = -1 if sx < 0 else 1
+    dsy = -1 if sy < 0 else 1
+    if dsx * dsy > 0:
+        return
+    local = block_diagram_utils._svg_local_tag
+    parent_map = block_diagram_utils._svg_build_parent_map(device)
+    texts = []
+    for el in device.iter():
+        if local(el.tag) != "text":
+            continue
+        node = parent_map.get(el)
+        under_defs = False
+        while node is not None:
+            if local(node.tag) == "defs":
+                under_defs = True
+                break
+            node = parent_map.get(node)
+        if not under_defs:
+            texts.append(el)
+    for text in texts:
+        csx, csy = _local_counter_scale(device, text, parent_map, dsx, dsy)
+        if csx == 1 and csy == 1:
+            _unwrap_letter(text, parent_map)
+            continue
+        glyph = _ensure_letter_wrap(text, parent_map)
+        if glyph is None:
+            continue
+        glyph.set("transform", f"scale({csx},{csy})")
+        node = parent_map.get(text)
+        connector = False
+        while node is not None:
+            if _has_class(node, "connector-glyph"):
+                connector = True
+                break
+            node = parent_map.get(node)
+        if connector:
+            continue
+        _apply_mirrored_alignment(text, csx, csy)
+
+
 def refresh_block_diagram_placed_symbols(svg_text):
     """
     Replace each placed device/subsystem symbol's contents from
@@ -2390,9 +2783,36 @@ def refresh_block_diagram_placed_symbols(svg_text):
     Leaves the file text unchanged when a placed symbol already matches the
     instance source (ignoring editor-generated ids and formatting). When a
     symbol does change, only that contents-start inner markup is rewritten.
+
+    A mirrored device gets letter un-mirror wrappers on the scratch copy before
+    that compare, so the PDF keeps upright text and a second build does not
+    rewrite the file. A connector-art label's pretty-printed newline is removed
+    even when that is the only difference, so the letters stay on the jack center.
     """
     if not svg_text or not str(svg_text).strip():
         return svg_text
+
+    def drop_connector_label_blank_lines(node):
+        # xml:space="preserve" keeps a pretty-printer newline before the
+        # tspan. On a diagram with no viewBox that newline is a line break,
+        # so the letters sit about one em below the jack center. The
+        # signature ignores whitespace, so the file has to be rewritten
+        # when this is the only difference.
+        local_tag = block_diagram_utils._svg_local_tag
+        changed = False
+        for text in node.iter():
+            if local_tag(text.tag) != "text":
+                continue
+            if "connector-glyph-text" not in (text.get("class") or "").split():
+                continue
+            if text.text and not text.text.strip():
+                text.text = None
+                changed = True
+            for child in list(text):
+                if child.tail and not child.tail.strip():
+                    child.tail = None
+                    changed = True
+        return changed
 
     def instance_symbol_svg_path(item_type, refdes, artifact_id=""):
         """
@@ -2629,10 +3049,15 @@ def refresh_block_diagram_placed_symbols(svg_text):
                 cli.warn(f"{refdes}: {err}")
 
         apply_placed_symbol_fstrings(scratch_root)
+        apply_device_text_unmirror(scratch_root)
+        drop_connector_label_blank_lines(scratch_root)
+        label_blank = drop_connector_label_blank_lines(dest_contents)
 
-        if block_diagram_utils.svg_children_signature(
-            dest_contents
-        ) == block_diagram_utils.svg_children_signature(scratch_contents):
+        if (
+            not label_blank
+            and block_diagram_utils.svg_children_signature(dest_contents)
+            == block_diagram_utils.svg_children_signature(scratch_contents)
+        ):
             continue
 
         block_diagram_utils.copy_matching_svg_ids(dest_contents, scratch_contents)

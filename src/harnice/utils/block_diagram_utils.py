@@ -33,7 +33,7 @@ _BLOCK_DIAGRAM_OVERLAY_HTML_COMMENT_RE = re.compile(
 
 
 def blank_block_diagram_symbol_svg(contents_id):
-    """Minimal device block diagram symbol, including the locked ``{refdes}`` label."""
+    """Minimal device block diagram symbol, including a ``{refdes}`` text box."""
     contents_id = (contents_id or "").strip() or "symbol-contents-start"
     if contents_id.endswith("-contents-start"):
         contents_end = contents_id[: -len("-contents-start")] + "-contents-end"
@@ -43,7 +43,7 @@ def blank_block_diagram_symbol_svg(contents_id):
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}" data-bbox="{view_box}">
   <g id="{contents_id}" class="component device">
-    <text class="diagram-primitive" data-symbol-refdes="1" x="8" y="16" font-family="Helvetica" font-size="12pt" font-weight="normal" fill="black" fill-opacity="1" stroke="none" stroke-width="0.2mm" stroke-opacity="1" text-anchor="start" dominant-baseline="alphabetic" data-wrap-width="120" data-text="&quot;{{refdes}}&quot;">{{refdes}}</text>
+    <text class="diagram-primitive" x="8" y="16" font-family="Helvetica" font-size="12pt" font-weight="normal" fill="black" fill-opacity="1" stroke="none" stroke-width="0.2mm" stroke-opacity="1" text-anchor="start" dominant-baseline="alphabetic" data-wrap-width="120" data-text="&quot;{{refdes}}&quot;">{{refdes}}</text>
   </g>
   <g id="{contents_end}"></g>
 </svg>
