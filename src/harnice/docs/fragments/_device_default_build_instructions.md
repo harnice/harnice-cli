@@ -146,4 +146,7 @@
     #     path_to_step="vendor/chassis.step",
     # )
     
+    # Drop instance_data folders whose refdes is no longer in this project.
+    build_utils.remove_unused_instance_data()
+    
     ```

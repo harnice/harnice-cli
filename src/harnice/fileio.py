@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from harnice import state
 
 # standard punctuation:
@@ -305,6 +306,30 @@ def rev_directory():
     Same as `os.getcwd()`.
     """
     return os.getcwd()
+
+
+def atomic_write_text(filepath, text, encoding="utf-8"):
+    """Replace ``filepath`` so a reader never sees a truncated file.
+
+    The new text is written to a temporary file in the same directory, then
+    ``os.replace`` swaps it into place. Line endings are left as given, so
+    Windows text mode does not rewrite them while the file is open.
+    """
+    directory = os.path.dirname(os.path.abspath(filepath)) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding, newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, filepath)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def silentremove(filepath):

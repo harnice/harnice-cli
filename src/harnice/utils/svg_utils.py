@@ -210,8 +210,7 @@ def regenerate_trace_overlays(style=None):
         original = f.read()
     updated = system_utils.apply_block_diagram_trace_overlays(original)
     if updated != original:
-        with open(bd_path, "w", encoding="utf-8") as f:
-            f.write(updated)
+        fileio.atomic_write_text(bd_path, updated)
     return {"block diagram": bd_path}
 
 

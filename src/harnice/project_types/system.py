@@ -199,13 +199,13 @@ def build():
 
     # write empty block diagram if none exists
     if not os.path.exists(fileio.path("block diagram")):
-        with open(fileio.path("block diagram"), "w", encoding="utf-8") as f:
-            f.write(
-                build_utils.default_contents(
-                    "system_default_block_diagram.svg",
-                    {"pn_rev": state.partnumber("pn-rev")},
-                )
-            )
+        fileio.atomic_write_text(
+            fileio.path("block diagram"),
+            build_utils.default_contents(
+                "system_default_block_diagram.svg",
+                {"pn_rev": state.partnumber("pn-rev")},
+            ),
+        )
 
     library_history.new()
     instances_list.new()
@@ -247,8 +247,7 @@ def build():
         svg_diagram = system_utils.apply_block_diagram_trace_overlays(svg_diagram)
 
         if svg_diagram != original_svg:
-            with open(bd_path, "w", encoding="utf-8") as f:
-                f.write(svg_diagram)
+            fileio.atomic_write_text(bd_path, svg_diagram)
 
         from harnice.utils import physical_assembly
 

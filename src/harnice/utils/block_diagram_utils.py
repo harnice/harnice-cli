@@ -96,6 +96,21 @@ def _prefixes_used_in_tags(svg_text):
     return used
 
 
+def svg_markup_is_complete(svg_text):
+    """True when ``svg_text`` looks like a finished SVG document.
+
+    A reader can observe ``blockdiagram.svg`` mid-write on Windows: the
+    destination is truncated before the new bytes land. That snapshot is
+    not a diagram and must not replace the open canvas.
+    """
+    if not isinstance(svg_text, str) or not svg_text.strip():
+        return False
+    lower = svg_text.lower()
+    open_at = lower.find("<svg")
+    close_at = lower.rfind("</svg>")
+    return open_at >= 0 and close_at > open_at
+
+
 def prepare_block_diagram_svg_text(svg_text):
     """Make saved SVG text legal for ElementTree."""
     if not svg_text:
@@ -1127,16 +1142,44 @@ def _applied_traces_block(channel_inner_markup, circuit_inner_markup):
     return "\n".join(outer_lines) + "\n"
 
 
+def _applied_traces_replace_span(svg_text, existing):
+    """Span covering the group, its line indent, and blank lines after it.
+
+    The new block brings its own indent and one trailing newline. Replacing
+    from the ``<`` alone leaves the old indent behind, so the group steps
+    inward on every rebuild, and the old line break stacks a blank line
+    above ``</svg>``.
+    """
+    start = existing[0]
+    while start > 0 and svg_text[start - 1] in " \t":
+        start -= 1
+    end = existing[3]
+    if end < len(svg_text) and svg_text[end] == "\n":
+        end += 1
+        while end < len(svg_text) and svg_text[end] == "\n":
+            end += 1
+    return start, end
+
+
 def replace_block_diagram_applied_traces(svg_text, channel_inner_markup, circuit_inner_markup):
     block = _applied_traces_block(channel_inner_markup, circuit_inner_markup)
     existing = find_svg_element_span(svg_text, BD_APPLIED_TRACES_GROUP_ID)
     if existing is not None:
-        old_outer = svg_text[existing[0] : existing[3]]
-        if block and svg_markup_equivalent(old_outer, block.strip()):
-            return svg_text
+        start, end = _applied_traces_replace_span(svg_text, existing)
         if not block:
-            return strip_svg_element_by_id(svg_text, BD_APPLIED_TRACES_GROUP_ID)
-        return svg_text[: existing[0]] + block + svg_text[existing[3] :]
+            return svg_text[:start] + svg_text[end:]
+        old_outer = svg_text[existing[0] : existing[3]]
+        if svg_markup_equivalent(old_outer, block.strip()):
+            # Same traces. An earlier rebuild may still have walked the
+            # opening tag inward or left blank lines after the group.
+            indent = block[: len(block) - len(block.lstrip(" "))]
+            placed = indent + old_outer
+            if not placed.endswith("\n"):
+                placed += "\n"
+            if svg_text[start:end] == placed:
+                return svg_text
+            return svg_text[:start] + placed + svg_text[end:]
+        return svg_text[:start] + block + svg_text[end:]
 
     if not block:
         return svg_text

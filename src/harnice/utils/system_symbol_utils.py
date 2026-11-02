@@ -14,17 +14,19 @@ from harnice import cli, fileio, state
 from harnice.utils import block_diagram_utils
 
 MACRO_MPN = "subsystem_symbol"
-MACRO_LIB_SUBPATH = "macros/system_artifacts"
-MACRO_LIB_REPO = "https://github.com/harnice/harnice-general-library"
 DEFAULT_SCALE = 0.1
-DEFAULT_ARTIFACT_ID = "subsystem-symbol-1"
 
-_SKIP_PRIMITIVE_CHILD_IDS = frozenset(
-    {
-        block_diagram_utils.BD_APPLIED_TRACES_GROUP_ID,
-        block_diagram_utils.BD_CHANNEL_TRACES_GROUP_ID,
-        block_diagram_utils.BD_CIRCUIT_TRACES_GROUP_ID,
-    }
+# Same checkboxes as the block-diagram sheet. True draws the layer.
+DIAGRAM_SHOW_FLAGS = (
+    "show_boundary",
+    "show_devices",
+    "show_subsystems",
+    "show_harnesses",
+    "show_mating_connectors",
+    "show_external_interface_flags",
+    "show_harness_labels",
+    "show_channel_traces",
+    "show_circuit_traces",
 )
 
 
@@ -425,6 +427,157 @@ def _rewrite_primitive_scales(svg_text: str, scale: float) -> str:
     return _PRIMITIVE_OPEN_RE.sub(repl, svg_text)
 
 
+def refresh_system_diagram_primitives(artifact_id: str) -> None:
+    """Replace each dropped system-diagram primitive with the current block diagram.
+
+    The primitive stays where it was drawn. Child ids keep the prefix already
+    on that primitive, so a second build does not rename a diagram that has
+    not changed. Show flags in params.json hide layers with ``display="none"``.
+    A primitive nested inside another one is part of the copied diagram, not a
+    second copy to refresh. Symbols with no diagram primitive are left alone.
+    """
+    artifact_id = (artifact_id or "").strip()
+    if not artifact_id:
+        return
+    path = symbol_svg_path(artifact_id)
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        original = f.read()
+
+    # A primitive needs an id so its children can be replaced in the file text.
+    next_id = 0
+
+    def give_missing_id(match):
+        nonlocal next_id
+        tag = match.group(0)
+        if re.search(r"\bid\s*=", tag, flags=re.IGNORECASE):
+            return tag
+        next_id += 1
+        insert = ' id="system-diagram-primitive-%s"' % next_id
+        if tag.endswith("/>"):
+            return tag[:-2] + insert + "/>"
+        return tag[:-1] + insert + ">"
+
+    working = _PRIMITIVE_OPEN_RE.sub(give_missing_id, original)
+    try:
+        root = block_diagram_utils._parse_block_diagram_svg_string(working).getroot()
+    except ET.ParseError as exc:
+        cli.warn(
+            "%s: could not read the subsystem symbol (%s: %s)"
+            % (artifact_id, type(exc).__name__, exc)
+        )
+        return
+
+    parent_map = {child: parent for parent in root.iter() for child in list(parent)}
+    parent_map[root] = None
+    primitives = []
+    for el in root.iter():
+        classes = (el.get("class") or "").split()
+        if "system-diagram-primitive" not in classes:
+            continue
+        if _is_under_system_diagram_primitive(parent_map.get(el), parent_map):
+            continue
+        primitives.append(el)
+    if not primitives:
+        return
+
+    try:
+        inner = system_diagram_primitive_inner_svg(artifact_id)
+        wrapped = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<svg xmlns="http://www.w3.org/2000/svg">' + inner + "</svg>\n"
+        )
+        template = block_diagram_utils._parse_block_diagram_svg_string(wrapped).getroot()
+    except (OSError, ET.ParseError, ValueError) as exc:
+        cli.warn(
+            "%s: could not copy the block diagram into the subsystem symbol (%s: %s)"
+            % (artifact_id, type(exc).__name__, exc)
+        )
+        return
+
+    prefix_re = re.compile(r"^(sdp-[0-9a-z]+-)")
+    fresh_n = 0
+
+    def child_prefix(primitive):
+        nonlocal fresh_n
+        for el in primitive.iter():
+            if el is primitive:
+                continue
+            match = prefix_re.match(el.get("id") or "")
+            if match:
+                return match.group(1)
+        import time
+
+        fresh_n += 1
+        return "sdp-%d-" % (int(time.time() * 1000) + fresh_n)
+
+    def apply_prefix(node, prefix):
+        id_map = {}
+        for el in node.iter():
+            old = (el.get("id") or "").strip()
+            if not old:
+                continue
+            id_map[old] = prefix + old
+            el.set("id", prefix + old)
+        for el in node.iter():
+            for key, value in list(el.attrib.items()):
+                if not value:
+                    continue
+                updated = value
+                if value in id_map:
+                    updated = id_map[value]
+                elif value[:1] == "#" and value[1:] in id_map:
+                    updated = "#" + id_map[value[1:]]
+                elif "url(#" in value:
+                    updated = value
+                    for old in sorted(id_map, key=len, reverse=True):
+                        updated = updated.replace(
+                            "url(#%s)" % old, "url(#%s)" % id_map[old]
+                        )
+                if updated != value:
+                    el.set(key, updated)
+
+    updated = 0
+    for primitive in primitives:
+        pid = (primitive.get("id") or "").strip()
+        if not pid:
+            continue
+        scratch = block_diagram_utils.clone_svg_element(template)
+        apply_prefix(scratch, child_prefix(primitive))
+        same = block_diagram_utils.svg_children_signature(
+            primitive
+        ) == block_diagram_utils.svg_children_signature(scratch)
+        if same:
+            continue
+        new_inner = block_diagram_utils.serialize_svg_element_children(scratch)
+        if new_inner and not new_inner.endswith("\n"):
+            new_inner += "\n"
+        if new_inner:
+            new_inner = "\n" + new_inner
+        spliced = block_diagram_utils.replace_svg_element_inner_by_id(
+            working, pid, new_inner
+        )
+        if spliced is None:
+            cli.warn(
+                "%s: could not update system-diagram primitive %s" % (artifact_id, pid)
+            )
+            continue
+        working = spliced
+        updated += 1
+    if working == original:
+        return
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(working)
+        if not working.endswith("\n"):
+            f.write("\n")
+    if updated:
+        print(
+            "Copied the block diagram into %s system-diagram primitive(s) on %s."
+            % (updated, artifact_id)
+        )
+
+
 def apply_declared_diagram_scale(artifact_id: str) -> None:
     """Write the build-instruction scale onto the symbol's diagram primitive.
 
@@ -445,8 +598,18 @@ def apply_declared_diagram_scale(artifact_id: str) -> None:
         return
     params = params_path(artifact_id)
     os.makedirs(os.path.dirname(params), exist_ok=True)
+    data = {}
+    if os.path.isfile(params):
+        try:
+            with open(params, encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                data = loaded
+        except (OSError, json.JSONDecodeError):
+            data = {}
+    data["scale"] = scale
     with open(params, "w", encoding="utf-8") as f:
-        json.dump({"scale": scale}, f, indent=2)
+        json.dump(data, f, indent=2)
         f.write("\n")
     path = symbol_svg_path(artifact_id)
     if not os.path.isfile(path):
@@ -483,6 +646,7 @@ def verify_as_device(artifact_id: str, verbose: bool = True) -> None:
                 "(build twice after external-interface flags exist)."
             )
         sync_connector_pins(artifact_id)
+        refresh_system_diagram_primitives(artifact_id)
         apply_declared_diagram_scale(artifact_id)
         return
     # ========================================================================
@@ -511,6 +675,7 @@ def verify_as_device(artifact_id: str, verbose: bool = True) -> None:
             + ", ".join(sorted(missing))
         )
     sync_connector_pins(artifact_id)
+    refresh_system_diagram_primitives(artifact_id)
     apply_declared_diagram_scale(artifact_id)
 
 
@@ -564,27 +729,29 @@ def scale_for_artifact(artifact_id: str) -> float:
     return DEFAULT_SCALE
 
 
-def _skip_primitive_child(el) -> bool:
-    cid = (el.get("id") or "").strip()
-    if cid in _SKIP_PRIMITIVE_CHILD_IDS:
-        return True
-    if cid == "boundary":
-        return True
-    classes = (el.get("class") or "").split()
-    if "system-boundary" in classes:
-        return True
-    return False
+def system_diagram_primitive_inner_svg(artifact_id=None) -> str:
+    """Inner markup of the system block diagram for a subsystem symbol.
 
+    Reads ``show_*`` from that symbol's params.json when ``artifact_id`` is
+    set. A missing flag shows the layer. False sets ``display="none"`` on it,
+    the same as the block-diagram sheet.
+    """
+    show = {}
+    for name in DIAGRAM_SHOW_FLAGS:
+        show[name] = True
+    if artifact_id:
+        params = params_path(artifact_id)
+        if os.path.isfile(params):
+            try:
+                with open(params, encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                data = None
+            if isinstance(data, dict):
+                for name in DIAGRAM_SHOW_FLAGS:
+                    if isinstance(data.get(name), bool):
+                        show[name] = data[name]
 
-def _patch_component_attribute_texts(root) -> None:
-    """Evaluate device-symbol f-strings inside a diagram being embedded."""
-    from harnice.utils import system_utils
-
-    system_utils.apply_component_symbol_fstrings(root)
-
-
-def system_diagram_primitive_inner_svg() -> str:
-    """Inner markup of the system block diagram contents, without trace overlays."""
     bd_path = fileio.path("block diagram")
     if not bd_path or not os.path.isfile(bd_path):
         raise FileNotFoundError("System block diagram not found")
@@ -598,11 +765,55 @@ def system_diagram_primitive_inner_svg() -> str:
             break
     if contents is None:
         raise ValueError("System block diagram has no contents-start group")
-    _patch_component_attribute_texts(contents)
-    chunks = []
-    for child in list(contents):
-        if _skip_primitive_child(child):
+    from harnice.utils import system_utils
+
+    system_utils.apply_component_symbol_fstrings(contents)
+
+    nodes = list(contents)
+    parent_map = {child: parent for parent in root.iter() for child in list(parent)}
+    parent_map[root] = None
+    for el in root.iter():
+        if (el.get("id") or "").strip() != "applied-traces":
             continue
+        cur = el
+        inside = False
+        while cur is not None:
+            if cur is contents:
+                inside = True
+                break
+            cur = parent_map.get(cur)
+        if not inside:
+            nodes.append(el)
+        break
+
+    hide_ids = {
+        "boundary": "show_boundary",
+        "harnesses": "show_harnesses",
+        "mating-connectors": "show_mating_connectors",
+        "external-interface-flags": "show_external_interface_flags",
+        "harness-segment-refdes-labels": "show_harness_labels",
+        "channel_traces": "show_channel_traces",
+        "circuit_traces": "show_circuit_traces",
+    }
+    for node in nodes:
+        for el in node.iter():
+            flag = hide_ids.get((el.get("id") or "").strip())
+            if flag and not show[flag]:
+                el.set("display", "none")
+        if (node.get("id") or "").strip() != "devices":
+            continue
+        if show["show_devices"] and show["show_subsystems"]:
+            continue
+        for child in list(node):
+            classes = (child.get("class") or "").split()
+            if "subsystem" in classes:
+                if not show["show_subsystems"]:
+                    child.set("display", "none")
+            elif "device" in classes and not show["show_devices"]:
+                child.set("display", "none")
+
+    chunks = []
+    for child in nodes:
         chunks.append(
             block_diagram_utils._svg_fragment_preserve_bound_prefixes(
                 ET.tostring(child, encoding="unicode")

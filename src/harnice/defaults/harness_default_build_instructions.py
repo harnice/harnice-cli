@@ -544,3 +544,9 @@ build_utils.run_macro(
 # Reset the trace overlay style to default saved earlier to set the gui trace
 # overlay style. 
 svg_utils.trace_overlay_style.update(default_trace_overlay_style)
+
+# ===========================================================================
+#                  REMOVE UNUSED INSTANCE DATA
+# ===========================================================================
+# Drop instance_data folders whose refdes is no longer in this project.
+build_utils.remove_unused_instance_data()

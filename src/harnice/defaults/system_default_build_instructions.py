@@ -224,6 +224,9 @@ for instance in instances_list.read():
 # ===========================================================================
 # Each run_macro call is one symbol (switch instances in the console to edit it).
 # scale is applied to the system block diagram primitive in the symbol.
+# Each build replaces that primitive's contents with a new copy of the
+# block diagram and leaves its position. Each show_* flag is one layer:
+# True draws it, False sets display="none".
 # Connector pins come from unique ICD connectors. The ICD is written after
 # build instructions, so a second build is required after ICD changes.
 # This macro also runs device signals-list / symbol-pin verification on the ICD.
@@ -235,6 +238,15 @@ build_utils.run_macro(
     "https://github.com/harnice/harnice-general-library",
     artifact_id="subsystem-symbol-1",
     scale=scale,
+    show_boundary=True,
+    show_devices=True,
+    show_subsystems=True,
+    show_harnesses=True,
+    show_mating_connectors=True,
+    show_external_interface_flags=True,
+    show_harness_labels=True,
+    show_channel_traces=True,
+    show_circuit_traces=True,
 )
 
 # Orthographic drawing of the physical assembly. One view per call.
@@ -431,3 +443,9 @@ def connector_chooser():
 # Reset the trace overlay style to default saved earlier to set the gui trace
 # overlay style.
 svg_utils.trace_overlay_style.update(default_trace_overlay_style)
+
+# ===========================================================================
+#                  REMOVE UNUSED INSTANCE DATA
+# ===========================================================================
+# Drop instance_data folders whose refdes is no longer in this project.
+build_utils.remove_unused_instance_data()

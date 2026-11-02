@@ -142,3 +142,6 @@ for connector_name in ["in1", "in2", "out1", "out2"]:
 #     artifact_id="body-1",
 #     path_to_step="vendor/chassis.step",
 # )
+
+# Drop instance_data folders whose refdes is no longer in this project.
+build_utils.remove_unused_instance_data()

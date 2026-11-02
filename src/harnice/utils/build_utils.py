@@ -316,6 +316,81 @@ def run_instruction_from_relative(
     return result
 
 
+def remove_unused_instance_data():
+    """
+    Use this when a build should drop instance_data folders for refdes that are no longer in the project.
+
+    Deletes each ``instance_data/<item_type>/<refdes>`` directory whose refdes
+    is not an ``instance_name`` in the instances list or the library history.
+    When a row records an ``item_type``, only the folder under that type is
+    kept. Nested ``instance_data`` inside a kept instance (a device's macros,
+    a library snapshot under ``lib``) is left alone; that project cleans its
+    own folder when its build instructions run.
+
+    Call this at the end of build instructions, after pulls and macros have
+    recorded the instances that belong in this revision. If neither list can
+    be read, nothing is deleted.
+
+    **Returns:**
+    - `list`: Relative paths (``item_type/refdes``) that were removed.
+        Empty when ``instance_data`` is missing, or when neither the instances
+        list nor the library history can be read.
+    """
+    import shutil
+
+    from harnice.lists import instances_list
+
+    root = os.path.join(fileio.rev_directory(), "instance_data")
+    if not os.path.isdir(root):
+        return []
+
+    # name -> item types recorded for that refdes. None means the lists could
+    # not be read, so an empty project is not confused with a missing file.
+    active = {}
+    readable = False
+    for reader in (instances_list.read, library_history.read):
+        try:
+            rows = reader()
+        except (OSError, TypeError, KeyError, ValueError):
+            continue
+        readable = True
+        for row in rows:
+            name = str(row.get("instance_name") or "").strip()
+            if not name:
+                continue
+            active.setdefault(name, set()).add(str(row.get("item_type") or "").strip())
+    if not readable:
+        return []
+
+    removed = []
+    skip = {fileio.LIBRARY_USED_DIR, "__pycache__"}
+    for item_type in sorted(os.listdir(root)):
+        if item_type.startswith(".") or item_type in skip:
+            continue
+        type_dir = os.path.join(root, item_type)
+        if os.path.islink(type_dir) or not os.path.isdir(type_dir):
+            continue
+        for name in sorted(os.listdir(type_dir)):
+            if name.startswith(".") or name in skip:
+                continue
+            inst_dir = os.path.join(type_dir, name)
+            types = active.get(name) or set()
+            # A blank item_type still names a refdes that belongs in the project.
+            if item_type in types or types == {""}:
+                continue
+            if os.path.islink(inst_dir):
+                os.unlink(inst_dir)
+            elif os.path.isdir(inst_dir):
+                shutil.rmtree(inst_dir)
+            else:
+                continue
+            removed.append(item_type + "/" + name)
+            print("Harnice: removed unused instance data " + item_type + "/" + name)
+        if not os.listdir(type_dir):
+            os.rmdir(type_dir)
+    return removed
+
+
 def default_contents(filename, replacements=None):
     import harnice
     from harnice.runtime import bundled_defaults_dir

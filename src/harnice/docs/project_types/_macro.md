@@ -413,15 +413,15 @@ Default: one drawing, `artifact_id="pdf_drawing-1"`, with `page_setup` inlined i
 
 ### `subsystem_symbol`
 
-Seeds (and later verifies) a symbol SVG so this system can be dropped into a parent system as a device. Each `run_macro` call is one imported instance; open it from **instance data** → that instance → **subsystem symbol**. The editor is the device-symbol toolset plus **System diagram**, which drops the current block diagram contents (not trace overlays) as a primitive. `scale` sets that primitive's scale, and a later build updates the scale of a diagram already on the symbol.
+Seeds (and later verifies) a symbol SVG so this system can be dropped into a parent system as a device. Each `run_macro` call is one imported instance; open it from **instance data** → that instance → **subsystem symbol**. The editor is the device-symbol toolset plus **System diagram**, which drops the current block diagram contents as a primitive. `scale` sets that primitive's scale. Each `show_*` argument is one layer (`show_boundary`, `show_devices`, `show_subsystems`, `show_harnesses`, `show_mating_connectors`, `show_external_interface_flags`, `show_harness_labels`, `show_channel_traces`, `show_circuit_traces`). True draws it. False sets `display="none"`. Omitted flags are True. A later build keeps each primitive where you put it, updates its scale, and replaces its contents with a new copy of the current block diagram using those flags.
 
-On first seed the macro writes a blank SVG and does not otherwise redraw a symbol you have already drawn. Connector pins come from unique `connector_name` values in the system ICD (`fileio.path("icd")`). It also runs device signals-list checks against that ICD. Pin mismatches vs the ICD print a warning and do not fail the build.
+On first seed the macro writes a blank SVG. It does not add, move, or delete primitives you placed; it only refreshes diagram copies already on the symbol. Connector pins come from unique `connector_name` values in the system ICD (`fileio.path("icd")`). It also runs device signals-list checks against that ICD. Pin mismatches vs the ICD print a warning and do not fail the build.
 
 ==The ICD is compiled *after* build instructions, so this macro always reads the ICD from the previous build.== After you add, remove, or rename external-interface flags, build twice. If no previous ICD exists yet, verification is skipped.
 
-**Args:** `artifact_id` (default `"subsystem-symbol-1"`), `scale` (default `0.1`).
+**Args:** `artifact_id` (default `"subsystem-symbol-1"`), `scale` (default `0.1`), and the `show_*` layer flags above (each default `True`).
 
-**Writes:** `{pn-rev}-{artifact_id}-subsystem-symbol.svg`, `{pn-rev}-{artifact_id}-params.json` (stores `scale`).
+**Writes:** `{pn-rev}-{artifact_id}-subsystem-symbol.svg`, `{pn-rev}-{artifact_id}-params.json` (stores `scale` and the `show_*` flags).
 
 
 ### `physical_model_drawing`

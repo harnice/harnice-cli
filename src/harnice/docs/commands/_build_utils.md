@@ -67,6 +67,26 @@
     - `ValueError`: If the specified output coordinate system is not defined in the
         instance's attributes file.
 
+??? info "`build_utils.remove_unused_instance_data()`"
+
+    Use this when a build should drop instance_data folders for refdes that are no longer in the project.
+    
+    Deletes each ``instance_data/<item_type>/<refdes>`` directory whose refdes
+    is not an ``instance_name`` in the instances list or the library history.
+    When a row records an ``item_type``, only the folder under that type is
+    kept. Nested ``instance_data`` inside a kept instance (a device's macros,
+    a library snapshot under ``lib``) is left alone; that project cleans its
+    own folder when its build instructions run.
+    
+    Call this at the end of build instructions, after pulls and macros have
+    recorded the instances that belong in this revision. If neither list can
+    be read, nothing is deleted.
+    
+    **Returns:**
+    - `list`: Relative paths (``item_type/refdes``) that were removed.
+        Empty when ``instance_data`` is missing, or when neither the instances
+        list nor the library history can be read.
+
 ??? info "`build_utils.run_macro(macro_part_number, lib_subpath, lib_repo, artifact_id, base_directory=None, rerun=False, **kwargs)`"
 
     Use this when a harness or system build needs a library macro run for one artifact.
