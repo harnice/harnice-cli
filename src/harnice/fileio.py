@@ -803,31 +803,50 @@ def today():
     return f"{d.month}/{d.day}/{d.year % 100}"
 
 
-def get_git_hash_of_harnice_src():
+def harnice_version():
     """
-    Use this when a revision-history row needs the commit of the Harnice source that ran the build.
+    Use this when a revision-history row needs the Harnice version that ran the build.
 
-    Return the git commit hash of the Harnice source repo (HEAD).
+    Return the git commit of this Harnice checkout when the application is a
+    clone. Return the installed application version tag (for example ``v0.7.9``)
+    when Harnice is an installed package or the standalone app.
 
-    Used for version/attribution in outputs. Returns `"UNKNOWN"` if git is
-    unavailable or the repo cannot be read.
+    Returns ``"UNKNOWN"`` when neither a commit nor a package version can be read.
     """
+    from harnice.runtime import is_standalone_app, no_console_kwargs, source_checkout_root
+
+    if not is_standalone_app():
+        root = source_checkout_root()
+        if (root / ".git").exists():
+            try:
+                commit = (
+                    subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=str(root),
+                        stderr=subprocess.DEVNULL,
+                        **no_console_kwargs(),
+                    )
+                    .decode("utf-8")
+                    .strip()
+                )
+                if commit:
+                    return commit
+            except Exception:
+                pass
     try:
-        # ask git for commit hash
-        from harnice.runtime import no_console_kwargs
+        from importlib.metadata import version
 
-        return (
-            subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                cwd=harnice_root(),
-                stderr=subprocess.DEVNULL,
-                **no_console_kwargs(),
-            )
-            .decode("utf-8")
-            .strip()
-        )
+        ver = (version("harnice") or "").strip()
+        if ver:
+            return ver if ver[:1] in "vV" else "v" + ver
     except Exception:
-        return "UNKNOWN"
+        pass
+    return "UNKNOWN"
+
+
+def get_git_hash_of_harnice_src():
+    """Return ``harnice_version()``. Older build scripts call this name."""
+    return harnice_version()
 
 
 def read_tsv(filepath, delimiter="\t"):

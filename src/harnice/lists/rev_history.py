@@ -36,13 +36,39 @@ COLUMNS = [
     "datestarted",  # auto-filled to be the date when this part was first intialized
     "datemodified",  # updates to today's date upon build
     "datereleased",  # up to user to fill in as needed
-    "git_hash_of_harnice_src",  # auto-filled, git hash of the harnice source code during the latest build
+    "harnice_version",  # auto-filled on build: git commit when Harnice is a clone, otherwise the installed version tag
     "drawnby",  # auto-filled, the person who created the part
     "checkedby",  # the person who checked the part, blank ok
     "revisionupdates",  # a brief description of the changes made to this revision
     "affectedinstances",  # the instance names of the instances that were affected by this revision. can be referenced later by PDF builders and more.
     "last_build",  # "succeeded" or "failed" after the latest build of this revision; blank until first build
 ]
+
+def adopt_harnice_version_column(fieldnames, rows):
+    """Rename ``git_hash_of_harnice_src`` to ``harnice_version``.
+
+    Cell values move with the column. A non-empty ``harnice_version`` is kept
+    when both names are present. Returns the column list to write.
+    """
+    old = "git_hash_of_harnice_src"
+    names = []
+    for name in fieldnames or []:
+        if not name:
+            continue
+        if str(name) == old:
+            name = "harnice_version"
+        if name not in names:
+            names.append(name)
+    for row in rows or []:
+        legacy = row.pop(old, None)
+        if legacy not in (None, "") and not str(row.get("harnice_version") or "").strip():
+            row["harnice_version"] = legacy
+    return names
+
+
+def _write(path, rows):
+    adopt_harnice_version_column(COLUMNS, rows)
+    cached_tsv.write(path, COLUMNS, rows)
 
 
 def read(path=None):
@@ -56,7 +82,9 @@ def read(path=None):
     """
     if path is None:
         path = fileio.path("revision history")
-    return cached_tsv.read(path)
+    rows = cached_tsv.read(path)
+    adopt_harnice_version_column([], rows)
+    return rows
 
 
 def overwrite(content_dict):
@@ -146,7 +174,7 @@ The function will update the revision history file as referenced by the current 
         raise ValueError(f"No revision '{target_rev}' found in revision history.")
 
     # 6) Write updated TSV
-    cached_tsv.write(path, COLUMNS, rows)
+    _write(path, rows)
 
 
 def info(rev=None, path=None, field=None, all=False):
@@ -282,7 +310,7 @@ def update_datemodified():
 
     Called when the project is built (console **Build** or ``harnice -b``), not
     when the console merely mounts the project. Also refreshes ``drawnby`` and
-    ``git_hash_of_harnice_src``.
+    ``harnice_version``.
 
     **Arguments:**
 
@@ -307,9 +335,9 @@ def update_datemodified():
         if _revs_equivalent(row.get("rev"), target_rev):
             row["datemodified"] = fileio.today()
             row["drawnby"] = fileio.drawnby()["name"]
-            row["git_hash_of_harnice_src"] = fileio.get_git_hash_of_harnice_src()
+            row["harnice_version"] = fileio.harnice_version()
 
-    cached_tsv.write(path, COLUMNS, rows)
+    _write(path, rows)
 
 
 def update_last_build(result):
@@ -346,7 +374,7 @@ def update_last_build(result):
         if _revs_equivalent(row.get("rev"), target_rev):
             row["last_build"] = value
 
-    cached_tsv.write(path, COLUMNS, rows)
+    _write(path, rows)
 
 
 def update_library_identity():
@@ -370,7 +398,7 @@ def update_library_identity():
             row["library_repo"] = library_repo
             row["library_subpath"] = library_subpath
 
-    cached_tsv.write(path, COLUMNS, rows)
+    _write(path, rows)
 
 
 def new(ignore_project_type=False, path=None):
@@ -409,7 +437,7 @@ def new(ignore_project_type=False, path=None):
         )
 
     if not os.path.exists(path):
-        cached_tsv.write(path, COLUMNS, [])
+        _write(path, [])
 
     else:
         raise ValueError(
@@ -497,7 +525,7 @@ def create_initial(
         )
 
     os.makedirs(pn_folder, exist_ok=True)
-    cached_tsv.write(path, COLUMNS, [row])
+    _write(path, [row])
     return path
 
 
@@ -636,7 +664,7 @@ def append(next_rev=None):
     )
     rows.append(new_row)
 
-    cached_tsv.write(fileio.path("revision history"), COLUMNS, rows)
+    _write(fileio.path("revision history"), rows)
 
 
 def part_family_append(content_dict, rev_history_path):
@@ -651,7 +679,7 @@ def part_family_append(content_dict, rev_history_path):
 
     - `datemodified`: Set to today's date
     - `drawnby`: Set to the current user's name
-    - `git_hash_of_harnice_src`: Set to the current git hash of the harnice source code
+    - `harnice_version`: git commit when Harnice is a clone, otherwise the installed version tag
 
     If the revision history file does not exist, the function will create it.
     If an entry with the same revision number already exists, the function will update that entry.
@@ -676,9 +704,7 @@ def part_family_append(content_dict, rev_history_path):
 
     actual_content_dict["datemodified"] = fileio.today()
     actual_content_dict["drawnby"] = fileio.drawnby()["name"]
-    actual_content_dict["git_hash_of_harnice_src"] = (
-        fileio.get_git_hash_of_harnice_src()
-    )
+    actual_content_dict["harnice_version"] = fileio.harnice_version()
 
     if os.path.exists(rev_history_path):
         rows = read(rev_history_path)
@@ -697,4 +723,4 @@ def part_family_append(content_dict, rev_history_path):
 
     if not os.path.exists(rev_history_path):
         new(path=rev_history_path, ignore_project_type=True)
-    cached_tsv.write(rev_history_path, COLUMNS, rows)
+    _write(rev_history_path, rows)

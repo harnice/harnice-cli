@@ -325,14 +325,15 @@ Behind the scenes, Harnice stores the current part number and revision number in
     
     - **filepath** — Path to the file or directory to remove.
 
-??? info "`fileio.get_git_hash_of_harnice_src()`"
+??? info "`fileio.harnice_version()`"
 
-    Use this when a revision-history row needs the commit of the Harnice source that ran the build.
+    Use this when a revision-history row needs the Harnice version that ran the build.
     
-    Return the git commit hash of the Harnice source repo (HEAD).
+    Return the git commit of this Harnice checkout when the application is a
+    clone. Return the installed application version tag (for example ``v0.7.9``)
+    when Harnice is an installed package or the standalone app.
     
-    Used for version/attribution in outputs. Returns `"UNKNOWN"` if git is
-    unavailable or the repo cannot be read.
+    Returns ``"UNKNOWN"`` when neither a commit nor a package version can be read.
 
 
 ## Output

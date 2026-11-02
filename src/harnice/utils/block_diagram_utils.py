@@ -878,9 +878,21 @@ def _build_harness_network_graph_from_block_diagram(root, parent_map):
     Build a ``draw_segments_across_paths`` graph from harness ``<line>`` elements and
     device harness connector circles.
     """
+
     harness_lines = []
     for el in root.iter():
-        if not _svg_is_harness_wire_line(el):
+        cls = (el.get("class") or "").split()
+        if _svg_is_harness_wire_line(el):
+            kind = "harness"
+        elif (
+            _svg_local_tag(el.tag) == "line"
+            and "wire" in cls
+            and "harness-bus" in cls
+            and "harness-wire" not in cls
+            and (el.get("id") or "").strip()
+        ):
+            kind = "bus"
+        else:
             continue
         wid = el.get("id").strip()
         (wx1, wy1) = _svg_world_point_for_element(
@@ -889,9 +901,93 @@ def _build_harness_network_graph_from_block_diagram(root, parent_map):
         (wx2, wy2) = _svg_world_point_for_element(
             el, float(el.get("x2", 0)), float(el.get("y2", 0)), parent_map
         )
+        try:
+            sw = float(el.get("stroke-width") or 1)
+        except (TypeError, ValueError):
+            sw = 1.0
         harness_lines.append(
-            {"id": wid, "wx1": wx1, "wy1": wy1, "wx2": wx2, "wy2": wy2}
+            {
+                "id": wid,
+                "kind": kind,
+                "wx1": wx1,
+                "wy1": wy1,
+                "wx2": wx2,
+                "wy2": wy2,
+                "sw": sw,
+            }
         )
+
+    harness_only = [h for h in harness_lines if h["kind"] == "harness"]
+    ids = [h["id"] for h in harness_only]
+    adj = {hid: set() for hid in ids}
+    by_key = {}
+    for h in harness_only:
+        for key in (
+            _svg_wire_coord_key(h["wx1"], h["wy1"]),
+            _svg_wire_coord_key(h["wx2"], h["wy2"]),
+        ):
+            by_key.setdefault(key, []).append(h["id"])
+    for group in by_key.values():
+        for a in group:
+            for b in group:
+                if a != b:
+                    adj[a].add(b)
+    cluster_key_by_seg = {}
+    visited = set()
+    for hid in ids:
+        if hid in visited:
+            continue
+        stack = [hid]
+        comp = []
+        while stack:
+            u = stack.pop()
+            if u in visited:
+                continue
+            visited.add(u)
+            comp.append(u)
+            stack.extend(v for v in adj[u] if v not in visited)
+        ckey = "|".join(sorted(comp))
+        for u in comp:
+            cluster_key_by_seg[u] = ckey
+    hit_tol = 8.0
+    refdes_by_cluster = {}
+    for el in root.iter():
+        if _svg_local_tag(el.tag) != "circle":
+            continue
+        if "harness-refdes-marker" not in (el.get("class") or "").split():
+            continue
+        try:
+            cx = float(el.get("cx", 0))
+            cy = float(el.get("cy", 0))
+        except (TypeError, ValueError):
+            continue
+        wx, wy = _svg_world_point_for_element(el, cx, cy, parent_map)
+        rd = (el.get("data-refdes") or "").strip()
+        if not rd:
+            continue
+        best = None
+        best_d = float("inf")
+        for h in harness_lines:
+            d = _svg_dist_point_to_segment(wx, wy, h["wx1"], h["wy1"], h["wx2"], h["wy2"])
+            tol = max(float(h.get("sw") or 1) * 2.0, hit_tol)
+            if d > tol:
+                continue
+            if best is None or d < best_d - 0.05 or (
+                abs(d - best_d) <= 0.05
+                and h.get("kind") == "harness"
+                and best.get("kind") != "harness"
+            ):
+                best_d = d
+                best = h
+        if not best or best.get("kind") != "harness":
+            continue
+        ckey = cluster_key_by_seg.get(best["id"])
+        if not ckey:
+            continue
+        if ckey not in refdes_by_cluster or not refdes_by_cluster.get(ckey):
+            refdes_by_cluster[ckey] = rd
+    for h in harness_only:
+        h["harness_refdes"] = refdes_by_cluster.get(cluster_key_by_seg.get(h["id"], ""), "")
 
     device_connectors = []
     for el in root.iter():
@@ -952,7 +1048,12 @@ def _build_harness_network_graph_from_block_diagram(root, parent_map):
             continue
         na = node_for_world_point(wx1, wy1)
         nb = node_for_world_point(wx2, wy2)
-        segments[h["id"]] = {"node_at_end_a": na, "node_at_end_b": nb}
+        segments[h["id"]] = {
+            "node_at_end_a": na,
+            "node_at_end_b": nb,
+            "kind": h.get("kind") or "harness",
+            "harness_refdes": (h.get("harness_refdes") or "").strip(),
+        }
 
     return {"nodes": nodes, "segments": segments}
 

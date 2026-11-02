@@ -13,6 +13,10 @@ description: >-
 
 Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
+Before you follow the rest of this skill, pull the latest `main` from the skills repository, https://github.com/harnice/harnice-cli. Check out `main` in that clone and pull. Read this file again after the pull. If you cannot pull, stop and tell me to pull that repository to the latest `main`. Wait until I have, then read this file again from that `main`.
+
+When you write a path to reference material, write it with respect to the library folder if one is available. Use library locations to establish where you are, then write `(url)/path/file`. Library locations are `repository_locations.csv`. The first column is the library URL. The second column is the local checkout. `url` is the URL of the checkout that contains the file. `path/file` is the path under that checkout. A file outside every checkout keeps the path I gave you.
+
 ## Documentation is in the package
 
 The `harnice` command-line package includes the Harnice documentation.
@@ -278,7 +282,7 @@ Chooser is imported today via:
    (entry size, orientation, detent).
 3. Write tables of only commercially sold values. If the spec matrix is huge,
    curate a default PERMUTATIONS subset AND keep a legality filter.
-4. Cite the source URL in a comment on each table. If a dimension is scaled
+4. Cite the source in a comment on each table. A file inside a library folder is `(url)/path/file`. A page on the web stays a URL. If a dimension is scaled
    from a drawing rather than tabulated, write estimate: in the comment.
 5. Implement:
 
@@ -410,7 +414,7 @@ Revision history via rev_history.part_family_append(row, path):
         "library_subpath": LIBRARY_SUBPATH,
     }
 
-part_family_append fills datemodified, drawnby, and git_hash_of_harnice_src.
+part_family_append fills datemodified, drawnby, and harnice_version.
 Same rev updates the existing row.
 
 Set state.set_project_type(...) and state.set_rev(...) once at the start of main().
@@ -525,7 +529,7 @@ When the family mates to a connector, accessory, or cable:
 Prefer in-process build (set state, part.generate_structure(), part.build())
 over a separate Build per SKU.
 
-Cache fileio.get_git_hash_of_harnice_src and fileio.drawnby once per run.
+Cache fileio.harnice_version and fileio.drawnby once per run.
 part_family_append otherwise shells out to git on every SKU.
 
 Driver flags:
@@ -567,6 +571,6 @@ columns match the chooser fields.
 Reply with:
 1. Configuration count and 5 example library PNs
 2. Origin convention (one sentence: cable side, +X toward mate)
-3. Paths of the two Python files
+3. Paths of the two Python files, as `(url)/path/file` when they sit in a library folder
 4. How a harness script should import and call the chooser
 5. Any dimension that is an estimate rather than a callout

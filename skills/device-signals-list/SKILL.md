@@ -13,6 +13,10 @@ description: >-
 
 Follow this skill when it is the best match for what I asked. Do not ask which skill to follow. If it is not clear what I am asking, ask me to clarify.
 
+Before you follow the rest of this skill, pull the latest `main` from the skills repository, https://github.com/harnice/harnice-cli. Check out `main` in that clone and pull. Read this file again after the pull. If you cannot pull, stop and tell me to pull that repository to the latest `main`. Wait until I have, then read this file again from that `main`.
+
+When you write a path to reference material, write it with respect to the library folder if one is available. Use library locations to establish where you are, then write `(url)/path/file`. Library locations are `repository_locations.csv`. The first column is the library URL. The second column is the local checkout. `url` is the URL of the checkout that contains the file. `path/file` is the path under that checkout. A file outside every checkout keeps the path I gave you.
+
 ## Documentation is in the package
 
 The `harnice` command-line package includes the Harnice documentation.
@@ -70,7 +74,7 @@ suffix. Do not ask me to run the build for you.
 You are not filling `signals.tsv` by hand. You are writing Python that Harnice
 runs. The signals are `signals_list.append` calls a person can read. The script
 does not open the supporting documentation at build time. Cite it in comments.
-If I gave you an absolute path, that path may live in a constant.
+If I gave you a path inside a library folder, write `(url)/path/file`. Otherwise that path may live in a constant.
 
 Do not write `build.py` until I have answered your questions. A blatantly
 obvious mapping is not a question. If the documentation says `fan_umb_pos`
@@ -138,10 +142,10 @@ the rows they affect, record the citation, each decision, and each
 assumption, with my answer. A blatantly obvious mapping gets the reason
 instead of an answer. That record is what makes a later revision easier. A
 later person or agent should be able to see how and why a row is what it is
-without this chat. If I gave an absolute path, put it in a constant. If I
+without this chat. If I gave a path inside a library folder, write `(url)/path/file`. Otherwise put the path in a constant. If I
 said to use the document, name which page you followed.
 
-    # Citation: J1_pinout.pdf, page 2, in the revision folder.
+    # Citation: (https://github.com/org/library)/path/J1_pinout.pdf, page 2.
     # Clarification: J1 is a balanced mic input. Pin 1 is chassis, on its own.
     # Answer: mic channel is type 1. Pin 1 is type 5.
     # Assumption: pinout says pin 2 is pos; schematic says pin 2 is ground.
@@ -244,7 +248,7 @@ an email. I want one prompt plus that source to become `build.py`.
 A later rebuild runs the same appends until someone revises them. The
 comments are how a person or the next agent picks up the citations,
 decisions, and assumptions. I may leave the supporting documentation in the
-revision folder, or only in the chat. If I give an absolute path, put it in
+revision folder, or only in the chat. If I give a path inside a library folder, write `(url)/path/file`. Otherwise put the path in
 a constant.
 
 
@@ -275,9 +279,9 @@ Use whichever of these I gave you:
 
 1. Attached or pasted in this chat.
 2. A file already in the revision folder, next to `build.py`.
-3. An absolute path I name. Put that path in a constant.
+3. A path I name. If that file sits inside a library checkout, the constant is `(url)/path/file`. Otherwise use the path I gave you.
 
-    PINOUT = r"/absolute/path/I/gave/you.pdf"
+    PINOUT = "(https://github.com/org/library)/path/file.pdf"
 
 You do the understanding in this chat. The appends are the signals. Do not
 write a parser, a sidecar table, or a check that the file exists at build
@@ -586,8 +590,8 @@ Prevention: copy the URL from my message or from the table I gave you.
   to click Build and paste the error messages back.
 - Comments cite the supporting documentation and record each decision and
   assumption. An answer I gave is in the comment. A blatantly obvious mapping
-  is in the comment too, with the reason. An absolute path I gave is a
-  constant.
+  is in the comment too, with the reason. A path inside a library folder is
+  `(url)/path/file`. Any other path I gave is a constant.
 - You did not write the script while a question was still open. A wrong
   first try is revised from those comments. You did not stay blocked trying
   to make that first try perfect.
@@ -612,7 +616,7 @@ run `harnice -b` again.
 
 ## DONE CRITERIA
 
-- [ ] Comments cite the supporting documentation. An absolute path I gave is a constant. The script does not parse that file at build time
+- [ ] Comments cite the supporting documentation. A path inside a library folder is `(url)/path/file`. Any other path I gave is a constant. The script does not parse that file at build time
 - [ ] `signals_list.new()` is immediately followed by the appends a person can read
 - [ ] The script does not check the rules that `harnice -b` already checks
 - [ ] The script prints `Wrote N signal rows.` and `harnice -b` agrees
@@ -628,7 +632,7 @@ wrong, revise it. Do not stay blocked trying to make that first try perfect.
 
 When I have answered, reply with:
 1. The complete `build.py`
-2. Where the supporting documentation lives: the revision folder, this chat, or the absolute-path constant
+2. Where the supporting documentation lives: the revision folder, this chat, or `(url)/path/file` when it sits in a library folder. Otherwise the path constant I gave you
 3. One sentence: terminating, passthrough, or mixed
 4. Channel types you used (id, lib_repo, signal names)
 5. How many signal rows the build printed. An online chatbot instead says I will click Build and paste the errors back

@@ -633,6 +633,46 @@ def _self_hop_endpoint(endpoint_contacts, inst_name, node_id, channel_id):
     return hop.get("start") if slot % 2 == 0 else hop.get("end")
 
 
+def overlay_route_segment_ids(graph, harness_names):
+    """Segment ids one harness may travel: its own runs plus every bus.
+
+    ``None`` means the caller should search the full graph (no harness name).
+    """
+    names = [n.strip() for n in (harness_names or []) if (n or "").strip()]
+    if not names:
+        return None
+    segments = (graph or {}).get("segments") or {}
+    allowed = {sid for sid, seg in segments.items() if seg.get("kind") == "bus"}
+    wanted = set(names)
+    for sid, seg in segments.items():
+        if seg.get("kind") == "bus":
+            continue
+        if (seg.get("harness_refdes") or "").strip() in wanted:
+            allowed.add(sid)
+    return allowed
+
+
+def apply_overlay_route_filters(graph, instances):
+    """Set ``route_segment_ids`` on each instance that names a harness.
+
+    Instances with no harness name stay unfiltered so lane packing still sees
+    every channel that shares a bus segment.
+    """
+    for inst in instances or []:
+        names = []
+        harness = (inst.get("harness") or "").strip()
+        if harness:
+            names.append(harness)
+        for name in inst.get("route_harnesses") or []:
+            name = (name or "").strip()
+            if name and name not in names:
+                names.append(name)
+        allowed = overlay_route_segment_ids(graph, names)
+        if allowed is not None:
+            inst["route_segment_ids"] = allowed
+    return instances
+
+
 def block_diagram_harness_overlay_markup(
     instances, *, include_multi_ch_junction_overlays=True, style=None
 ):
@@ -699,6 +739,16 @@ def block_diagram_harness_overlay_markup(
             adj.setdefault(a, set()).add(b)
             adj.setdefault(b, set()).add(a)
         return adj
+
+    def graph_for_harness_names(graph, harness_names):
+        allowed = overlay_route_segment_ids(graph, harness_names)
+        if allowed is None:
+            return graph
+        segments = (graph or {}).get("segments") or {}
+        return {
+            "nodes": (graph or {}).get("nodes") or {},
+            "segments": {sid: segments[sid] for sid in allowed if sid in segments},
+        }
 
     def harness_graph_path(adj, start, goal):
         """Shortest node list from ``start`` to ``goal``, or ``None``."""
@@ -860,9 +910,10 @@ def block_diagram_harness_overlay_markup(
 
     def multi_ch_junction_overlay_instances(graph):
         """Overlay traces along the connecting harness subtree (one pass per span)."""
-        adj = harness_graph_adj(graph)
         instances = []
-        for (jid, _group), spokes in multi_ch_junction_spoke_groups(graph).items():
+        for (jid, group), spokes in multi_ch_junction_spoke_groups(graph).items():
+            names = [n.strip() for n in (group or "").split("+") if n.strip()]
+            adj = harness_graph_adj(graph_for_harness_names(graph, names))
             node_channel = {}
             for spoke in spokes:
                 key = spoke.get("key")
@@ -877,24 +928,24 @@ def block_diagram_harness_overlay_markup(
                 if channel_type:
                     break
             for idx, (a_node, b_node) in enumerate(multi_ch_junction_node_pairs(spokes, adj)):
-                instances.append(
-                    {
-                        "instance_name": f"multi-ch-junction-{jid}-{idx}",
-                        "item_type": "harness-channel",
-                        "multi_ch_junction_id": jid,
-                        "from_node_id": a_node,
-                        "to_node_id": b_node,
-                        "print_name": jid,
-                        "print_name_at_end_a": node_channel.get(a_node, ""),
-                        "print_name_at_end_b": node_channel.get(b_node, ""),
-                        "this_channel_from_channel_type": channel_type,
-                    }
-                )
+                inst = {
+                    "instance_name": f"multi-ch-junction-{jid}-{idx}",
+                    "item_type": "harness-channel",
+                    "multi_ch_junction_id": jid,
+                    "from_node_id": a_node,
+                    "to_node_id": b_node,
+                    "print_name": jid,
+                    "print_name_at_end_a": node_channel.get(a_node, ""),
+                    "print_name_at_end_b": node_channel.get(b_node, ""),
+                    "this_channel_from_channel_type": channel_type,
+                }
+                if names:
+                    inst["route_harnesses"] = names
+                instances.append(inst)
         return instances
 
     def multi_ch_junction_circuit_overlay_instances(graph, circuit_instances):
         """Per-signal junction traces: leaf→T (named ``circuit-N``) and T→T backbone."""
-        adj = harness_graph_adj(graph)
         groups = multi_ch_junction_spoke_groups(graph)
 
         by_jid_sig_node = {}
@@ -912,7 +963,9 @@ def block_diagram_harness_overlay_markup(
             by_jid_sig.setdefault((jid, sig), []).append(inst)
 
         instances = []
-        for (jid, _group), spokes in groups.items():
+        for (jid, group), spokes in groups.items():
+            names = [n.strip() for n in (group or "").split("+") if n.strip()]
+            adj = harness_graph_adj(graph_for_harness_names(graph, names))
             spoke_nodes = {s["node"] for s in spokes}
             pairs = multi_ch_junction_node_pairs(spokes, adj)
             signals = []
@@ -943,24 +996,25 @@ def block_diagram_harness_overlay_markup(
                     else:
                         inst_name = f"multi-ch-junction-{jid}-{sig}-{idx}"
                         owner = owner or sample
-                    instances.append(
-                        {
-                            "instance_name": inst_name,
-                            "item_type": "circuit",
-                            "multi_ch_junction_id": jid,
-                            "harness": owner.get("harness"),
-                            "from_node_id": a_node,
-                            "to_node_id": b_node,
-                            "print_name": f"{jid}.{sig}",
-                            "print_name_at_end_a": node_label.get(a_node, ""),
-                            "print_name_at_end_b": node_label.get(b_node, ""),
-                            "appearance": owner.get("appearance"),
-                            "signal_of_channel_type": sig,
-                            "this_channel_from_channel_type": owner.get(
-                                "this_channel_from_channel_type"
-                            ),
-                        }
-                    )
+                    inst = {
+                        "instance_name": inst_name,
+                        "item_type": "circuit",
+                        "multi_ch_junction_id": jid,
+                        "harness": owner.get("harness"),
+                        "from_node_id": a_node,
+                        "to_node_id": b_node,
+                        "print_name": f"{jid}.{sig}",
+                        "print_name_at_end_a": node_label.get(a_node, ""),
+                        "print_name_at_end_b": node_label.get(b_node, ""),
+                        "appearance": owner.get("appearance"),
+                        "signal_of_channel_type": sig,
+                        "this_channel_from_channel_type": owner.get(
+                            "this_channel_from_channel_type"
+                        ),
+                    }
+                    if names:
+                        inst["route_harnesses"] = names
+                    instances.append(inst)
         return instances
 
     instances = [
@@ -978,7 +1032,7 @@ def block_diagram_harness_overlay_markup(
         root, parent_map
     )
 
-    if not graph["segments"]:
+    if not any(seg.get("kind") != "bus" for seg in graph["segments"].values()):
         raise ValueError(
             "No harness wire segments found in the block diagram (class wire harness-wire with id)."
         )
@@ -1000,6 +1054,8 @@ def block_diagram_harness_overlay_markup(
         )
     if not overlay_instances:
         return ""
+
+    apply_overlay_route_filters(graph, overlay_instances)
 
     xs = [c["x"] for c in graph["nodes"].values()]
     ys = [c["y"] for c in graph["nodes"].values()]
@@ -2891,9 +2947,13 @@ def refresh_block_diagram_placed_symbols(svg_text):
             if local(line.tag) != "line":
                 continue
             classes = set((line.get("class") or "").split())
-            if "wire" not in classes and "harness-wire" not in classes:
+            if (
+                "wire" not in classes
+                and "harness-wire" not in classes
+                and "harness-bus" not in classes
+            ):
                 continue
-            strip_classes(line, {"wire", "harness-wire"})
+            strip_classes(line, {"wire", "harness-wire", "harness-bus"})
             for attr in ("data-from", "data-to"):
                 if attr in line.attrib:
                     del line.attrib[attr]

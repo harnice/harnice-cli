@@ -1,10 +1,12 @@
 """Orthographic line drawing of a system physical assembly.
 
 OpenCascade hidden-line removal projects each device body to its visible
-edges and silhouettes. Face photos are SVG image links on the same faces
-the physical-model viewer paints. A rectangular body fills its bounding
-box. A rack chassis back is the 17 inch panel, not the 19 inch ears. The
-PDF export embeds those links; this module leaves them as paths.
+edges and silhouettes. Each device name is drawn at the body center. The
+name is left off when half or more of that silhouette sits behind another
+body. Face photos are SVG image links on the same faces the physical-model
+viewer paints. A rectangular body fills its bounding box. A rack chassis
+back is the 17 inch panel, not the 19 inch ears. The PDF export embeds
+those links; this module leaves them as paths.
 
 ``orientation`` is a face name or a viewport rotation. ``(0, 0, 0)`` is the
 front view: look along +Y, +X to the right, +Z up. A dict or a 3-number
@@ -37,6 +39,10 @@ _NAMED_VIEWS = {
 # toward the camera so a rack rail does not draw through the gear in front of it.
 _FLUSH_MM = 0.05
 _FLUSH_STEP_MM = 0.05
+
+# A refdes is omitted when at least this fraction of the silhouette is behind
+# some other body. Coverage is the union of whatever is closer to the camera.
+_HIDDEN_LABEL_FRACTION = 0.5
 
 
 def _dot(a, b):
@@ -180,6 +186,129 @@ def _face_corners(bounds, face, angle, points=None):
         "tr": at(1.0, 1.0),
         "bl": at(-1.0, -1.0),
     }
+
+
+def _refdes_mostly_hidden(shapes, view, right, up):
+    """True for each shape when half or more of its silhouette is behind another.
+
+    Samples are taken on the view plane. A sample counts as hidden when some
+    other shape's surface is closer to the camera than this shape's own front
+    surface. Flush faces share a depth, so neither one hides the other.
+    """
+
+    def _project(point):
+        return (_dot(point, right), _dot(point, up), _dot(point, view))
+
+    def _triangles(shape):
+        from harnice.utils import step_utils
+
+        projected = []
+        try:
+            bodies = step_utils.tessellate_shape(shape, deflection_mm=1.0)
+        except Exception:
+            return []
+        for body in bodies:
+            vertices = body["vertices"]
+            indices = body["indices"]
+            for start in range(0, len(indices), 3):
+                tri = []
+                for index in indices[start:start + 3]:
+                    offset = index * 3
+                    point = (vertices[offset], vertices[offset + 1], vertices[offset + 2])
+                    tri.append(_project(point))
+                area = (
+                    (tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1])
+                    - (tri[2][0] - tri[0][0]) * (tri[1][1] - tri[0][1])
+                )
+                if abs(area) < 1e-8:
+                    continue
+                projected.append(tri)
+        return projected
+
+    def _bounds(tris):
+        umin = min(point[0] for tri in tris for point in tri)
+        umax = max(point[0] for tri in tris for point in tri)
+        vmin = min(point[1] for tri in tris for point in tri)
+        vmax = max(point[1] for tri in tris for point in tri)
+        return umin, vmin, umax, vmax
+
+    def _overlaps(a, b):
+        return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+
+    def _depth_at(tri, u, v):
+        (u1, v1, d1), (u2, v2, d2), (u3, v3, d3) = tri
+        denom = (v2 - v3) * (u1 - u3) + (u3 - u2) * (v1 - v3)
+        if abs(denom) < 1e-12:
+            return None
+        wa = ((v2 - v3) * (u - u3) + (u3 - u2) * (v - v3)) / denom
+        wb = ((v3 - v1) * (u - u3) + (u1 - u3) * (v - v3)) / denom
+        wc = 1.0 - wa - wb
+        if wa < -1e-8 or wb < -1e-8 or wc < -1e-8:
+            return None
+        return wa * d1 + wb * d2 + wc * d3
+
+    def _paint(tris, umin, vmin, pitch_u, pitch_v, width, height, buffer):
+        for tri in tris:
+            xs = [point[0] for point in tri]
+            ys = [point[1] for point in tri]
+            x0 = max(0, int((min(xs) - umin) / pitch_u))
+            x1 = min(width, int((max(xs) - umin) / pitch_u) + 1)
+            y0 = max(0, int((min(ys) - vmin) / pitch_v))
+            y1 = min(height, int((max(ys) - vmin) / pitch_v) + 1)
+            for y in range(y0, y1):
+                v = vmin + (y + 0.5) * pitch_v
+                row = y * width
+                for x in range(x0, x1):
+                    depth = _depth_at(tri, umin + (x + 0.5) * pitch_u, v)
+                    if depth is None:
+                        continue
+                    slot = row + x
+                    if depth < buffer[slot]:
+                        buffer[slot] = depth
+
+    if len(shapes) < 2:
+        return [False] * len(shapes)
+    # A hundred samples on the short side keeps a body split in half from
+    # flipping the 50% test because of a single row of pixels.
+    samples = 100
+    meshes = [_triangles(shape) for shape in shapes]
+    boxes = [_bounds(tris) if tris else None for tris in meshes]
+    hidden = []
+    untouched = float("inf")
+    for index, tris in enumerate(meshes):
+        box = boxes[index]
+        if box is None:
+            hidden.append(False)
+            continue
+        umin, vmin, umax, vmax = box
+        span_u = max(umax - umin, 1e-9)
+        span_v = max(vmax - vmin, 1e-9)
+        pitch = min(span_u, span_v) / samples
+        if max(span_u, span_v) / pitch > samples * 4:
+            pitch = max(span_u, span_v) / (samples * 4)
+        width = max(1, int(round(span_u / pitch)))
+        height = max(1, int(round(span_v / pitch)))
+        pitch_u = span_u / width
+        pitch_v = span_v / height
+        own = [untouched] * (width * height)
+        ahead = [untouched] * (width * height)
+        _paint(tris, umin, vmin, pitch_u, pitch_v, width, height, own)
+        for other_index, other_tris in enumerate(meshes):
+            if other_index == index or not other_tris:
+                continue
+            if not _overlaps(box, boxes[other_index]):
+                continue
+            _paint(other_tris, umin, vmin, pitch_u, pitch_v, width, height, ahead)
+        covered = 0
+        blocked = 0
+        for near, front in zip(own, ahead):
+            if near == untouched:
+                continue
+            covered += 1
+            if front < near - _FLUSH_MM:
+                blocked += 1
+        hidden.append(covered > 0 and blocked / covered >= _HIDDEN_LABEL_FRACTION)
+    return hidden
 
 
 def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1):
@@ -499,10 +628,13 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
     shapes = [device["shape"] for device in prepared]
     polylines = _visible_polylines(shapes, view, right)
     intersector = _load_intersector(shapes)
+    name_hidden = _refdes_mostly_hidden(shapes, view, right, up)
 
     photos = []
     labels = []
-    for device in prepared:
+    for device, skip_name in zip(prepared, name_hidden):
+        if skip_name:
+            continue
         label_at = _label_point(device["shape"], right, up)
         if device["refdes"] and label_at is not None:
             labels.append((device["refdes"], label_at))

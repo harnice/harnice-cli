@@ -1593,7 +1593,7 @@ def _free_node_distance(graph, origin_id, node_id):
         return float("inf")
 
 
-def _self_hop_outbound(graph, node_id, connector_node_ids=None):
+def _self_hop_outbound(graph, node_id, connector_node_ids=None, route_segment_ids=None):
     """One segment from a connector to the nearest free wire end.
 
     The loop turns on the free node reached in the fewest segments. Every
@@ -1605,6 +1605,8 @@ def _self_hop_outbound(graph, node_id, connector_node_ids=None):
     """
     neighbors = []
     for seg_uuid, info in (graph.get("segments") or {}).items():
+        if route_segment_ids is not None and seg_uuid not in route_segment_ids:
+            continue
         a = info.get("node_at_end_a")
         b = info.get("node_at_end_b")
         if not a or not b or a == b:
@@ -1958,7 +1960,10 @@ def draw_segments_across_paths(
 
         if from_node_id == to_node_id:
             outbound = _self_hop_outbound(
-                graph, from_node_id, connector_node_ids=connector_node_ids
+                graph,
+                from_node_id,
+                connector_node_ids=connector_node_ids,
+                route_segment_ids=instance.get("route_segment_ids"),
             )
             plan = {
                 "node": from_node_id,
@@ -2011,6 +2016,9 @@ def draw_segments_across_paths(
                 break
 
             for seg_uuid, seg_info in graph["segments"].items():
+                allowed = instance.get("route_segment_ids")
+                if allowed is not None and seg_uuid not in allowed:
+                    continue
                 node_a = seg_info["node_at_end_a"]
                 node_b = seg_info["node_at_end_b"]
                 next_node = None
@@ -2040,6 +2048,19 @@ def draw_segments_across_paths(
     # --- Phase 2: constant lateral offsets at every node ---
     # points_to_pass_through[node_id][seg_uuid][inst_name] = {'x': ..., 'y': ... (Y-flipped)}
     # lane_offsets[seg_uuid][inst_name] = signed offset used for waypoints too.
+    name_harness = {}
+    for instance in input_instances:
+        inst_name = instance.get("instance_name") or ""
+        harness_name = (instance.get("harness") or "").strip()
+        if not harness_name:
+            route_names = [
+                (n or "").strip() for n in (instance.get("route_harnesses") or []) if (n or "").strip()
+            ]
+            if len(route_names) == 1:
+                harness_name = route_names[0]
+        if inst_name:
+            name_harness[inst_name] = harness_name
+
     points_to_pass_through = {}
     lane_offsets = {}
     node_incident = {}
@@ -2093,7 +2114,18 @@ def draw_segments_across_paths(
                 seg_instances[seg_uuid] = []
                 continue
             any_trace = True
-            instances_using_segment.sort()
+            instances_using_segment.sort(
+                key=lambda name, seg_uuid=seg_uuid: (
+                    (
+                        name_harness.get(str(name).split("#", 1)[0])
+                        or name_harness.get(name)
+                        or "",
+                        name,
+                    )
+                    if (graph["segments"].get(seg_uuid) or {}).get("kind") == "bus"
+                    else (name,)
+                )
+            )
             if flip_sort.get(seg_uuid):
                 instances_using_segment = instances_using_segment[::-1]
             seg_instances[seg_uuid] = instances_using_segment

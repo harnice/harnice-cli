@@ -24,7 +24,7 @@ A record of every revision of a part, and its release status
 | `datestarted` | auto-filled to be the date when this part was first intialized |
 | `datemodified` | updates to today's date upon build |
 | `datereleased` | up to user to fill in as needed |
-| `git_hash_of_harnice_src` | auto-filled, git hash of the harnice source code during the latest build |
+| `harnice_version` | auto-filled on build: git commit when Harnice is a clone, otherwise the installed version tag |
 | `drawnby` | auto-filled, the person who created the part |
 | `checkedby` | the person who checked the part, blank ok |
 | `revisionupdates` | a brief description of the changes made to this revision |
@@ -195,7 +195,7 @@ A record of every revision of a part, and its release status
     
     - `datemodified`: Set to today's date
     - `drawnby`: Set to the current user's name
-    - `git_hash_of_harnice_src`: Set to the current git hash of the harnice source code
+    - `harnice_version`: git commit when Harnice is a clone, otherwise the installed version tag
     
     If the revision history file does not exist, the function will create it.
     If an entry with the same revision number already exists, the function will update that entry.
@@ -224,7 +224,7 @@ A record of every revision of a part, and its release status
     
     Called when the project is built (console **Build** or ``harnice -b``), not
     when the console merely mounts the project. Also refreshes ``drawnby`` and
-    ``git_hash_of_harnice_src``.
+    ``harnice_version``.
     
     **Arguments:**
     
