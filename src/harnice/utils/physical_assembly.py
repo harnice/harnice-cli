@@ -2,9 +2,13 @@
 
 Each device that still has ``instance_data/device/{refdes}/body.step`` is one
 solid in the system's ``assembly.step``. A device whose instance folder is
-gone is not a solid: its placement and mates are dropped, and the STEP file
-is rewritten so it cannot keep that model. Poses and fasten mates live in
-``physical.json``, which is the file the console edits.
+gone is not a solid, and the STEP file is rewritten so it cannot keep that
+model. A fasten that names a missing device, or a mate connector that is
+gone, stays in ``physical.json``. It is not solved. The pose of each device
+the fasten names is kept. When that refdes and mate connector are both back,
+the next sync solves the fasten and the moving device takes that pose.
+Poses and fasten mates live in ``physical.json``, which is the file the
+console edits.
 
 A pose is inches and ZYX Euler degrees, the same frame as a device mate
 connector and a harness 3D node: ``R = Rx(alpha) · Ry(beta) · Rz(gamma)``.
@@ -206,8 +210,60 @@ def _mate_index(discovered):
     return index
 
 
+def mate_solve_error(mate, discovered):
+    """Why this fasten cannot be solved yet, or ``""`` when it can.
+
+    A missing device or mate connector does not delete the fasten. The record
+    stays, and this is the flag the console shows until both ends exist again.
+    """
+    by_name = {device["refdes"]: device for device in discovered}
+    index = _mate_index(discovered)
+    problems = []
+    absent = []
+    nobody = []
+    unread = []
+    for side in (mate["a"], mate["b"]):
+        device = by_name.get(side["device"])
+        if device is None:
+            absent.append(side["device"])
+        elif not device.get("has_body"):
+            nobody.append(side["device"])
+        elif device.get("mates_error"):
+            unread.append(side["device"])
+    if len(absent) == 1:
+        problems.append(f"could not solve, device {absent[0]} not found")
+    elif len(absent) > 1:
+        problems.append("could not solve, devices " + " and ".join(absent) + " not found")
+    for name in nobody:
+        problems.append(f"could not solve, device {name} has no body")
+    for name in unread:
+        problems.append(f"could not solve, mate connectors of device {name} could not be read")
+    for side in (mate["a"], mate["b"]):
+        connectors = index.get(side["device"])
+        if connectors is None:
+            continue
+        if side["mate"] not in connectors:
+            problems.append(f"mate connector {side['mate']} of device {side['device']} not found")
+    return "; ".join(problems)
+
+
+def _devices_named_by(mates):
+    names = []
+    for mate in mates:
+        for side in (mate["a"], mate["b"]):
+            if side["device"] not in names:
+                names.append(side["device"])
+    return names
+
+
 def sanitize_mates(mates, discovered, strict=False, fixed=()):
-    """Keep fasten mates whose connectors exist. ``strict`` raises instead of dropping."""
+    """Keep fastens that are well formed. ``strict`` raises instead of dropping.
+
+    A fasten whose device or mate connector is missing is kept. It is not a
+    reason to drop the record or to reject a save. A cycle, a second fasten
+    on the same moving device, a duplicate, or a grounded moving device is
+    still dropped, or raised when ``strict`` is set.
+    """
 
     def _closes_cycle(kept, mate):
         def _reaches(graph, start, goal):
@@ -228,8 +284,6 @@ def sanitize_mates(mates, discovered, strict=False, fixed=()):
             graph.setdefault(item["b"]["device"], []).append(item["a"]["device"])
         return _reaches(graph, mate["a"]["device"], mate["b"]["device"])
 
-    index = _mate_index(discovered)
-    with_body = {device["refdes"] for device in discovered if device["has_body"]}
     fixed_names = set(fixed or ())
     kept = []
     seen_b = set()
@@ -239,15 +293,7 @@ def sanitize_mates(mates, discovered, strict=False, fixed=()):
         b = mate["b"]
         pair = (a["device"], a["mate"], b["device"], b["mate"])
         problem = ""
-        if a["device"] not in with_body or b["device"] not in with_body:
-            problem = "a mate names a device with no body"
-        elif a["device"] not in index or b["device"] not in index:
-            problem = "a mate names a device whose connectors could not be read"
-        elif a["mate"] not in index[a["device"]]:
-            problem = f"{a['device']} has no mate connector {a['mate']}"
-        elif b["mate"] not in index[b["device"]]:
-            problem = f"{b['device']} has no mate connector {b['mate']}"
-        elif b["device"] in fixed_names:
+        if b["device"] in fixed_names:
             problem = f"{b['device']} is fixed"
         elif b["device"] in seen_b:
             problem = f"{b['device']} is already held by a mate"
@@ -339,11 +385,14 @@ def apply_mates(placements, mates, discovered):
 
     The stored pose of a moving device is discarded. Its connector frame
     becomes the holding connector's frame, with no offset. ``flip`` turns
-    the target 180° about X and still leaves nothing free.
+    the target 180° about X and still leaves nothing free. A fasten that
+    cannot be solved yet is left alone, and the stored pose stays.
     """
     index = _mate_index(discovered)
     result = {name: _round_pose(placements[name]) for name in placements}
     for mate in _ordered_mates(mates):
+        if mate_solve_error(mate, discovered):
+            continue
         holder = mate["a"]["device"]
         if holder not in result:
             continue
@@ -373,6 +422,8 @@ def locked_placements(discovered, model):
     solvable = []
     placed = set(placements)
     for mate in _ordered_mates(mates):
+        if mate_solve_error(mate, discovered):
+            continue
         if mate["a"]["device"] not in placed:
             continue
         solvable.append(mate)
@@ -381,7 +432,7 @@ def locked_placements(discovered, model):
 
 
 def reconcile(discovered, saved, strict_mates=False):
-    """Drop missing devices, place new bodies, and solve mates."""
+    """Place new bodies, keep fastens that cannot be solved yet, and solve the rest."""
 
     def _models_close(a, b):
         def _poses_close(a, b):
@@ -406,15 +457,20 @@ def reconcile(discovered, saved, strict_mates=False):
 
     body_ids = [device["refdes"] for device in discovered if device["has_body"]]
     body_set = set(body_ids)
+    fixed_present = [name for name in saved["fixed"] if name in body_set]
+    mates = sanitize_mates(
+        saved["mates"], discovered, strict=strict_mates, fixed=fixed_present
+    )
+    named = set(_devices_named_by(mates))
     placements = {
         name: pose
         for name, pose in saved["placements"].items()
-        if name in body_set
+        if name in body_set or name in named
     }
     placements = place_new_devices(placements, body_ids)
-    fixed = [name for name in saved["fixed"] if name in body_set]
-    mates = sanitize_mates(saved["mates"], discovered, strict=strict_mates, fixed=fixed)
-    placements = apply_mates(placements, mates, discovered)
+    fixed = [name for name in saved["fixed"] if name in body_set or name in named]
+    solvable = [mate for mate in mates if not mate_solve_error(mate, discovered)]
+    placements = apply_mates(placements, solvable, discovered)
     model = {"placements": placements, "mates": mates, "fixed": fixed}
     return model, not _models_close(model, saved)
 
@@ -575,9 +631,19 @@ def _face_images(step_path):
     ]
 
 
+def _public_mate(mate, discovered):
+    item = {"a": mate["a"], "b": mate["b"], "flip": mate["flip"]}
+    error = mate_solve_error(mate, discovered)
+    if error:
+        item["error"] = error
+    return item
+
+
 def _public(discovered, model, step_path, step_error=""):
     held = {}
     for mate in model["mates"]:
+        if mate_solve_error(mate, discovered):
+            continue
         held[mate["b"]["device"]] = {
             "device": mate["a"]["device"],
             "mate": mate["a"]["mate"],
@@ -606,7 +672,7 @@ def _public(discovered, model, step_path, step_error=""):
         devices.append(item)
     return {
         "devices": devices,
-        "mates": model["mates"],
+        "mates": [_public_mate(mate, discovered) for mate in model["mates"]],
         "assembly_exists": bool(step_path and os.path.isfile(step_path)),
         "step_error": step_error,
     }
@@ -733,10 +799,11 @@ def _step_is_stale(step_path, discovered, body_ids):
 
 
 def sync_assembly():
-    """Drop devices with no instance data and rewrite ``assembly.step`` when it disagrees.
+    """Rewrite ``assembly.step`` when the instance-data bodies no longer match.
 
-    A device is included only while ``instance_data/device/{refdes}/body.step``
-    exists. Placements and mates for anything else are removed. The STEP file
+    A device is a solid only while ``instance_data/device/{refdes}/body.step``
+    exists. A fasten that names a missing device or mate connector stays in
+    ``physical.json``, with the pose of each device it names. The STEP file
     is rewritten when that set, or a body file, no longer matches the file on
     disk, so a deleted instance cannot leave its model behind.
     """
@@ -766,11 +833,21 @@ def save_model(data):
     json_path, step_path = _assembly_paths()
     discovered = discover()
     incoming = normalize_assembly(data)
+    previous = load_assembly(json_path)
     body_ids = [device["refdes"] for device in discovered if device["has_body"]]
     body_set = set(body_ids)
     unknown = [name for name in incoming["placements"] if name not in body_set]
     if unknown:
         raise ValueError("no body for " + ", ".join(unknown))
+    # The console only sends devices that have a body. A fasten can still
+    # name one that does not, and that pose has to survive this save.
+    named = set(_devices_named_by(incoming["mates"]))
+    for name in named:
+        if name not in incoming["placements"] and name in previous["placements"]:
+            incoming["placements"][name] = previous["placements"][name]
+    for name in previous["fixed"]:
+        if name in named and name not in body_set and name not in incoming["fixed"]:
+            incoming["fixed"].append(name)
     model, _changed = reconcile(discovered, incoming, strict_mates=True)
     save_assembly(model, json_path)
     step_error = _write_step(step_path, discovered, model["placements"])

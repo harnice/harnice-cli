@@ -238,7 +238,9 @@ These names are on the `cad` module.
 
 Open **physical model** on the system. Every placed device that has `body.step` is one solid. A device with no body is listed and left out of the assembly. Build that device, then come back.
 
-Poses, fasten mates, and grounded devices are stored in `physical.json` (`fileio.path("physical assembly")`). The page rewrites `assembly.step` (`fileio.path("assembly")`) from that file. Edit the page. Leave `assembly.step` to the page. The next time the page opens, it drops a device that no longer has a body, places a new body, solves the mates, and writes the STEP file again.
+Poses, fasten mates, and grounded devices are stored in `physical.json` (`fileio.path("physical assembly")`). The page rewrites `assembly.step` (`fileio.path("assembly")`) from that file. Edit the page. Leave `assembly.step` to the page. The next time the page opens, it leaves a device that no longer has a body out of the assembly, places a new body, solves the mates it can, and writes the STEP file again.
+
+A fasten whose device or mate connector is gone stays in `physical.json`. The list flags it `could not solve, device MIC-1 not found` or `mate connector J1 of device MIC-1 not found`. The pose of each device that fasten names is kept. When that refdes and mate connector are both back, the next open solves the fasten and the moving device takes that pose.
 
 A new body is placed 24 inches further along +X than the bodies already there.
 
