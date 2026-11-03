@@ -1,5 +1,7 @@
 ### General Signals List Rules
 
+ - A channel type is electrical information only. It must not specify a connector type. Signal names, direction, and electrical limits belong on the channel type. Connector family, gender, shell, and part number belong on `connector_id`, `device_connector_mpn`, and `harness_connector_mpn`. The same electrical channel on two different connectors is still one channel type.
+
  - Every signal in the Signals List must be contained by a pre-defined channel type
 
     ??? info "Channel Types"

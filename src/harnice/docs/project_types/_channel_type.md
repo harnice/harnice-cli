@@ -1,5 +1,11 @@
 # Channel Types
 
+A channel type is electrical information only. It records the signals on one electrical channel, the direction (`in`, `out`, or blank), optional electrical limits (voltage, current, power, level), and which other channel types that channel may connect to.
+
+A channel type must not specify a connector type. Connector family, gender, shell, insert, and part number are not channel-type fields. They belong on the device signals list (`connector_id`, `device_connector_mpn`, `harness_connector_mpn`) and on the connector part.
+
+The same electrical channel on two connectors is one channel type. Balanced mic level on an XLR and balanced mic level on a terminal block share a type. Do not add a channel type because the connector changed. Leave connector names out of `description` and `signals`. `balanced audio mic level` is a description. `XLR mic input` is a connector, so it is not a channel type.
+
 ---
 
 ## How are channels mapped?
@@ -10,7 +16,7 @@
 1. In a repository of your choice (or start with [harnice-general-library](https://github.com/harnice/harnice-general-library) on your own branch), navigate to `channel_types.tsv` at the library root
 1. If you want channel definitions to be private and are therefore working in a private repository, ensure the repo's path is listed in file `repository_locations.csv` (located at root of your harnice source code repo). The first column is the URL or traceable path, and the second column is your local path.
 1. If you find the channel_type you're looking for, temporarily note it as a touple in a notepad somewhere with format `(ch_type_id, universal_library_repository)`. 
-1. If you don't find it, make a new one. It's important to try and reduce the number of channel_types in here to reduce complexity, but it's also important that you adhere to strict and true rules about what is allowed to be mapped to what. Modifications and additions to this document should be taken and reviewed very seriously.
+1. If you don't find it, make a new one. It's important to try and reduce the number of channel_types in here to reduce complexity, but it's also important that you adhere to strict and true rules about what is allowed to be mapped to what. A new connector is not a new channel type. The row records electrical information only and must not name a connector type. Modifications and additions to this document should be taken and reviewed very seriously.
 
 Two optional columns set the default appearance. Both cells are Python dict literals, parsed with `ast.literal_eval`. Leave a cell blank to leave that default unset. Harnice reads the `channel_types.tsv` at the root of the library named by the channel type's `lib_repo`.
 

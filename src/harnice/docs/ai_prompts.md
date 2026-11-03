@@ -41,7 +41,7 @@ Paste one of these into a chatbot. The chatbot opens the raw URL in the prompt a
 
 Attach the pinout, ICD, datasheet, spreadsheet, screenshot, schematic note, vendor table, or netlist, or say where that file is. Name the channel types if you already know them. Attach `channel_types.tsv` and give the library URL, for example: `Channel types are the attached TSV. lib_repo is https://github.com/my-org/my-library.` That URL is the key in `repository_locations.csv`. The TSV does not contain it. At build time Harnice reads the channel types from the library path for that URL.
 
-The engineering decisions stay yours: which channel type to use, whether a ground is chassis, what a connector plugs into. The skill tells the model to ask, with the context in front of you, and to wait for your answer.
+The engineering decisions stay yours: which channel type to use, whether a ground is chassis, what a connector plugs into. A channel type is electrical information only. It must not specify a connector type. Name the connector on its own, as `connector_id` and the part number. The skill tells the model to ask, with the context in front of you, and to wait for your answer.
 
 <details class="prompt" markdown="1">
 <summary>Harnice device signals list</summary>

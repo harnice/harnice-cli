@@ -44,7 +44,7 @@
 
     **Channel:**
 
-    - A channel is a set of electrical signals in a device that together transmit or receive information, power, etc. They have "channel_types" which define their attributes and compatibility with other channels, and contain a list of required signals (pos, neg)
+    - A channel is a set of electrical signals in a device that together transmit or receive information, power, etc. Its channel type is electrical information only: the required signals and which other channel types it may connect to. A channel type must not specify a connector type. The connector is named separately on the signals list.
 
 
 

@@ -77,7 +77,7 @@ Raising stops the build.
 - `build_utils` — `docs/commands/_build_utils.md`
 - `system_utils` — `docs/commands/_system_utils.md`
 - `fileio`, `state`, and `cli` — `docs/commands/_manipulating_files.md`
-- `chtype` — `docs/project_types/_channel_type.md`
+- `chtype` — `docs/project_types/_channel_type.md`. A channel type is electrical information only. It must not specify a connector type. The connector is on the device signals list.
 - Shipped macros `subsystem_symbol` and `pdf_generator` — `docs/project_types/_macro.md`
 
 Do not call bundle networks, cables, build notes, part libraries, or

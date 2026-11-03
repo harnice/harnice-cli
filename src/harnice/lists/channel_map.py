@@ -54,7 +54,7 @@ PENDING_COLUMNS = [
     "to_signals",  # comma-separated, channel-type order
 ]
 
-channel_documentation_description = 'A channel is a set of electrical signals in a device that together transmit or receive information, power, etc. They have "channel_types" which define their attributes and compatibility with other channels, and contain a list of required signals (pos, neg)'
+channel_documentation_description = 'A channel is a set of electrical signals in a device that together transmit or receive information, power, etc. Its channel type is electrical information only: the required signals and which other channel types it may connect to. A channel type must not specify a connector type. The connector is named separately on the signals list.'
 
 mapped_channel_documentation_description = "A mapped channel is a connection from one channel on a device to another. They define the functional requirement of any harness, and form the basis of which circuits are generated and where they go. The channel map is the list of mapped channels (and any still-unmapped channels). The passthrough map then routes those mapped channels through passthrough devices."
 

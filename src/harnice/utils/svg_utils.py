@@ -356,10 +356,10 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
     Call as if you were appending any other element to an svg group.
 
     Spline points are a list of dictionaries with x and y coordinates. [{"x": 0, "y": 0, "tangent": 0}, {"x": 1, "y": 1, "tangent": 0}]
-    A span whose travel tangents stay within 12° of each other, or both lean off
-    the same side of the chord, is drawn as that chord. A real corner or U-turn
-    (tangents on opposite sides of the chord, bend above 12°) keeps a half-chord
-    handle along each tangent.
+    Each span is a cubic with a half-chord handle along each point's travel
+    tangent. A tangent that faces back along the chord gets no handle, so the
+    span cannot loop, and no handle reaches past the corner where the two
+    tangent lines meet.
     Plots physical geometry from an engineering appearance dict (conductor, cable,
     segment). Keys: base_color, outline_color, parallelstripe, perpstripe, slash_lines.
     Slash lines: direction, angle, step, color, slash_width_inches.
@@ -380,9 +380,8 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
         appearance_dict = parsed_appearance
 
     def cubic_controls(p0, p1):
-        # A shallow bend, or tangents that both lean off the same side of the
-        # chord, is the straight chord. A corner or U-turn keeps a half-chord
-        # handle. A tangent facing back along the chord gets no handle.
+        # Half-chord handle along each tangent. A tangent facing back along
+        # the chord gets no handle.
         x0 = p0["x"]
         y0 = p0["y"]
         x1 = p1["x"]
@@ -395,13 +394,21 @@ def draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_
         t0 = math.radians(p0.get("tangent", 0.0) or 0.0)
         t1 = math.radians(p1.get("tangent", 0.0) or 0.0)
         chord = math.atan2(dy, dx)
-        d0 = (t0 - chord + math.pi) % (2.0 * math.pi) - math.pi
-        d1 = (t1 - chord + math.pi) % (2.0 * math.pi) - math.pi
-        turn = abs((t0 - t1 + math.pi) % (2.0 * math.pi) - math.pi)
-        if d0 * d1 > 0.0 or turn <= math.radians(_TRACE_STRAIGHT_TURN_DEG):
-            return (x0 + dx * 0.5, y0 + dy * 0.5, x1 - dx * 0.5, y1 - dy * 0.5)
+        d0 = t0 - chord
+        d1 = t1 - chord
         ctrl0 = 0.0 if math.cos(d0) < -1e-6 else dist * 0.5
         ctrl1 = 0.0 if math.cos(d1) < -1e-6 else dist * 0.5
+        # Where the two tangent lines meet ahead of the span, a handle longer
+        # than the distance to that corner bulges out past the turn.
+        u0x, u0y = math.cos(t0), math.sin(t0)
+        u1x, u1y = math.cos(t1), math.sin(t1)
+        cross = u0x * u1y - u0y * u1x
+        if abs(cross) > 1e-9:
+            to_corner0 = (dx * u1y - dy * u1x) / cross
+            to_corner1 = (u0x * dy - u0y * dx) / cross
+            if to_corner0 > 1e-9 * dist and to_corner1 > 1e-9 * dist:
+                ctrl0 = min(ctrl0, to_corner0)
+                ctrl1 = min(ctrl1, to_corner1)
         return (
             x0 + math.cos(t0) * ctrl0,
             y0 + math.sin(t0) * ctrl0,
@@ -1447,7 +1454,9 @@ def _trace_group_open_tag(instance, group_opacity=None):
 
 
 # A spline span this straight is drawn as the chord (about a 1:5 slope).
-_TRACE_STRAIGHT_TURN_DEG = 12.0
+# The outermost lane on a junction or waypoint circle sits this far off the
+# wire axis: radius = half the bundle width / sin(30°).
+_TRACE_CIRCLE_FAN_HALF_ANGLE_DEG = 30.0
 
 
 def _channel_type_default_appearance(item, channel_type, signal):
@@ -1692,10 +1701,12 @@ def _reverse_trace_chain(chain):
     """Same points, opposite travel, so a lane can be the outbound leg."""
     flipped = []
     for point in reversed(chain):
+        role = {"leave": "arrive", "arrive": "leave"}.get(point.get("role"))
         flipped.append(
             {
                 **point,
                 "tangent": (point.get("tangent", 0.0) + 180.0) % 360.0,
+                "role": role,
             }
         )
     return flipped
@@ -1768,8 +1779,15 @@ def _assemble_trace_point_chain(
     path_directions,
     inst_name,
     lane_offsets=None,
+    waypoint_radius=None,
 ):
-    """Offset point chain for one already-routed path, in ``draw_styled_path`` space."""
+    """Offset point chain for one already-routed path, in ``draw_styled_path`` space.
+
+    A ``leave`` point and the ``arrive`` point after it are the two ends of one
+    straight run along the wire. ``rim`` marks a point on a junction or
+    waypoint circle rather than a flat connector cap; ``cx``/``cy`` is the
+    node or waypoint the point belongs to.
+    """
     point_chain = []
     for seg_uuid, direction in zip(path_segments, path_directions):
         seg_info = graph["segments"][seg_uuid]
@@ -1795,44 +1813,219 @@ def _assemble_trace_point_chain(
             if direction != "a_to_b":
                 offset = -offset
 
-        def append_node_contact(nid, tangent):
+        radius = (waypoint_radius or {}).get(seg_uuid, 0.0)
+        along = math.sqrt(max(radius * radius - offset * offset, 0.0))
+
+        def append_node_contact(nid, tangent, role):
             try:
                 pt = points_to_pass_through[nid][seg_uuid][inst_name]
             except KeyError:
                 return
+            node = graph["nodes"][nid]
             point_chain.append(
                 {
                     "x": pt["x"],
                     "y": pt["y"],
                     "tangent": tangent,
                     "seg_uuid": seg_uuid,
+                    "role": role,
+                    "rim": pt.get("rim", False),
+                    "cx": node["x"],
+                    "cy": -node["y"],
                 }
             )
 
-        append_node_contact(start_id, tangents[0])
+        append_node_contact(start_id, tangents[0], "leave")
         for mid_index, waypoint in enumerate(midpoints):
-            # Same lateral offset as the node contacts, so a polyline stays a
-            # parallel lane instead of diving onto the harness centerline.
-            # Two points keep each span straight through a corner.
-            for span_i, tangent in (
-                (mid_index, tangents[mid_index]),
-                (mid_index + 1, tangents[mid_index + 1]),
+            # A waypoint is a circle like a junction: the lane arrives on the
+            # rim facing the previous station and leaves on the rim facing the
+            # next, at the same lateral offset as the node contacts.
+            for span_i, step, tangent, role in (
+                (mid_index, -1.0, tangents[mid_index], "arrive"),
+                (mid_index + 1, 1.0, tangents[mid_index + 1], "leave"),
             ):
                 p0 = geom[span_i]
                 p1 = geom[min(span_i + 1, len(geom) - 1)]
                 away = math.atan2(p1["y"] - p0["y"], p1["x"] - p0["x"])
-                ox = offset * math.cos(away + math.pi / 2.0)
-                oy = offset * math.sin(away + math.pi / 2.0)
+                ox = step * along * math.cos(away) + offset * math.cos(away + math.pi / 2.0)
+                oy = step * along * math.sin(away) + offset * math.sin(away + math.pi / 2.0)
                 point_chain.append(
                     {
                         "x": waypoint["x"] + ox,
                         "y": -(waypoint["y"] + oy),
                         "tangent": tangent,
                         "seg_uuid": seg_uuid,
+                        "role": role,
+                        "rim": radius > 1e-12,
+                        "cx": waypoint["x"],
+                        "cy": -waypoint["y"],
                     }
                 )
-        append_node_contact(end_id, tangents[len(midpoints)])
+        append_node_contact(end_id, tangents[len(midpoints)], "arrive")
     return point_chain
+
+
+def _trace_turn_sharpness(before, after):
+    """0 for a lane running straight through a node, 1 for a U-turn."""
+    turn = math.radians((after.get("tangent", 0.0) - before.get("tangent", 0.0)) % 360.0)
+    return abs(math.sin(turn / 2.0))
+
+
+def _untangle_trace_circles(chain):
+    """Keep one lane moving forward where junction or waypoint circles overlap.
+
+    Each straight run (a ``leave`` point and the ``arrive`` after it) holds the
+    lane's offset between two circles. When the circles overlap, the exit from
+    the first lies past the entry onto the second, so the two swap and the run
+    holds across the overlap instead of doubling back. A swapped run stays
+    clear of both nodes, so every node along a row of overlapping circles keeps
+    room for its sweep, and a node where the lane turns gets more of that room
+    than one it runs straight through. A run that starts or ends at a connector
+    cap or at an end of the chain shrinks to that end. If a sweep through a
+    node would still double back, the shortened run next to it is dropped and
+    the two sweeps merge. The ends of the chain stay where they are.
+    """
+    chain = [dict(point) for point in chain]
+
+    i = 0
+    while i < len(chain) - 1:
+        leave = chain[i]
+        arrive = chain[i + 1]
+        if (
+            leave.get("role") != "leave"
+            or arrive.get("role") != "arrive"
+            or "cx" not in leave
+            or "cx" not in arrive
+        ):
+            i += 1
+            continue
+        x0, y0 = leave["cx"], leave["cy"]
+        length = math.hypot(arrive["cx"] - x0, arrive["cy"] - y0)
+        if length < 1e-9:
+            i += 2
+            continue
+        ux = (arrive["cx"] - x0) / length
+        uy = (arrive["cy"] - y0) / length
+        start = (leave["x"] - x0) * ux + (leave["y"] - y0) * uy
+        end = (arrive["x"] - x0) * ux + (arrive["y"] - y0) * uy
+        if end >= start - 1e-9:
+            i += 2
+            continue
+        fixed_start = i == 0 or not leave.get("rim")
+        fixed_end = i + 1 == len(chain) - 1 or not arrive.get("rim")
+        if fixed_start and fixed_end:
+            i += 2
+            continue
+        # Each node gets a quarter of the span for its sweep; where the lane
+        # turns at one end and runs straight through the other, the turn takes
+        # more of the span so it stays round.
+        turn_start = 0.0 if fixed_start else _trace_turn_sharpness(chain[i - 1], leave)
+        turn_end = 0.0 if fixed_end else _trace_turn_sharpness(arrive, chain[i + 2])
+        shift = turn_end - turn_start
+        room_start = 0.25 + 0.5 * max(-shift, 0.0) - 0.15 * max(shift, 0.0)
+        room_end = 0.25 + 0.5 * max(shift, 0.0) - 0.15 * max(-shift, 0.0)
+        lo = start if fixed_start else length * room_start
+        hi = end if fixed_end else length * (1.0 - room_end)
+        if hi < lo:
+            if fixed_start:
+                hi = lo
+            else:
+                lo = hi
+
+        def clamp(value, lo=lo, hi=hi):
+            return min(max(value, lo), hi)
+
+        # Entry onto the next circle comes before exit from this one.
+        new_start = clamp(end)
+        new_end = clamp(start)
+        ox = leave["x"] - x0 - start * ux
+        oy = leave["y"] - y0 - start * uy
+        if new_end - new_start < 1e-9:
+            if fixed_start:
+                del chain[i + 1]
+                i += 1
+            elif fixed_end:
+                del chain[i]
+                i += 1
+            else:
+                chain[i + 1] = {
+                    **arrive,
+                    "x": x0 + new_start * ux + ox,
+                    "y": y0 + new_start * uy + oy,
+                    "role": "pass",
+                    "squeezed": True,
+                }
+                del chain[i]
+                i += 1
+            continue
+        chain[i] = {
+            **leave,
+            "x": x0 + new_start * ux + ox,
+            "y": y0 + new_start * uy + oy,
+            "squeezed": True,
+        }
+        chain[i + 1] = {
+            **arrive,
+            "x": x0 + new_end * ux + ox,
+            "y": y0 + new_end * uy + oy,
+            "squeezed": True,
+        }
+        i += 2
+
+    def squeezed_run(indices):
+        last = len(chain) - 1
+        if not all(0 <= k <= last for k in indices):
+            return None
+        if not all(chain[k].get("squeezed") for k in indices):
+            return None
+        return [k for k in indices if 0 < k < last] or None
+
+    def run_ending_at(j):
+        if chain[j].get("role") == "pass":
+            return squeezed_run([j])
+        if j >= 1 and chain[j - 1].get("role") == "leave":
+            return squeezed_run([j - 1, j])
+        return None
+
+    def run_starting_at(j):
+        if chain[j].get("role") == "pass":
+            return squeezed_run([j])
+        if j + 1 < len(chain) and chain[j + 1].get("role") == "arrive":
+            return squeezed_run([j, j + 1])
+        return None
+
+    changed = True
+    while changed:
+        changed = False
+        for j in range(len(chain) - 1):
+            p = chain[j]
+            q = chain[j + 1]
+            if p.get("role") not in ("arrive", "pass"):
+                continue
+            if q.get("role") not in ("leave", "pass"):
+                continue
+            if not (p.get("rim") and q.get("rim")):
+                continue
+            vx = q["x"] - p["x"]
+            vy = q["y"] - p["y"]
+            t_in = math.radians(p.get("tangent", 0.0))
+            t_out = math.radians(q.get("tangent", 0.0))
+            back_in = vx * math.cos(t_in) + vy * math.sin(t_in) < -1e-9
+            back_out = vx * math.cos(t_out) + vy * math.sin(t_out) < -1e-9
+            if not (back_in or back_out):
+                continue
+            runs = [run_ending_at(j), run_starting_at(j + 1)]
+            if not back_in:
+                runs.reverse()
+            run = next((r for r in runs if r), None)
+            if run is None:
+                continue
+            for k in sorted(run, reverse=True):
+                del chain[k]
+            changed = True
+            break
+
+    return chain
 
 
 def draw_segments_across_paths(
@@ -1855,14 +2048,24 @@ def draw_segments_across_paths(
     at shared nodes, draws each path and its labels, and returns raw SVG markup.
 
     Junction geometry:
-        - Every node contact sits on the line through the node perpendicular to
-          its incident segment, at a fixed multiple of ``segment_spacing``. The
-          same offset is applied to interior waypoints, so each lane stays
-          parallel to its harness segment at constant spacing.
-        - At a bend or T, the path steps from one segment's offset contact to the
-          next; a shallow spline span (tangents within 12°, or both leaning off
-          the same side of the chord) is drawn as that chord so the corner does
-          not bow off the harness.
+        - Parallel lanes sit ``segment_spacing`` apart, center to center, at a
+          fixed lateral offset from the wire.
+        - A wire end (a node with one segment) is a flat cap: the lanes stop on
+          the line through the node perpendicular to the wire.
+        - Every other node, and every waypoint, is a circle centered there. Its
+          radius puts the outermost lane 30° off the wire axis
+          (``half the bundle width / sin(30°)``), sized from the widest bundle at
+          that point. A lane meets the rim where it is still at its lateral
+          offset, and the half-chord spline sweeps through the circle.
+        - Circles keep their size where they overlap. When a lane's exit from
+          one circle lies past its entry onto the next, the two are swapped so
+          the lane runs forward. Along a row of overlapping circles, each
+          swapped run stays far enough from both nodes to leave room for their
+          sweeps, with more room on the side where the lane turns. A rim point
+          past a connector cap is left out, and a short run next to a sweep
+          that would still double back is dropped so the two sweeps merge.
+        - No spline handle reaches past the corner where its two tangent lines
+          meet, so a lopsided sweep does not bulge out past the turn.
 
     Args:
         input_instances: list of instance dicts, each with:
@@ -2143,14 +2346,24 @@ def draw_segments_across_paths(
             "degree": len(node_segments),
         }
 
+    fan = math.sin(math.radians(_TRACE_CIRCLE_FAN_HALF_ANGLE_DEG))
+    seg_radius = {}
+    for info in node_incident.values():
+        for seg_uuid in info["segments"]:
+            count = len(info["seg_instances"].get(seg_uuid) or [])
+            seg_radius[seg_uuid] = max(count - 1, 0) / 2.0 * segment_spacing / fan
+
     for node_id, info in node_incident.items():
+        radius = 0.0
+        if info["degree"] >= 2:
+            radius = max(seg_radius.get(seg, 0.0) for seg in info["segments"])
         for seg_uuid in info["segments"]:
             instances_using_segment = info["seg_instances"].get(seg_uuid) or []
             if not instances_using_segment:
                 continue
-            seg_angle = info["angles"][seg_uuid]
-            perp = math.radians(seg_angle + 90.0)
-            ux, uy = math.cos(perp), math.sin(perp)
+            seg_angle = math.radians(info["angles"][seg_uuid])
+            ax, ay = math.cos(seg_angle), math.sin(seg_angle)
+            px, py = -ay, ax
             offsets = _trace_lateral_offsets(
                 len(instances_using_segment), segment_spacing
             )
@@ -2158,11 +2371,12 @@ def draw_segments_across_paths(
                 # End-a order is the a_to_b lane; b_to_a travel negates it.
                 if not info["flip_sort"].get(seg_uuid):
                     lane_offsets.setdefault(seg_uuid, {})[inst_name] = center_offset
-                x_pt = info["x"] + center_offset * ux
-                y_pt = info["y"] + center_offset * uy
+                along = math.sqrt(max(radius * radius - center_offset * center_offset, 0.0))
+                x_pt = info["x"] + along * ax + center_offset * px
+                y_pt = info["y"] + along * ay + center_offset * py
                 points_to_pass_through.setdefault(node_id, {}).setdefault(
                     seg_uuid, {}
-                )[inst_name] = {"x": x_pt, "y": -y_pt}
+                )[inst_name] = {"x": x_pt, "y": -y_pt, "rim": radius > 1e-12}
 
     inst_by_name = {inst.get("instance_name"): inst for inst in input_instances}
     junction_dots = []
@@ -2221,6 +2435,7 @@ def draw_segments_across_paths(
                     out_info.get("path_directions", []),
                     hop["out_name"],
                     lane_offsets,
+                    seg_radius,
                 )
                 back_chain = _assemble_trace_point_chain(
                     graph,
@@ -2229,6 +2444,7 @@ def draw_segments_across_paths(
                     back_info.get("path_directions", []),
                     hop["back_name"],
                     lane_offsets,
+                    seg_radius,
                 )
                 if out_chain and back_chain:
                     # Joining the lanes with their own tangents is the U at the
@@ -2266,11 +2482,14 @@ def draw_segments_across_paths(
                 path_directions,
                 inst_name,
                 lane_offsets,
+                seg_radius,
             )
 
         if not point_chain:
             cli.warn(f"empty chain for '{inst_name}'")
             continue
+
+        point_chain = _untangle_trace_circles(point_chain)
 
         if endpoint_contacts is not None and hop is not None:
             contacts = endpoint_contacts.setdefault(inst_name, {})

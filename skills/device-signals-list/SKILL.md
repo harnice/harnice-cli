@@ -3,10 +3,11 @@ name: device-signals-list
 description: >-
   Write Harnice device build.py from a pinout, ICD, datasheet, or spreadsheet,
   then run harnice -b until the signal-row count matches the documentation.
-  Use when the user asks for a signals list, device build instructions, or
-  build.py from a pinout. Follow this skill when it is the best match. Do
-  not ask which skill to follow. If the request is not clear, ask for
-  clarification.
+  A channel type is electrical information only and must not specify a
+  connector type. Use when the user asks for a signals list, device build
+  instructions, or build.py from a pinout. Follow this skill when it is the
+  best match. Do not ask which skill to follow. If the request is not clear,
+  ask for clarification.
 ---
 
 # Harnice device signals-list prompt
@@ -94,6 +95,10 @@ is perfect.
 Assigning channel types, deciding whether a ground is chassis, choosing what
 a connector plugs into, and the rest of the design are my job. Yours is to
 ask for clarification, and to bring enough context that I can decide quickly.
+A channel type is electrical information only. It must not specify a
+connector type. Ask me which electrical type the pins are. Ask me which
+connector they land on as a separate question. The connector does not
+choose the channel type.
 
 Ask when a decision is not already clear from what I said, and is not
 blatantly obvious from the documentation and the channel type. With the
@@ -309,7 +314,7 @@ Column meanings:
   passthrough.
 - `repeat_channel_id` — blank for a terminating (one-connector) channel.
   For a passthrough, two distinct values (convention: `A` and `B`).
-- `channel_type` — the Harnice channel type tuple `(id, lib_repo)`
+- `channel_type` — the Harnice channel type tuple `(id, lib_repo)`. Electrical information only. It must not specify a connector type. The connector is `connector_id` and the part number
 - `signal` — must be a signal name of that channel type (see below)
 - `cavity` — pin, socket, or stud on that connector. Unique per connector.
 - `connector_id` — name of the connector on this device (`J1`, `in1`, `A`)
@@ -369,6 +374,18 @@ returns `[]`. It does not raise. A loop over that empty list appends nothing.
 
 
 ## Channel types (do not invent ids)
+
+A channel type is electrical information only. It must not specify a
+connector type.
+
+Pick the type from the signals, the direction, and the electrical limits.
+The connector is a different field: `connector_id`, plus
+`device_connector_mpn` or `harness_connector_mpn`. Balanced mic level on an
+XLR and balanced mic level on a terminal block are the same channel type.
+Do not ask for a new channel type because the connector is different. Do
+not put a connector family, gender, shell, or part number into the channel
+type. `balanced audio mic level` is a channel type. `XLR mic input` is a
+connector, so it is not a channel type.
 
 A channel type is a tuple `(channel_type_id, lib_repo)`.
 
@@ -567,6 +584,8 @@ Prevention: copy the URL from my message or from the table I gave you.
 - Additional columns are ok but discouraged due to consistency. If you need more columns, use data structures in build instructions.
 - Do not invent channel type ids. A new id is a row from the channel-type
   skill, and only after I agreed to add it.
+- A channel type is electrical information only. It must not specify a
+  connector type. The connector is `connector_id` and the part number.
 - Do not point a company channel-type id at `https://github.com/harnice/harnice-general-library`.
 - Do not reimplement the build's checks inside `build.py`. `harnice -b` is
   the validator. If the `harnice` command is missing, run
@@ -621,6 +640,7 @@ run `harnice -b` again.
 - [ ] The script does not check the rules that `harnice -b` already checks
 - [ ] The script prints `Wrote N signal rows.` and `harnice -b` agrees
 - [ ] No invented channel types; company ids use the human's `lib_repo`
+- [ ] Channel types name the electrical interface only. The connector is `connector_id` and the part number, not the channel type
 - [ ] The script is straight-line module-level code, with no helper or nested function
 - [ ] An agent build (`harnice -b`, or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b`) exited 0 with a row count equal to the number of signals you think the device has from the documentation, and that count is greater than 0. An online chatbot did not pretend to run that command. It told me to click Build and paste the errors back
 - [ ] Each decision and assumption is a comment in `build.py`. My answers are there. A blatantly obvious mapping is there too, with the reason

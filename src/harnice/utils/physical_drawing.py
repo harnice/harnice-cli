@@ -4,7 +4,8 @@ OpenCascade hidden-line removal projects each device body to its visible
 edges and silhouettes. Each device name is drawn at the body center. The
 name is left off when half or more of that silhouette sits behind another
 body. Face photos are SVG image links on the same faces the physical-model
-viewer paints. A rectangular body fills its bounding box. A rack chassis
+viewer paints, drawn from farthest to nearest so a closer screenshot covers
+one behind it. A rectangular body fills its bounding box. A rack chassis
 back is the 17 inch panel, not the 19 inch ears. The PDF export embeds
 those links; this module leaves them as paths.
 
@@ -645,6 +646,13 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
             if not _photo_in_front(photo, view, intersector):
                 continue
             photos.append(photo)
+
+    def _photo_depth(photo):
+        # ``view`` points into the scene, so a larger value is farther away.
+        center = tuple((photo["tr"][i] + photo["bl"][i]) / 2.0 for i in range(3))
+        return _dot(center, view)
+
+    photos.sort(key=_photo_depth, reverse=True)
 
     points = [point for line in polylines for point in line]
     points.extend(label[1] for label in labels)

@@ -1,1 +1,1 @@
-Touple `(x, y)` where x is the channel id within a library repo and y is the traceable name or url where that channel type library is defined
+Tuple `(channel_type_id, lib_repo)`, where `channel_type_id` is the id in that library's `channel_types.tsv` and `lib_repo` is the library URL. A channel type is electrical information only (signals, direction, limits, and compatible types). It must not specify a connector type. The connector is `connector_id` and the part number on the signals list.

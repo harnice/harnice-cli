@@ -386,14 +386,24 @@
     at shared nodes, draws each path and its labels, and returns raw SVG markup.
     
     Junction geometry:
-        - Every node contact sits on the line through the node perpendicular to
-          its incident segment, at a fixed multiple of ``segment_spacing``. The
-          same offset is applied to interior waypoints, so each lane stays
-          parallel to its harness segment at constant spacing.
-        - At a bend or T, the path steps from one segment's offset contact to the
-          next; a shallow spline span (tangents within 12°, or both leaning off
-          the same side of the chord) is drawn as that chord so the corner does
-          not bow off the harness.
+        - Parallel lanes sit ``segment_spacing`` apart, center to center, at a
+          fixed lateral offset from the wire.
+        - A wire end (a node with one segment) is a flat cap: the lanes stop on
+          the line through the node perpendicular to the wire.
+        - Every other node, and every waypoint, is a circle centered there. Its
+          radius puts the outermost lane 30° off the wire axis
+          (``half the bundle width / sin(30°)``), sized from the widest bundle at
+          that point. A lane meets the rim where it is still at its lateral
+          offset, and the half-chord spline sweeps through the circle.
+        - Circles keep their size where they overlap. When a lane's exit from
+          one circle lies past its entry onto the next, the two are swapped so
+          the lane runs forward. Along a row of overlapping circles, each
+          swapped run stays far enough from both nodes to leave room for their
+          sweeps, with more room on the side where the lane turns. A rim point
+          past a connector cap is left out, and a short run next to a sweep
+          that would still double back is dropped so the two sweeps merge.
+        - No spline handle reaches past the corner where its two tangent lines
+          meet, so a lopsided sweep does not bulge out past the turn.
     
     Args:
         input_instances: list of instance dicts, each with:
@@ -475,10 +485,10 @@
     Call as if you were appending any other element to an svg group.
     
     Spline points are a list of dictionaries with x and y coordinates. [{"x": 0, "y": 0, "tangent": 0}, {"x": 1, "y": 1, "tangent": 0}]
-    A span whose travel tangents stay within 12° of each other, or both lean off
-    the same side of the chord, is drawn as that chord. A real corner or U-turn
-    (tangents on opposite sides of the chord, bend above 12°) keeps a half-chord
-    handle along each tangent.
+    Each span is a cubic with a half-chord handle along each point's travel
+    tangent. A tangent that faces back along the chord gets no handle, so the
+    span cannot loop, and no handle reaches past the corner where the two
+    tangent lines meet.
     Plots physical geometry from an engineering appearance dict (conductor, cable,
     segment). Keys: base_color, outline_color, parallelstripe, perpstripe, slash_lines.
     Slash lines: direction, angle, step, color, slash_width_inches.

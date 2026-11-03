@@ -11,7 +11,7 @@ To generate `build.py` from a pinout, ICD, datasheet, or spreadsheet, paste the 
 `    "out": (4, "https://github.com/harnice/harnice-general-library"),`
 `    "chassis": (5, "https://github.com/harnice/harnice-general-library")`
 `}`
-    1. Define your pinouts. Default convention is this dictionary, where if you reference something like `xlr_pinout.pos`, this dictionary should return the cavity name. Reminder: channels do not contain information about pinouts or connectors so this has to be done at each device. If you use the same pinout across multiple devices, you may consider importing that definition from a python library elsewhere.
+    1. Define your pinouts. Default convention is this dictionary, where if you reference something like `xlr_pinout.pos`, this dictionary should return the cavity name. A channel type is electrical information only and must not specify a connector type, a pinout, or a part number. Put the cavity map and the connector part number on the device. The same electrical channel on two connectors still uses one channel type. If you use the same pinout across multiple devices, you may consider importing that definition from a python library elsewhere.
 `xlr_pinout = {`
 `    "pos": 2,`
 `    "neg": 3,`

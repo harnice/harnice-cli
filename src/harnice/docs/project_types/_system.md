@@ -103,7 +103,7 @@ circuits_list.new()
 
 ### Concepts
 
-**Channel.** A channel is one logical link on a device—audio in, power, differential pair, etc. Its **channel type** (from the channel-types library) defines required signals and which other types it may mate with. See channel types documentation for compatibility rules.
+**Channel.** A channel is one logical link on a device—audio in, power, differential pair, etc. Its **channel type** (from the channel-types library) is electrical information only: required signals, direction, limits, and which other types it may mate with. A channel type must not specify a connector type. The connector is `connector_id` and the part number on the signals list. See channel types documentation for compatibility rules.
 
 **Channel endpoint.** One complete instance of a channel on one connector (`channel_id` + `channel_type` + `connector_id`, plus `repeat_channel_id` when that channel has two faces).
 

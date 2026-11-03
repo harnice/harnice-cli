@@ -2,11 +2,12 @@
 name: channel-type
 description: >-
   Add one row to a Harnice library channel_types.tsv when a device signals
-  list needs a channel type that is not already in the table. Use when the
-  user agrees to add a channel type, or asks for a new channel type id,
-  signals column, or compatible mate. Follow this skill when it is the best
-  match. Do not ask which skill to follow. If the request is not clear, ask
-  for clarification.
+  list needs a channel type that is not already in the table. A channel type
+  is electrical information only and must not specify a connector type. Use
+  when the user agrees to add a channel type, or asks for a new channel type
+  id, signals column, or compatible mate. Follow this skill when it is the
+  best match. Do not ask which skill to follow. If the request is not clear,
+  ask for clarification.
 ---
 
 # Harnice channel-type skill
@@ -29,6 +30,27 @@ https://github.com/harnice/harnice-cli, at `src/harnice/docs/`. Start with
 internet.
 
 
+## A channel type is electrical only
+
+A channel type must not specify a connector type. It records electrical
+information only:
+
+- signal names
+- direction: `in`, `out`, or blank
+- electrical limits, when I gave them (voltage, current, power, level)
+- which other channel types it may connect to
+
+Connector family, gender, shell, insert, and part number are not channel-type
+fields. They belong on the device signals list (`connector_id`,
+`device_connector_mpn`, `harness_connector_mpn`) and on the connector part.
+
+The same signals, direction, and limits on two connectors are one channel
+type. Do not add a row because the connector changed. Do not put a connector
+name in `description` or `signals`. `balanced audio mic level` is a
+description. `XLR mic input`, `RJ45`, `USB-C`, `D-sub`, `speakON`, `male`,
+and `female` are connector words, so they stay out of the row.
+
+
 ## Look before you add
 
 A channel type is a tuple `(channel_type_id, lib_repo)`.
@@ -39,9 +61,10 @@ the root of that library. Harnice finds the checkout through
 is the local path. If that URL is not in the CSV, stop and ask. Do not guess
 the path.
 
-Search that file for a row with the same signal names and the same
-direction. If one exists, tell me its id and stop. Do not add a second name
-for a type the file already has.
+Search that file for a row with the same signal names, the same
+direction, and the same electrical limits. If one exists, tell me its id and
+stop. A different connector is not a different channel type. Do not add a
+second name for a type the file already has.
 
 Do not edit the public general library unless I said this type belongs
 there. Its files live in `harnice-general-library/` in the Harnice source
@@ -59,7 +82,8 @@ Ask only for what this conversation does not already say:
 - direction: `in` for a load or input, `out` for a source or output, blank
   for chassis
 - the mate: an existing id in this file, or none yet
-- a description in the same voice as the rows around it
+- a description of the electrical interface, in the same voice as the rows
+  around it. The description must not name a connector type
 
 One new type per agreement. If the mate also does not exist, ask before you
 add a second row.

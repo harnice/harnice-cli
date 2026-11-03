@@ -15,7 +15,7 @@ Signals lists are usually repetative, long, and deterministic. Harnice helps you
 |--------|-------------|
 | `channel_id` | the channel this row belongs to; the same id on every signal of that channel |
 | `repeat_channel_id` | which endpoint, when the channel is a passthrough with two ends; the two repeats must differ; blank when the channel has one endpoint |
-| `channel_type` | channel type string; every signal name it declares must be appended for this endpoint, and the string must parse as a channel type |
+| `channel_type` | electrical information only (signals, direction, limits). Must not specify a connector type. Every signal name it declares must be appended for this endpoint, and the string must parse as a channel type |
 | `signal` | signal name; one of the names declared by channel_type |
 | `cavity` | pin, socket, or stud this signal uses on its connector; required, and unique on that connector |
 | `connector_id` | the connector that holds this signal; every signal of one endpoint uses the same connector |
@@ -57,7 +57,7 @@ Signals lists are usually repetative, long, and deterministic. Harnice helps you
     
     **Args:**
     - `channel_id`: Channel this row belongs to. Use the same id on every signal of that channel.
-    - `channel_type`: Channel type string. Every signal name it declares must be appended for this endpoint, and the string must parse as a channel type.
+    - `channel_type`: Channel type string. Electrical information only (signals, direction, limits). It must not specify a connector type. Every signal name it declares must be appended for this endpoint, and the string must parse as a channel type.
     - `signal`: Signal name. It must be one of the names declared by ``channel_type``.
     - `cavity`: Pin, socket, or stud this signal uses on its connector. Required, and unique on that connector.
     - `connector_id`: Connector that holds this signal. Every signal of one endpoint must use the same connector.
