@@ -445,16 +445,45 @@ def boolean_subtract(tools, targets):
 
 
 def attach_png(model, uuid, filepath, orientation):
-    """Store an image path and an orientation, in degrees, on a surface."""
+    """Store an image path and an orientation, in degrees, on a surface.
+
+    A ``body_images`` file that is not beside the revision is taken from
+    ``lib/<rev>/body_images``. A system import leaves the pictures there.
+    The link written into the STEP file is relative to the revision when
+    the picture is inside it.
+    """
     if uuid not in model.surfaces:
         raise ValueError(f"no surface {uuid}")
     if not isinstance(filepath, str) or not filepath.strip():
         raise ValueError("filepath must be a path")
-    if "\n" in filepath or "*/" in filepath or " " in filepath:
+    requested = filepath.strip()
+    if "\n" in requested or "*/" in requested:
         raise ValueError("image path cannot be stored in a STEP file")
-    filepath = filepath.strip()
+    filepath = requested
     if not os.path.isfile(filepath):
-        raise ValueError(f"image was not found: {filepath}")
+        parent = os.path.dirname(filepath)
+        name = os.path.basename(filepath)
+        lib = os.path.join(os.path.dirname(parent), "lib")
+        if name and os.path.basename(parent) == "body_images" and os.path.isdir(lib):
+            for rev_name in sorted(os.listdir(lib)):
+                candidate = os.path.join(lib, rev_name, "body_images", name)
+                if os.path.isfile(candidate):
+                    filepath = candidate
+    if not os.path.isfile(filepath):
+        raise ValueError(f"image was not found: {requested}")
+    absolute = os.path.realpath(filepath)
+    stored = absolute.replace(os.sep, "/")
+    from harnice import fileio
+
+    rev = os.path.realpath(fileio.rev_directory())
+    try:
+        inside = os.path.commonpath([absolute, rev]) == rev
+    except ValueError:
+        inside = False
+    if inside:
+        stored = os.path.relpath(absolute, rev).replace(os.sep, "/")
+    if "\n" in stored or "*/" in stored or " " in stored:
+        raise ValueError("image path cannot be stored in a STEP file")
     if isinstance(orientation, bool) or not isinstance(orientation, (int, float)):
         raise ValueError("orientation must be a number of degrees")
     angle = float(orientation)
