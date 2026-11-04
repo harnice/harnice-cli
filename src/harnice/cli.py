@@ -305,9 +305,52 @@ def _require_desktop():
         raise
 
 
+def _require_window():
+    """pywebview has to be installed for the Python that is running now.
+
+    The packaged app carries its own copy. A clone does not. ``pip`` on
+    Windows often installs into a different Python than ``python`` or
+    ``python3``, and the failure otherwise shows up later as a missing
+    ``webview`` module.
+    """
+    from harnice.runtime import is_standalone_app, source_checkout_root
+
+    if is_standalone_app():
+        return
+    try:
+        import webview  # noqa: F401
+    except ModuleNotFoundError:
+        pass
+    else:
+        return
+    exe = sys.executable
+    folder = source_checkout_root() / "serve_console"
+    if (folder / "pyproject.toml").is_file():
+        target = str(folder)
+    else:
+        target = ""
+    if sys.platform == "win32":
+        command = f'& "{exe}" -m pip install '
+    else:
+        command = f'"{exe}" -m pip install '
+    if target:
+        command += f'-e "{target}"'
+    else:
+        command += "pywebview"
+    fatal(
+        "This Python does not have pywebview, so the console window cannot open.\n"
+        f"{exe}\n"
+        "The installed Harnice app has its own copy. Install into this Python, "
+        "not a different pip:\n"
+        f"{command}"
+    )
+
+
 def _run_console(open_browser=False):
     """Launch the Harnice console (can be run from any directory)."""
     _require_desktop()
+    if not open_browser:
+        _require_window()
     from harnice.runtime import apply_source_checkout_env
 
     apply_source_checkout_env()

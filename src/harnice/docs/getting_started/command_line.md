@@ -1,6 +1,6 @@
 # Harnice command line
 
-The `harnice` command builds a project from a terminal. It runs the same build as **Build** in the desktop app. You need Python 3.8 or newer.
+The `harnice` command builds a project from a terminal. It runs the same build as **Build** in the desktop app. You need Python 3.10 or newer.
 
 ## :material-download: Install
 

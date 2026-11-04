@@ -210,6 +210,10 @@ def build():
     library_history.new()
     instances_list.new()
 
+    # data-update-refdes is the name to apply. Move the instance folder and
+    # physical.json keys onto it, and rewrite the diagram id, before pull.
+    system_utils.apply_staged_instance_renames()
+
     # export bom and pull device/harness library files into instance_data
     # and the instances list (circuit-derived instances come later via
     # create_instances_from_circuits_list)

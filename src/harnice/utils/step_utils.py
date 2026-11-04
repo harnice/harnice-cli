@@ -54,8 +54,19 @@ def ocp_unavailable_message(exc):
     detail = str(exc).strip() if exc is not None else ""
     message = "OpenCascade failed to load, so STEP files cannot be read or written."
     if detail:
-        return f"{message} {detail}"
-    return message
+        message = f"{message} {detail}"
+    if exc is not None and "No module named" not in detail:
+        return message
+    exe = sys.executable
+    if sys.platform == "win32":
+        command = f'& "{exe}" -m pip install "cadquery-ocp>=7.8.1.1,<8"'
+    else:
+        command = f'"{exe}" -m pip install "cadquery-ocp>=7.8.1.1,<8"'
+    return (
+        f"{message}\n"
+        "Install OpenCascade into this Python, not a different pip:\n"
+        f"{command}"
+    )
 
 
 @contextmanager

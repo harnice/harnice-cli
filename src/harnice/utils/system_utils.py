@@ -48,6 +48,449 @@ def _component_kind(class_attr):
     return None
 
 
+def apply_staged_instance_renames():
+    """Move instance data onto a refdes stored beside the current name.
+
+    The block-diagram editor leaves a device or subsystem group id as the
+    current name and stores the replacement in ``data-update-refdes``.
+    An empty attribute does not rename. Call this at the start of a system
+    build, before library parts are pulled. Each pair renames
+    ``instance_data/{device|system}/{current}`` onto that new name, rewrites
+    ``{current}-contents-start`` / ``{current}-contents-end`` in the folder's
+    editable SVGs and on the diagram, updates ``physical.json`` placements,
+    fixed devices, and mate devices, then sets the group id to the new name.
+    The attribute is removed once that is done, or when there was no folder
+    to move.
+
+    A destination that is still another instance's refdes, or a folder that
+    is not itself being renamed, stops that pair. The trees are not merged,
+    and the attribute stays for the next build. Harness markers are left
+    alone. Text in ``build.py`` is not rewritten. A name
+    ``physical_assembly`` would reject as a folder is left staged.
+
+    **Returns:**
+    - `list[tuple[str, str, str]]`: ``(item_type, from_name, to_name)`` for
+      pairs that were applied, in diagram order. Empty when nothing was staged.
+    """
+    attr_name = "data-update-refdes"
+    parked_suffix = ".__harnice_rename__"
+
+    from harnice.utils import physical_assembly
+
+    def name_ok(name):
+        if not physical_assembly._safe_refdes(name):
+            return False
+        if name.endswith(parked_suffix):
+            return False
+        return True
+
+    def is_real_dir(path):
+        if os.path.islink(path):
+            return False
+        return os.path.isdir(path)
+
+    bd_path = fileio.path("block diagram")
+    if not os.path.isfile(bd_path):
+        return []
+    with open(bd_path, "r", encoding="utf-8") as handle:
+        svg_text = handle.read()
+    try:
+        root = block_diagram_utils._parse_block_diagram_svg_string(svg_text).getroot()
+    except ET.ParseError as exc:
+        cli.warn(f"staged instance rename skipped: block diagram could not be read ({exc})")
+        return []
+
+    parent_map = block_diagram_utils._svg_build_parent_map(root)
+    local = block_diagram_utils._svg_local_tag
+    live_ids = set()
+    pairs = []
+    redundant = []
+    for el in root.iter():
+        if local(el.tag) != "g":
+            continue
+        parent = parent_map.get(el)
+        if parent is None or (parent.get("id") or "") not in block_diagram_utils._SVG_DEVICES_PARENT_GROUP_IDS:
+            continue
+        kind = _component_kind(el.get("class"))
+        if kind not in ("device", "subsystem"):
+            continue
+        if el.get("data-harnice-gui-temp-place") == "1":
+            continue
+        refdes = block_diagram_utils._refdes_from_device_group(el)
+        if not refdes:
+            continue
+        item_type = "system" if kind == "subsystem" else "device"
+        live_ids.add(refdes)
+        update = el.get(attr_name) or ""
+        if not update:
+            continue
+        if update == refdes:
+            redundant.append(refdes)
+            continue
+        pairs.append({
+            "item_type": item_type,
+            "from": refdes,
+            "to": update,
+        })
+
+    if not pairs and not redundant:
+        return []
+
+    from_counts = {}
+    to_counts = {}
+    for pair in pairs:
+        from_counts[pair["from"]] = from_counts.get(pair["from"], 0) + 1
+        to_counts[pair["to"]] = to_counts.get(pair["to"], 0) + 1
+
+    candidates = []
+    for pair in pairs:
+        src = pair["from"]
+        dst = pair["to"]
+        label = f"{pair['item_type']}/{src} → {dst}"
+        if not name_ok(src) or not name_ok(dst):
+            cli.warn(f"staged rename {label} skipped: name cannot be a folder")
+            continue
+        candidates.append(pair)
+    moving = {pair["from"] for pair in candidates}
+    usable = []
+    for pair in candidates:
+        src = pair["from"]
+        dst = pair["to"]
+        label = f"{pair['item_type']}/{src} → {dst}"
+        if dst in live_ids and dst not in moving:
+            cli.warn(f"staged rename {label} skipped: {dst} is still a refdes")
+            continue
+        if from_counts[src] > 1 or to_counts[dst] > 1:
+            cli.warn(f"staged rename {label} skipped: that name is staged more than once")
+            continue
+        usable.append(pair)
+
+    instance_root = fileio.dirpath("instance_data")
+    by_type = {}
+    for pair in usable:
+        by_type.setdefault(pair["item_type"], []).append(pair)
+
+    applied = []
+    for item_type, type_pairs in by_type.items():
+        type_dir = os.path.join(instance_root, item_type)
+
+        def folder(name, type_dir=type_dir):
+            return os.path.join(type_dir, name)
+
+        if is_real_dir(type_dir):
+            by_dest = {}
+            for pair in type_pairs:
+                by_dest.setdefault(pair["to"], []).append(pair["from"])
+            for pair in type_pairs:
+                parked_name = pair["from"] + parked_suffix
+                parked_path = folder(parked_name)
+                src_path = folder(pair["from"])
+                if not is_real_dir(parked_path):
+                    continue
+                if not is_real_dir(src_path):
+                    os.rename(parked_path, src_path)
+                    print(
+                        "Harnice: restored parked instance data "
+                        + item_type + "/" + parked_name
+                    )
+                    continue
+                owner = None
+                for claimant in by_dest.get(pair["from"], []):
+                    if not is_real_dir(folder(claimant)):
+                        owner = claimant
+                        break
+                if owner is None:
+                    cli.warn(
+                        "staged rename left parked instance data "
+                        + item_type + "/" + parked_name
+                    )
+                    continue
+                os.rename(src_path, folder(owner))
+                os.rename(parked_path, src_path)
+                print(
+                    "Harnice: restored parked instance data "
+                    + item_type + "/" + parked_name
+                )
+
+        planned = {}
+        missing = []
+        skipped = set()
+        for pair in type_pairs:
+            src_path = folder(pair["from"])
+            if os.path.islink(src_path):
+                cli.warn(
+                    f"staged rename {item_type}/{pair['from']} → {pair['to']} "
+                    "skipped: instance folder is a link"
+                )
+                skipped.add(pair["from"])
+                continue
+            if is_real_dir(src_path):
+                planned[pair["from"]] = pair["to"]
+            else:
+                missing.append(pair)
+
+        changed = True
+        while changed:
+            changed = False
+            for src in list(planned):
+                dst = planned[src]
+                if is_real_dir(folder(dst)) and dst not in planned:
+                    cli.warn(
+                        f"staged rename {item_type}/{src} → {dst} skipped: "
+                        f"{item_type}/{dst} already exists"
+                    )
+                    del planned[src]
+                    skipped.add(src)
+                    changed = True
+
+        done = set()
+
+        def rename_folder(src, dst):
+            os.rename(folder(src), folder(dst))
+            done.add(src)
+            print(f"Harnice: renamed instance data {item_type}/{src} to {item_type}/{dst}")
+
+        guard = 0
+        while planned:
+            guard += 1
+            if guard > len(type_pairs) + 2:
+                for src, dst in list(planned.items()):
+                    cli.warn(
+                        f"staged rename {item_type}/{src} → {dst} skipped: "
+                        "folders could not be rearranged"
+                    )
+                    skipped.add(src)
+                planned.clear()
+                break
+            ready = [
+                src for src, dst in planned.items()
+                if not os.path.lexists(folder(dst))
+            ]
+            if ready:
+                for src in sorted(ready):
+                    rename_folder(src, planned.pop(src))
+                continue
+            start = sorted(planned)[0]
+            cycle = []
+            seen = set()
+            cursor = start
+            while cursor in planned and cursor not in seen:
+                seen.add(cursor)
+                cycle.append(cursor)
+                cursor = planned[cursor]
+            if cursor != start or len(cycle) < 2:
+                for src, dst in list(planned.items()):
+                    cli.warn(
+                        f"staged rename {item_type}/{src} → {dst} skipped: "
+                        "folders could not be rearranged"
+                    )
+                    skipped.add(src)
+                planned.clear()
+                break
+            parked_name = cycle[0] + parked_suffix
+            if os.path.lexists(folder(parked_name)):
+                for src in cycle:
+                    dst = planned[src]
+                    cli.warn(
+                        f"staged rename {item_type}/{src} → {dst} skipped: "
+                        f"{item_type}/{parked_name} already exists"
+                    )
+                    skipped.add(src)
+                    del planned[src]
+                continue
+            parked_src = cycle[0]
+            parked_dst = planned.pop(parked_src)
+            os.rename(folder(parked_src), folder(parked_name))
+            rest = {}
+            for src in cycle:
+                if src == parked_src:
+                    continue
+                rest[src] = planned.pop(src)
+            while rest:
+                rest_ready = [
+                    src for src, dst in rest.items()
+                    if not os.path.lexists(folder(dst))
+                ]
+                if not rest_ready:
+                    break
+                for src in sorted(rest_ready):
+                    rename_folder(src, rest.pop(src))
+            if rest or os.path.lexists(folder(parked_dst)):
+                if not os.path.lexists(folder(parked_src)):
+                    os.rename(folder(parked_name), folder(parked_src))
+                cli.warn(
+                    f"staged rename {item_type}/{parked_src} → {parked_dst} skipped: "
+                    "folders could not be rearranged"
+                )
+                skipped.add(parked_src)
+                for src in rest:
+                    skipped.add(src)
+                continue
+            os.rename(folder(parked_name), folder(parked_dst))
+            done.add(parked_src)
+            print(
+                f"Harnice: renamed instance data {item_type}/{parked_src} "
+                f"to {item_type}/{parked_dst}"
+            )
+
+        kept = set()
+        for pair in type_pairs:
+            if pair["from"] in done:
+                continue
+            if is_real_dir(folder(pair["from"])):
+                kept.add(pair["from"])
+        for pair in type_pairs:
+            if pair["from"] in skipped:
+                continue
+            if pair["from"] in done:
+                applied.append(pair)
+                continue
+            if pair not in missing:
+                continue
+            dest_exists = is_real_dir(folder(pair["to"]))
+            if dest_exists and pair["to"] in kept:
+                cli.warn(
+                    f"staged rename {item_type}/{pair['from']} → {pair['to']} skipped: "
+                    f"{item_type}/{pair['to']} already exists"
+                )
+                continue
+            applied.append(pair)
+
+    def rewrite_symbol_ids(folder, src, dst):
+        if not is_real_dir(folder):
+            return
+        start_re = re.compile(
+            r"(?<![A-Za-z0-9_.:-])"
+            + re.escape(src + "-contents-start")
+            + r"(?![A-Za-z0-9_.:-])"
+        )
+        end_re = re.compile(
+            r"(?<![A-Za-z0-9_.:-])"
+            + re.escape(src + "-contents-end")
+            + r"(?![A-Za-z0-9_.:-])"
+        )
+        new_start = dst + "-contents-start"
+        new_end = dst + "-contents-end"
+        for dirpath, dirnames, filenames in os.walk(folder):
+            dirnames[:] = [
+                name for name in dirnames
+                if name not in ("lib", "instance_data", "__pycache__")
+            ]
+            for filename in filenames:
+                if not filename.endswith(".svg"):
+                    continue
+                path = os.path.join(dirpath, filename)
+                if os.path.islink(path):
+                    continue
+                with open(path, "r", encoding="utf-8") as handle:
+                    file_text = handle.read()
+                updated = end_re.sub(new_end, start_re.sub(new_start, file_text))
+                if updated != file_text:
+                    fileio.atomic_write_text(path, updated)
+
+    for pair in applied:
+        rewrite_symbol_ids(
+            os.path.join(instance_root, pair["item_type"], pair["to"]),
+            pair["from"],
+            pair["to"],
+        )
+
+    applied_map = {pair["from"]: pair["to"] for pair in applied}
+    json_path = fileio.path("physical assembly")
+    if applied_map and os.path.isfile(json_path):
+        model = physical_assembly.load_assembly(json_path)
+        placements = {}
+        for name, pose in model["placements"].items():
+            dest = applied_map.get(name, name)
+            if (
+                dest != name
+                and dest in model["placements"]
+                and dest not in applied_map
+            ):
+                cli.warn(
+                    f"physical.json pose for {dest} replaced by renamed {name}"
+                )
+            placements[dest] = pose
+        fixed = []
+        seen_fixed = set()
+        for name in model["fixed"]:
+            dest = applied_map.get(name, name)
+            if dest in seen_fixed:
+                continue
+            seen_fixed.add(dest)
+            fixed.append(dest)
+        mates = []
+        for mate in model["mates"]:
+            a_dev = applied_map.get(mate["a"]["device"], mate["a"]["device"])
+            b_dev = applied_map.get(mate["b"]["device"], mate["b"]["device"])
+            if a_dev == b_dev:
+                cli.warn(
+                    "staged rename left a mate on "
+                    + mate["a"]["device"] + " and " + mate["b"]["device"]
+                    + " unchanged"
+                )
+                a_dev = mate["a"]["device"]
+                b_dev = mate["b"]["device"]
+            mates.append({
+                "a": {"device": a_dev, "mate": mate["a"]["mate"]},
+                "b": {"device": b_dev, "mate": mate["b"]["mate"]},
+                "flip": mate["flip"],
+            })
+        rewritten = {"placements": placements, "mates": mates, "fixed": fixed}
+        if rewritten != model:
+            physical_assembly.save_assembly(rewritten, json_path)
+
+    def replace_attr_value(text, attr, old, new):
+        pattern = re.compile(
+            r"(\b" + re.escape(attr) + r"\s*=\s*)([\"'])"
+            + re.escape(old) + r"\2"
+        )
+        return pattern.sub(lambda match: match.group(1) + match.group(2) + new + match.group(2), text)
+
+    def strip_attr_on_id(text, element_id, value):
+        span = block_diagram_utils.find_svg_element_span(text, element_id)
+        if span is None:
+            return text
+        start, open_end, _close_start, _end = span
+        open_tag = text[start:open_end]
+        pattern = re.compile(
+            r"[ \t\r\n]+data-update-refdes=([\"'])" + re.escape(value) + r"\1"
+        )
+        new_open = pattern.sub("", open_tag, count=1)
+        if new_open == open_tag:
+            return text
+        return text[:start] + new_open + text[open_end:]
+
+    def rename_id_and_anchor(text, old, new):
+        import urllib.parse
+
+        text = replace_attr_value(text, "id", old + "-contents-start", new + "-contents-start")
+        text = replace_attr_value(text, "id", old + "-contents-end", new + "-contents-end")
+        text = replace_attr_value(text, "id", old, new)
+        old_q = urllib.parse.quote(old, safe="-_.!~*'()")
+        new_q = urllib.parse.quote(new, safe="-_.!~*'()")
+        text = text.replace("d:" + old_q + ":", "d:" + new_q + ":")
+        if old_q != old:
+            text = text.replace("d:" + old + ":", "d:" + new + ":")
+        return text
+
+    updated_svg = svg_text
+    for refdes in redundant:
+        updated_svg = strip_attr_on_id(updated_svg, refdes, refdes)
+    tokens = []
+    for index, pair in enumerate(applied):
+        token = "HARNICEPENDING" + str(index) + "END"
+        tokens.append((token, pair["to"]))
+        updated_svg = strip_attr_on_id(updated_svg, pair["from"], pair["to"])
+        updated_svg = rename_id_and_anchor(updated_svg, pair["from"], token)
+    for token, dest in tokens:
+        updated_svg = rename_id_and_anchor(updated_svg, token, dest)
+    if updated_svg != svg_text:
+        fileio.atomic_write_text(bd_path, updated_svg)
+
+    return [(pair["item_type"], pair["from"], pair["to"]) for pair in applied]
+
+
 def export_bom_from_block_diagram():
     """
     Build the system BOM from the block diagram SVG (placed components: ``component device``

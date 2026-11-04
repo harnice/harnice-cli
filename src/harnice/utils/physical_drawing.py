@@ -749,6 +749,7 @@ def render_system_drawing(
 
     def load_devices(hidden_instances=None):
         """Posed device solids and face photos from the open system's physical model."""
+        _require_opencascade()
         from OCP.gp import gp_Pnt, gp_Vec
 
         from harnice import fileio
@@ -760,7 +761,6 @@ def render_system_drawing(
             moved.Transform(trsf)
             return (moved.X(), moved.Y(), moved.Z())
 
-        _require_opencascade()
         if hidden_instances is None:
             hidden = set()
         elif isinstance(hidden_instances, str):
