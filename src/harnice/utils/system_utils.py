@@ -1,5 +1,4 @@
 import os
-import ast
 import csv
 import json
 import math
@@ -1441,10 +1440,15 @@ def _import_bom_devices(update_instances_list=True):
         configuration = {}
         config_text = (row.get("configuration") or "").strip()
         if config_text:
-            configuration = ast.literal_eval(config_text)
+            try:
+                configuration = json.loads(config_text)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"BOM configuration for {refdes} is not valid JSON: {e}"
+                ) from e
             if not isinstance(configuration, dict):
                 raise ValueError(
-                    f"BOM configuration must evaluate to a dict, got "
+                    f"BOM configuration for {refdes} must be a JSON object, got "
                     f"{type(configuration).__name__}: {config_text!r}"
                 )
 
@@ -1466,7 +1470,14 @@ def _import_bom_devices(update_instances_list=True):
                     )
             if not isinstance(script_ns, dict):
                 script_ns = build_sandbox.public_globals()
-                script_ns["configuration"] = merged
+                try:
+                    script_ns["configuration"] = device.coerce_configuration(merged)
+                except ValueError as e:
+                    cli.warn(
+                        f"device {refdes} configuration could not be read, continuing "
+                        f"({e})"
+                    )
+                    script_ns["configuration"] = merged
             else:
                 script_ns.setdefault("configuration", merged)
             try:

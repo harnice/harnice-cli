@@ -45,6 +45,10 @@ Open Harnice. On first launch it creates the files it needs on this computer (yo
 
 PDF drawings are SVG pages that Harnice exports with [Inkscape](https://inkscape.org/release/). The rest of the app works without it. The setup checklist looks for Inkscape and saves the path it finds. **Check** runs that search again.
 
+On Windows, install Inkscape **for all users** into `C:\Program Files\Inkscape`. That is the installer's default folder for an all-users install. Windows applies different path and permission rules under Program Files. A copy in a per-user folder, on the Desktop, in Downloads, or in a custom path sometimes needs administrator privileges every time it runs. PDF export then fails unless Harnice itself is started as administrator. If Inkscape is already in one of those other folders, uninstall it and install it into `C:\Program Files\Inkscape`.
+
+On a Mac, install the app into `/Applications`, or install the `inkscape` command with Homebrew.
+
 Harnice looks in this order:
 
 1. A path already saved in `paths/paths.json` on this computer
@@ -52,7 +56,9 @@ Harnice looks in this order:
 3. The usual install locations:
     - Mac app: `/Applications/Inkscape.app` and `~/Applications/Inkscape.app`
     - Homebrew: `/opt/homebrew/bin/inkscape` and `/usr/local/bin/inkscape`
-    - Windows: `C:\Program Files\Inkscape\bin\inkscape.com`, the same folder under `C:\Program Files (x86)`, and a per-user install at `%LOCALAPPDATA%\Programs\Inkscape\bin`
+    - Windows: `C:\Program Files\Inkscape\bin\inkscape.com` and the same folder under `C:\Program Files (x86)`
+
+Harnice also notices a per-user Windows install at `%LOCALAPPDATA%\Programs\Inkscape\bin`. Replace that copy with one in `C:\Program Files\Inkscape`.
 
 Harnice opened from the Dock or the Start menu has a short `PATH`. A folder that works in your terminal is invisible to the app unless it is one of the locations above, or you save the path as described below.
 
@@ -60,7 +66,9 @@ If nothing is found, the checklist item stays open and links here. **Waive** ski
 
 ### Installed in another folder
 
-Create `paths/paths.json` and set `inkscape` to the executable. Harnice reads that file before it searches anywhere else.
+On Windows, reinstall Inkscape into `C:\Program Files\Inkscape`. A copy outside that folder can require administrator privileges to run, and saving its path does not fix that.
+
+On a Mac, or when the Windows executable sits inside `C:\Program Files\Inkscape` under a different name, create `paths/paths.json` and set `inkscape` to the executable. Harnice reads that file before it searches anywhere else.
 
 | How you run Harnice | File |
 | --- | --- |
@@ -74,7 +82,7 @@ Create `paths/paths.json` and set `inkscape` to the executable. Harnice reads th
 }
 ```
 
-On Windows, use the full path to `inkscape.com` or `inkscape.exe`. In JSON, write backslashes twice:
+On Windows, point `inkscape` at `inkscape.com` inside `C:\Program Files\Inkscape`. In JSON, write backslashes twice:
 
 ```json
 {

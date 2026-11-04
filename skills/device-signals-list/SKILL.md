@@ -121,10 +121,12 @@ write it in a comment, whether I accepted it or it was blatantly obvious.
 Hiding it is the failure. If a later try shows something wrong, revise from
 those comments. Do not stay blocked on making the first try perfect.
 
-A configuration is a change in use case, not a change in hardware. The part
-stays the same. The way it is used changes which signals the list describes.
-A digital multimeter is one piece of hardware. The switch setting chooses
-the channel types: voltage, current, resistance, and the rest. The meter
+A configuration records how to set up the hardware. The part stays the same.
+Record as much of that setup as I describe, including a gain, a dip switch,
+or a preset the signals list never reads. A field the list does not use
+still belongs in `config.yaml`. One example of a field the list does use: a
+digital multimeter is one piece of hardware, and the switch setting chooses
+the channel types (voltage, current, resistance, and the rest). The meter
 does not become a different part when the switch moves. A different
 connector or any other hardware change is a different part number, not a
 configuration.
@@ -135,8 +137,15 @@ not call it a problem, and do not ask for a new part number because a pin
 is unused. A channel that is on the list still includes every signal its
 channel type defines.
 
-`configuration` is how Harnice stores that use case. It comes from
-`config.yaml` or from the system BOM. Assume one signals list unless I say
+`configuration` is how Harnice stores that setup. In this script it is
+already a dict. Read a field with `configuration["field_id"]`. `field_id`
+is the id in `config.yaml`. Harnice fills the dict from that file's
+defaults, or from the placed instance's answers when a system rebuilds the
+device. A json, yaml, or toml field is already parsed. A list field is a
+list of strings. Do not open `lists/bom.tsv` from this script. The page is
+`docs/interacting_with_data/_reading_device_configurations.md`, section
+"From the device's build instructions". Assume one
+signals list unless I say
 otherwise. If a use might add, remove, or retype a signal while the hardware
 stays the same, ask. If I name the cases, branch only on those. Do not
 invent a mode. An online chatbot does not ask for a drawn-by name. An agent
@@ -339,11 +348,14 @@ and the other list and util names a build script already has. You may `import` s
 `csv`, `json`, `re`, `xml.etree.ElementTree`, `pathlib`).
 
 `configuration` is a dict Harnice injects (defaults from `config.yaml`, or
-the system BOM answers). It records a use case, not a hardware change. A
-digital multimeter keeps the same hardware while the switch setting selects
-voltage, current, or resistance channel types. Read `configuration` only
-after I have named that kind of case. A different connector is a new part
-number. A pin this configuration does not use is left off the list.
+the placed instance's answers). Read one field with
+`configuration["field_id"]`. A json, yaml, or toml field is already parsed.
+A list field is a list of strings. Do not open the BOM, and do not parse
+those fields again. It records setup, including setup this list never
+reads. A different connector is a new part
+number. A pin this configuration does not use is left off the list. Branch
+the list only on cases I named. A field I described that does not change
+the list stays in `config.yaml` and this script leaves it unread.
 
 
 ## The only API you need
@@ -519,11 +531,13 @@ Call this at module level. A `main()` that is never called leaves the
 previous list untouched. `if __name__ == "__main__"` is fine: Harnice runs
 the file as `__main__`.
 
-If I confirmed a use case that changes the list while the hardware stays the
-same, branch with a plain `if` on `configuration` around those appends.
-Example: a digital multimeter's switch setting selects voltage, current, or
-resistance channel types. The meter is still the same hardware. If I said
-the list does not change, there is no branch.
+If I confirmed a setup choice that changes the list while the hardware stays
+the same, branch with a plain `if` on `configuration["field_id"]` around those
+appends. `field_id` is the id in `config.yaml`. Example: a digital
+multimeter's switch setting selects voltage, current, or resistance channel
+types. The meter is still the same hardware. If I said the list does not
+change, there is no branch. A setup field that does not change the list is
+still recorded in `config.yaml`.
 
 After you write it, an agent runs `harnice -b`. A traceback is the review.
 Fix that row. A script that prints `Wrote 0 signal rows.` or omits the line
@@ -630,7 +644,7 @@ run `harnice -b` again.
 - [ ] If you are an agent, did `harnice -b` or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b` print `Wrote N signal rows.` where N is the number of signals you think the device has from the documentation, and N is greater than 0? If you are an online chatbot, did you say you cannot run Python, skip the drawn-by question, and tell me to click Build and paste the errors back?
 - [ ] Did you wait until I answered before writing the file, except for a blatantly obvious mapping you recorded in a comment?
 - [ ] If you are an agent and `drawnby.json` was missing, did you ask what my drawn-by name usually is and write that name with `-AGENT` appended at the checkout root? If you are an online chatbot, did you leave drawn-by alone?
-- [ ] Does the script match the decisions I made, including whether a use case changes the signals list?
+- [ ] Does the script match the decisions I made, including whether a setup choice changes the signals list, and are setup fields that the list leaves unread still in `config.yaml`?
 
 
 ## DONE CRITERIA
@@ -657,4 +671,4 @@ When I have answered, reply with:
 4. Channel types you used (id, lib_repo, signal names)
 5. How many signal rows the build printed. An online chatbot instead says I will click Build and paste the errors back
 6. Anything in the source you could not map (a pin that looked used but has no channel, types you need me to add). An unused pin left off the list is not one of these.
-7. Whether the signals list depends on configuration, and the cases I named
+7. Whether the signals list depends on configuration, the cases I named, and any setup fields I described that the list leaves unread

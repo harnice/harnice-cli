@@ -21,11 +21,25 @@ class InkscapeNotFoundError(RuntimeError):
 
 
 def inkscape_required_message():
-    """One sentence a build can show when PDF export cannot run."""
-    return (
+    """Text a build shows when PDF export cannot run.
+
+    On Windows this tells the user, and any assistant reading the error,
+    to install for all users into Program Files. A copy in another folder
+    can require administrator privileges to run.
+    """
+    text = (
         "PDF export needs Inkscape. Install it from "
         f"{INKSCAPE_RELEASE_URL} and build again."
     )
+    if sys.platform == "win32":
+        text += (
+            " On Windows, install it for all users into "
+            r"C:\Program Files\Inkscape. "
+            "Windows applies different path and permission rules there. "
+            "A copy in another folder can require administrator privileges "
+            "to run, and PDF export fails when it does."
+        )
+    return text
 
 
 def remember_inkscape():

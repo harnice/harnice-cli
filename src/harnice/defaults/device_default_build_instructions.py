@@ -1,6 +1,8 @@
-# to access configuration information, use 'configuration' (a dictionary object).
-# harnice will pass in defaults or the relevant refdes configs automatically.
-# print(configuration)
+# configuration is a dict keyed by field id from config.yaml.
+# Read one answer with configuration["field_id"].
+# A standalone build uses the setup defaults. A system rebuild passes that instance's answers.
+# json, yaml, and toml fields are already parsed.
+# print(configuration["field_id"])
 
 # ---------------------------------------------------------------------------
 # Device example: four XLR channels (two in, two out).

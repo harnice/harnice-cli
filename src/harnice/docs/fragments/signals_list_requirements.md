@@ -24,14 +24,14 @@
 
 ### Configurable Device Signals List Rules
 
-A configuration is **how** a device is used, not **what** it is. The same part number can have different electrical behavior (balanced vs unbalanced, voltage setting, phantom on/off) without a new part number, as long as form, fit, and function of the hardware stay the same.
+A configuration records how to set up the hardware, not what the hardware is. Record as much of that setup as you can, including answers the build never reads. The same part number can also have different electrical behavior (balanced vs unbalanced, voltage setting, phantom on/off) without a new part number, as long as form, fit, and function of the hardware stay the same.
 
 The signals list is not a pile of alternate rows that get filtered. Build instructions write **one** signals list for the answers currently in `configuration` (a dict). Harnice fills that dict from the defaults in `fileio.path("configuration setup")`, or—when the device is placed in a system—from that instance's answers on the block diagram / BOM.
 
   - **Declare fields in `fileio.path("configuration setup")`, then read them in build instructions**
-    - Each field has an `id`. In the script, use `configuration["that_id"]` (channel type, select, boolean, number, and so on).
-    - You can have as many fields as you need. One field is enough for an SM58 that is either balanced or unbalanced. A mixing console might have a field per input (mic vs line, balanced vs unbalanced) so automatic channel mapping sees the type you actually set, and the instance records how to set the hardware up.
-    - Field types, validation, `show_if`, and a full YAML example are in the device configurations documentation.
+    - Each field has an `id`. In the device script, use `configuration["that_id"]` for any reason. Harnice parses `json`, `yaml`, and `toml` before that script runs, so that value is the loaded data. A `list` is a list of strings. A system script reads the same answers from the BOM for any reason. Choosing a channel map is one example. How each type looks in the device script, in the system script, and from another program are on [Reading Device Configurations](_reading_device_configurations.md).
+    - You can have as many fields as you need. One field is enough for an SM58 that is either balanced or unbalanced. A mixing console might have a field per input. Add fields for setup the signals list never uses.
+    - Field types, validation, `show_if`, and a full YAML example are on [Device Configurations](../fragments/configurations.md).
 
   - **The list you emit still has to obey the general signals-list rules**
     - Complete endpoints, unique `(channel_id, signal, repeat_channel_id)`, one connector per endpoint. Validation only sees the list for this configuration.

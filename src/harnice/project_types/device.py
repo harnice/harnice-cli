@@ -262,7 +262,8 @@ def _validate_signals_list(verbose=True, signals_path=None):
 
 CONFIG = {
     "valid_types": {
-        "text", "textarea", "url", "number",
+        "text", "textarea", "json", "yaml", "toml", "list",
+        "url", "number",
         "select", "radio", "multiselect", "boolean",
         "scale", "rating", "slider",
         "matrix",
@@ -287,6 +288,10 @@ CONFIG = {
     "allowed_validation_keys": {
         "text": {"minLength", "maxLength", "pattern", "format"},
         "textarea": {"minLength", "maxLength", "pattern", "format"},
+        "json": set(),
+        "yaml": set(),
+        "toml": set(),
+        "list": {"minItems", "maxItems", "uniqueItems"},
         "url": {"format"},
         "number": {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"},
         "select": {},
@@ -486,6 +491,30 @@ def _validate_config_yaml():
             if bad:
                 fail(line, f"field '{fid}' has 'default' containing values not in its options: {bad}")
 
+        if ftype == "list" and field.get("default") is not None:
+            if not isinstance(field["default"], list) or any(
+                not isinstance(item, str) for item in field["default"]
+            ):
+                fail(line, f"field '{fid}' has 'default' that must be a list of strings")
+
+        if ftype in ("json", "yaml", "toml"):
+            default = field.get("default")
+            if isinstance(default, str):
+                try:
+                    parse_configuration_text(ftype, default)
+                except ValueError as e:
+                    fail(line, f"field '{fid}' has a default that is {e}")
+            elif ftype == "toml" and default is not None and not isinstance(default, dict):
+                fail(
+                    line,
+                    f"field '{fid}' has a toml default that must be a mapping or TOML text",
+                )
+            elif ftype == "json" and default is not None:
+                try:
+                    json.dumps(default)
+                except TypeError as e:
+                    fail(line, f"field '{fid}' has a default that is not JSON data: {e}")
+
         if "validation" in field:
             validate_validation_block(field, line)
 
@@ -585,6 +614,87 @@ def _default_configuration_from_setup():
     return configuration
 
 
+def parse_configuration_text(ftype, text):
+    """Parse JSON, YAML, or TOML configuration text.
+
+    Empty or whitespace-only text is ``None``.
+    """
+    if not isinstance(text, str):
+        raise ValueError(f"expected text, got {type(text).__name__}")
+    if not text.strip():
+        return None
+    if ftype == "json":
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"not valid JSON ({e})") from e
+    if ftype == "yaml":
+        yaml = _import_yaml()
+        try:
+            return yaml.safe_load(text)
+        except yaml.YAMLError as e:
+            raise ValueError(f"not valid YAML ({e})") from e
+    if ftype == "toml":
+        try:
+            import tomllib
+        except ImportError as e:
+            raise ValueError("TOML configuration fields need Python 3.11 or newer") from e
+        try:
+            return tomllib.loads(text)
+        except Exception as e:
+            raise ValueError(f"not valid TOML ({e})") from e
+    raise ValueError(f"not a text configuration type ({ftype})")
+
+
+def coerce_configuration(configuration):
+    """Turn json, yaml, and toml field text into the values build instructions see.
+
+    A string is parsed as that field's format. A value that is already data is
+    left as-is. ``list`` values must be a list of strings, or ``None``. Returns
+    ``configuration`` unchanged when the setup file is missing or empty.
+    """
+    if not isinstance(configuration, dict):
+        return configuration
+
+    path = fileio.path("configuration setup")
+    if not os.path.exists(path):
+        return configuration
+
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    if _yaml_is_blank(raw):
+        return configuration
+
+    yaml = _import_yaml()
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return configuration
+    if not isinstance(data, dict) or not isinstance(data.get("fields"), list):
+        return configuration
+
+    out = dict(configuration)
+    for field in data["fields"]:
+        if not isinstance(field, dict):
+            continue
+        fid = field.get("id")
+        ftype = field.get("type")
+        if not isinstance(fid, str) or fid not in out:
+            continue
+        value = out[fid]
+        if ftype in ("json", "yaml", "toml") and isinstance(value, str):
+            try:
+                out[fid] = parse_configuration_text(ftype, value)
+            except ValueError as e:
+                raise ValueError(f"configuration field '{fid}' is {e}") from e
+        elif ftype == "list" and value is not None:
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                raise ValueError(
+                    f"configuration field '{fid}' must be a list of strings"
+                )
+    return out
+
+
 def build(verbose=True, configuration=None):
     _validate_attributes_json()
 
@@ -611,6 +721,7 @@ def build(verbose=True, configuration=None):
         # Fill missing keys from setup defaults (e.g. system BOM passes {} or a partial dict)
         # so build instructions and the subsequent signals-list validation see a complete config.
         configuration = {**_default_configuration_from_setup(), **configuration}
+    configuration = coerce_configuration(configuration)
 
     script_ns = None
     library_history.new()

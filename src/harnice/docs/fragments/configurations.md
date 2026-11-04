@@ -1,6 +1,10 @@
+# Device Configurations
+
 Harnice treats a part number as the unique identity of a component's design. If a released or otherwise established part changes in **form, fit, or function**, that change needs a new part number. Drawing revisions and documentation updates do not.
 
-Electrical behavior can change without changing the physical build. Those usage choices are **configurations**: they describe **how** an item is used, not **what** the item is.
+A **configuration** records how to set up a piece of hardware. It describes **how** an item is used, not **what** the item is. Record as much of that setup as you can. A field is worth keeping when the build never reads it. The instance still stores the answer, and another program can read it from the BOM.
+
+Some answers change what Harnice builds. A script may use a field for any reason. Two examples are a device signals list that follows the answers, and a system channel map that follows the answers. Other answers are setup notes: a gain knob position, a dip-switch pattern, a menu preset, a firmware option.
 
 Examples:
 
@@ -8,8 +12,9 @@ Examples:
 - Audio preamplifier that works for both balanced or unbalanced inputs
 - Digitally configurable analog-to-digital converter input
 - Antenna used as a transmitter or a receiver
+- A gain setting, a dip switch, or a menu preset that the build leaves unread
 
-In those cases the same part is used differently without rebuilding or rewiring it, so Harnice keeps one device part number and records the usage as a configuration.
+In those cases the same part is used differently without rebuilding or rewiring it, so Harnice keeps one device part number and records the setup as a configuration.
 
 A configuration does **not** filter alternate rows out of a signals list. Build instructions write **one** signals list for the answers currently in `configuration` (a dict). Validation only sees that list.
 
@@ -17,15 +22,15 @@ Do not use configuration to change the physical part. If the connector or the ha
 
 ### Where configuration lives
 
-A new device gets a blank `fileio.path("configuration setup")`. Add fields only when the device actually has usage choices.
+A new device gets a blank `fileio.path("configuration setup")`. Add a field for each setup choice you want the instance to remember.
 
 | Place | File | Role |
 | ----- | ---- | ---- |
 | Device revision | `fileio.path("configuration setup")` | Declares the form: field ids, types, defaults, validation, and `show_if` rules |
-| Device build | `fileio.path("build instructions")` | Reads `configuration["field_id"]` and writes the signals list for those answers |
+| Device build | `fileio.path("build instructions")` | Reads `configuration["field_id"]` for any reason. One example is writing the signals list for those answers. A field the script never reads is still stored |
 | Device symbol | `fileio.path("block diagram symbol")` | Text is a Python f-string. `{configuration.get("field_id")}` reads a field |
 | System block diagram | `<configuration>` under the placed device `<g>` | Instance answers as JSON |
-| System BOM | `configuration` column | Compact JSON copied from that SVG child |
+| System BOM | `configuration` column | Compact JSON object for that device. Parse the cell, then key by field id |
 | System instances list | `device_configuration` | The same answers after the BOM is imported |
 | Placed instance copy | that instance's `fileio.path("configuration setup")` | The device's setup form, used to render the instance editor |
 
@@ -57,7 +62,9 @@ Optional on every field:
 - `show_if` — show this field only when another field matches a condition.
 - `options` — required for `select`, `radio`, and `multiselect`; not allowed on other types.
 
-`select` / `radio` defaults must be one of the declared option `value`s (or `null`). A `multiselect` default must be a list of option values (often `[]`).
+`select` / `radio` defaults must be one of the declared option `value`s (or `null`). A `multiselect` default must be a list of option values (often `[]`). A `list` default must be a list of strings (often `[]`).
+
+`json`, `yaml`, and `toml` defaults are either the value itself or text in that format. A string default is the document text and must parse. Any other YAML value is used as the data. Empty text is `None` when the device builds. `toml` data must be a mapping, because a TOML document is a table.
 
 #### Field types
 
@@ -65,6 +72,10 @@ Optional on every field:
 | ------ | --------------- | ----- |
 | `text` | `""` | Short string |
 | `textarea` | `""` | Long string |
+| `json` | `"{}"` or a mapping | Parsed with `json.loads` before build instructions run |
+| `yaml` | `"{}"` or a mapping | Parsed with YAML `safe_load` when the answer is text |
+| `toml` | `""` or a mapping | Parsed with `tomllib.loads` when the answer is text. Needs Python 3.11 or newer |
+| `list` | `[]` | List of strings |
 | `url` | `""` | Use `validation.format: uri` |
 | `number` | a number | |
 | `select` | one option `value` | Dropdown; requires `options` |
@@ -90,11 +101,11 @@ Only these keys are allowed under `validation`, and only on the types listed. `e
 | `text`, `textarea` | `minLength`, `maxLength`, `pattern`, `format` |
 | `url` | `format` |
 | `number` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` |
-| `multiselect` | `minItems`, `maxItems`, `uniqueItems` |
+| `multiselect`, `list` | `minItems`, `maxItems`, `uniqueItems` |
 | `slider`, `scale`, `rating` | `minimum`, `maximum`; `slider` also allows `multipleOf` |
 | `ip_addr` | `pattern`, `format` |
 | `mac_addr`, `channel_type` | `format` |
-| `select`, `radio`, `boolean`, `matrix` | none |
+| `select`, `radio`, `boolean`, `matrix`, `json`, `yaml`, `toml` | none |
 
 Valid `format` values: `email`, `uri`, `date`, `date-time`, `time`, `uuid`, `ipv4`, `ipv6`, `hostname`, `mac`, `channel_type`.
 
@@ -239,6 +250,42 @@ Copy a block into `fields:` and change `id`, `label`, and `default`.
     maximum: 12
     multipleOf: 0.5
 
+# --- json document ---
+- id: "presets"
+  type: json
+  label: "Presets"
+  default: |
+    {
+      "gain": 0
+    }
+
+# --- yaml document ---
+# a mapping written directly is the value; a string is parsed as YAML text
+- id: "routing"
+  type: yaml
+  label: "Routing"
+  default:
+    mode: "auto"
+    gain: 0
+
+# --- toml document ---
+- id: "service"
+  type: toml
+  label: "Service"
+  default: |
+    port = 502
+    host = "0.0.0.0"
+
+# --- list of strings ---
+- id: "labels"
+  type: list
+  label: "Labels"
+  default:
+    - "main"
+    - "monitor"
+  validation:
+    minItems: 1
+
 # --- only show based on a previous answer ---
 # add this block under any field:
 #   show_if:
@@ -349,12 +396,18 @@ fields:
 
 ### Using answers in build instructions
 
+Inside the device's `fileio.path("build instructions")`, read a field with `configuration["field_id"]` for any reason. A system script that needs the same answers reads the BOM row. Choosing a `channel_map.map` is one example. Both are on [Reading Device Configurations](../interacting_with_data/_reading_device_configurations.md).
+
 Harnice injects `configuration` into `fileio.path("build instructions")`. On a standalone device build it is the setup defaults. On a system rebuild of a placed device it is that instance's answers, with setup defaults filling any missing keys.
+
+Harnice parses `json`, `yaml`, and `toml` text before the build script runs. `configuration["field_id"]` is the loaded data (`dict`, `list`, string, number, boolean, or `None`). A `list` field is a list of strings. Empty text is `None`.
 
 ```python
 # configuration is a dict keyed by field id
 input_type = configuration["input_type"]
 phantom = configuration["phantom_power"]
+presets = configuration["presets"]   # dict or list, from a json, yaml, or toml field
+labels = configuration["labels"]     # list of strings
 
 if input_type == "xlr":
     channel_type = ch_type_ids["balanced_in"]
@@ -362,7 +415,7 @@ else:
     channel_type = ch_type_ids["unbalanced_in"]
 ```
 
-One field is enough for a device that is either balanced or unbalanced. A mixing console might have a field per input so automatic channel mapping sees the type you actually set, and the instance records how to set the hardware up.
+The branch above is one example: the answers change the signals list. One field is enough for a device that is either balanced or unbalanced. A mixing console might have a field per input. Add further fields for setup the build never uses, such as a gain knob or a menu preset.
 
 ### Filling answers in a system
 
@@ -372,6 +425,10 @@ One field is enough for a device that is either balanced or unbalanced. A mixing
 1. On system build, those answers are written to the BOM `configuration` column and passed into that instance's device rebuild.
 
 If the placed device has no `<configuration>` child yet, Harnice seeds it from the setup defaults so the BOM and the properties panel stay in sync.
+
+### Reading one device from the BOM
+
+Another program reads a placed device's answers from the system BOM. The steps, the columns, and what each field type looks like after parsing are on [Reading Device Configurations](../interacting_with_data/_reading_device_configurations.md).
 
 ### Showing values on the symbol
 

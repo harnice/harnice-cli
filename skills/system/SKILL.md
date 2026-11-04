@@ -44,7 +44,9 @@ The script is `fileio.path("build instructions")` in the system revision.
 Do not run `build.py`. From that revision folder, `harnice -b` runs the
 project. If this revision is a harness, stop and follow the harness skill.
 
-Do not import anything. The names you need are already bound.
+Do not import anything. The names you need are already bound. The one
+exception is `import json` when this script reads a placed device's
+configuration from the BOM.
 
 Read the `build.py` already in the revision before you replace it. The
 stock script is in the clone at:
@@ -128,6 +130,22 @@ If you can run that command, run it. A traceback is the review: fix
 
 If you cannot run a command, give me the script and tell me to click
 Build and paste the error text back. Do not invent an exit code.
+
+
+## Reading a placed device's configuration
+
+This script does not receive a `configuration` dict. Harnice has already rebuilt each placed device. Read a placed device's answers for any reason, including a setup note the build would otherwise ignore. Choosing a `channel_map.map` is one example. Read the BOM row. The page is `docs/interacting_with_data/_reading_device_configurations.md`, section "From the system build instructions".
+
+    import json
+    text = ""
+    for row in fileio.read_tsv("bom"):
+        if row["device_refdes"] == refdes:
+            text = (row.get("configuration") or "").strip()
+            break
+    answers = json.loads(text) if text else {}
+    value = answers.get(variable)
+
+`value` is a string, a number, `True`, `False`, `None`, or a list of strings. A `json`, `yaml`, or `toml` field is still the document text. Parse that string again for the data inside it. An empty cell means that instance has no saved answers. The device's own build script is the other section of that page: there the name is `configuration["field_id"]`, and those structured fields are already parsed. A program outside Harnice uses the page section "From another program".
 
 
 ## Done

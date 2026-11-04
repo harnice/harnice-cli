@@ -111,7 +111,7 @@ Folders, with `fileio.dirpath`:
 - `"instances list"` → `instances.tsv`
 - `"block diagram"` → `blockdiagram.svg`
 - `"icd"` → `signals.tsv`
-- `"bom"` → `lists/bom.tsv`
+- `"bom"` → `lists/bom.tsv`. Tab-separated. A system build script reads a placed device with `fileio.read_tsv("bom")`, finds the row by `device_refdes`, and parses the `configuration` cell with `json.loads`. A program outside Harnice opens the same file. The value is a string, a number, `True`, `False`, `None`, or a list of strings. A `json`, `yaml`, or `toml` field is still the document text. A device build script does not open this file. It reads `configuration["field_id"]`. The page is `docs/interacting_with_data/_reading_device_configurations.md`.
 - `"circuits list"` → `lists/circuits.tsv`
 - `"post harness instances list"` → `lists/instances_w_hrns.tsv`
 - `"system connector list"` → `lists/connectors.tsv`
@@ -139,7 +139,7 @@ Folders, with `fileio.dirpath`:
 - `"signals list"` → `signals.tsv`
 - `"attributes"` → `attributes.json`
 - `"block diagram symbol"` → `symbol.svg`
-- `"configuration setup"` → `config.yaml`
+- `"configuration setup"` → `config.yaml`. Declares the fields. Device build instructions read an answer with `configuration["field_id"]`. They do not open this file to get the value.
 
 A device revision has no `instance_data` folder in its file structure.
 
