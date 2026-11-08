@@ -14,6 +14,11 @@ default_desc = "HARNESS, DOES A FOR B"
 
 button_color = "#ffa58a"
 
+gitignore_rules = [
+    "*.tmp",
+    ".harnice-wm-*.pdf",
+]
+
 
 def _console_state_path():
     """Path to harnice_console_state.json in the Harnice repo root."""

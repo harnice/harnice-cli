@@ -2,11 +2,13 @@
 name: part-family
 description: >-
   Encode a Harnice part family from a how-to-order datasheet into library
-  SKUs: a chooser, attributes, and one project folder per catalog number.
-  Use when the user asks for a part family, catalog SKUs, or a how-to-order
-  table turned into a library. Follow this skill when it is the best match.
-  Do not ask which skill to follow. If the request is not clear, ask for
-  clarification.
+  SKUs: a chooser and one project folder per catalog number. A part or cable
+  SKU is a drawing and a model. A device SKU is a device project whose
+  build.py writes the signals list. Use when the user asks for a part family,
+  catalog SKUs, a how-to-order table turned into a library, or a catalog of
+  devices. One device pinout uses the device-signals-list skill. Follow this
+  skill when it is the best match. Do not ask which skill to follow. If the
+  request is not clear, ask for clarification.
 ---
 
 # Harnice part-family prompt
@@ -43,16 +45,27 @@ Encode a Harnice part family from the attached datasheet / how-to-order page.
 Write Python that (1) chooses legal catalog part numbers and (2) generates one
 Harnice project folder per SKU.
 
-You are not drawing vendor CAD. You are encoding a how-to-order table plus a
-low-fidelity envelope that SVG and STEP both share.
+A family is parts, cables, or devices. Pick one project type and stay with it.
+
+A part or cable family is a how-to-order table plus a low-fidelity envelope
+that SVG and STEP both share. You are not drawing vendor CAD.
+
+A device family is a how-to-order table of devices. Each SKU is a device
+project. `build.py` writes the signals list. One pinout for one device is
+`skills/device-signals-list/SKILL.md`. A catalog of device part numbers is
+this skill. The pinout rules inside each `build.py` are that skill. A body
+on those devices is `skills/cad/SKILL.md`, written into each `build.py`.
+A missing channel type is `skills/channel-type/SKILL.md`, then come back here.
 
 
 ## What I was going for
 
 Harnice should not make you draw ten thousand SKUs.
 
-A catalog is a how-to-order table plus a few geometry envelopes. If you encode
-the table as Python, you can:
+A catalog is a how-to-order table. Parts and cables add a few geometry
+envelopes. A device catalog is the same table: one device project per part
+number, and a body only when I ask for one. If you encode the table as
+Python, you can:
 
 1. Refuse illegal combinations. A chooser is a gate. If the spec does not sell
    that finish / insert / gender, the function raises. The library is the list
@@ -60,9 +73,11 @@ the table as Python, you can:
 2. Pick a real part number from intent. Harness build instructions should say
    "mate this D38999" or "I need a 25-pin crimp D-sub, finish T" and get back a
    filesystem-safe MPN that library_utils.pull() can import.
-3. Emit a first-class Harnice project per SKU. Attributes JSON, side-view
-   drawing, low-fidelity STEP, revision history. Same project contract as a
-   hand-built part.
+3. Emit a first-class Harnice project per SKU. A part gets attributes, a
+   side-view drawing, a low-fidelity STEP, and revision history. A cable gets
+   attributes, a conductor list, and revision history. A device gets
+   attributes, `build.py`, a signals list the build writes, and revision
+   history. Same project contract as a hand-built project of that type.
 4. Keep drawings and models honest. These are catalog envelopes, not vendor CAD.
    Tabulated dimensions get a source URL. Guessed interior stations get a
    comment that says so.
@@ -92,6 +107,11 @@ thousand-line prologues.
 - https://github.com/harnice/harnice-general-library
   NEMA WD-6 plugs, portable power cable, generic ring terminals.
   Choosers: choose_part(), find_mating_connector(), compatible_mates().
+
+None of those libraries is a device family. A device family still does the
+six jobs below. It does not copy a connector generator's drawing loop.
+The signals list inside each device SKU follows
+`skills/device-signals-list/SKILL.md`.
 
 
 ## What they all have in common
@@ -137,6 +157,9 @@ The same dict drives the revision-history description.
 
 ### 4. One envelope, two projections
 
+Parts and cables. A device family skips this section. Its solid, when I ask
+for one, is a body in `build.py` (`skills/cad/SKILL.md`).
+
 Circular parts revolve (x, radius) stations about +X. Rectangular parts extrude
 YZ polygons along +X. The SVG silhouette and the STEP solid come from that
 same envelope, and they share a cable-side origin (x=0 at the rear /
@@ -162,22 +185,30 @@ list. Identifiers must be unique across the cable.
 Family-specific keys (mass, datasheet, cable_od_mm, voltage) ride along. They
 do not replace the keys above.
 
+Devices write `default_refdes`. The device build fills `mate_connectors`
+from the signals-list `connector_id`s. Leave that key to the build. Extra
+keys (mass, datasheet, family) may ride along.
+
 ### 6. A batch driver that writes the library on disk
 
     {family}/
-      {family}.py                 # chooser (import this from harness build instructions)
+      {family}.py                 # chooser (harness scripts, or Place device)
       {family}_generator.py       # emit SKUs
       {PN}/
         fileio.path("revision history")
         rev{N}/
           fileio.path("attributes")
-          fileio.path("drawing")
-          fileio.path("model")
+          fileio.path("drawing")            # parts
+          fileio.path("model")              # parts
+          fileio.path("conductor list")     # cables
+          fileio.path("build instructions") # devices; the build writes the signals list
 
 The driver calls rev_history.part_family_append(), writes the files, then
-builds the project (in-process part.build() on the newer aerospace families;
-Build per folder on earlier ones). Progress bars and --step-only /
+builds the project (in-process part.build(), cable.build(), or device.build();
+Build per folder on earlier part families). Progress bars and --step-only /
 --svg-only / --no-build exist because regenerating 8,000 cables is a real job.
+A device family uses --no-build and a filter flag. It does not grow
+--step-only or --svg-only.
 
 
 ## What is still messy (do not repeat)
@@ -207,25 +238,30 @@ Build per folder on earlier ones). Progress bars and --step-only /
    cache_run_constant_lookups). Until that exists, keep the generator boring
    and local.
 2. Two files, always. {family}.py is the chooser. {family}_generator.py is the
-   emitter. Harness build instructions import only the chooser.
+   emitter. Harness build instructions import only the chooser. A device
+   chooser is what Place device's MPN comes from. Do not import the generator
+   from a harness or a system.
 3. Import without path hacks (future). Today: sys.path.append to the family dir.
-4. Chooser is mandatory for any family a harness rule would select.
-   choose_part and/or find_mating_connector. Raise on illegal SKUs. Accept
-   human aliases.
-5. Cable-side origin, always. x=0 at the rear / cable-entry face (knurl end,
-   accessory thread, insulator rear). +X toward the mating or connector face.
-   Cable, knurl, and accessory threads overlap −X. Drawing and STEP share this
-   origin. Pin / mating cups stay at the mating face — they do not move the
-   part origin. Document it in a comment. Emit 3d-mate on connectors; emit
-   3d-connector and connector on accessories. Emit flagnote-N and
-   flagnote-N-leader_dest from the silhouette.
-6. Exclusive csys coordinates. Polar OR Cartesian, not both. Polar about the
-   origin when a ~3 in circle clears the body (D38999). For long or angled
-   parts, shoot rays from the silhouette centroid and store the results as
-   cartesian x/y (M85049). Do not invent a second origin at the mating face
-   just to place balloons.
-7. One geometry source. Stations or prisms compile to SVG and STEP. Cite
-   datasheet vs estimate on every station that is not a callout.
+4. Chooser is mandatory for any family a harness rule or a system placement
+   would select. choose_part, and find_mating_connector when the family has a
+   mate. Raise on illegal SKUs. Accept human aliases.
+5. Cable-side origin, always, for parts and cables. x=0 at the rear /
+   cable-entry face (knurl end, accessory thread, insulator rear). +X toward
+   the mating or connector face. Cable, knurl, and accessory threads overlap
+   −X. Drawing and STEP share this origin. Pin / mating cups stay at the
+   mating face — they do not move the part origin. Document it in a comment.
+   Emit 3d-mate on connectors; emit 3d-connector and connector on accessories.
+   Emit flagnote-N and flagnote-N-leader_dest from the silhouette. A device
+   family skips this goal.
+6. Exclusive csys coordinates, for parts and cables. Polar OR Cartesian, not
+   both. Polar about the origin when a ~3 in circle clears the body (D38999).
+   For long or angled parts, shoot rays from the silhouette centroid and store
+   the results as cartesian x/y (M85049). Do not invent a second origin at the
+   mating face just to place balloons. A device family skips this goal.
+7. One geometry source, for parts and cables. Stations or prisms compile to
+   SVG and STEP. Cite datasheet vs estimate on every station that is not a
+   callout. A device body, when I ask for one, follows `skills/cad/SKILL.md`
+   inside `build.py`.
 8. Only commercially real SKUs. Curate the permutation space. Filter again.
    Prefer "this McMaster / Omega / Neutrik number exists" over a theoretically
    complete matrix.
@@ -244,7 +280,7 @@ In the family directory of the target library repo:
 Do not merge them. Do not put harness-time logic in the generator.
 Do not import the generator from a harness.
 
-Each SKU folder:
+Each SKU folder for a part or cable:
 
     {PN}/
       fileio.path("revision history")
@@ -253,6 +289,18 @@ Each SKU folder:
         fileio.path("drawing")                  # parts
         fileio.path("model")                    # parts
         fileio.path("conductor list")           # cables only
+
+Each SKU folder for a device:
+
+    {PN}/
+      {PN}-revision_history.tsv
+      rev{REVISION}/
+        build.py                                # you write this; the signals list is the script
+        attributes.json                         # default_refdes, plus family keys
+        config.yaml                             # only when this SKU has setup that keeps the hardware
+        signals.tsv                             # the device build writes this; you do not
+        symbol.svg                              # the device build writes this; you do not
+        body.step                               # only when I asked for a body; build.py writes it via cad
 
 Filesystem-safe PNs: replace / with _. Official punctuation is a
 return_divider option on the chooser, not the folder name.
@@ -274,12 +322,14 @@ Chooser is imported today via:
 
 ## PHASE 1 — CATALOG (do this first, before any SVG)
 
-1. Read the how-to-order / catalog page.
+1. Read the how-to-order / catalog page. For a device family, also read the
+   pinout, ICD, or spreadsheet for each hardware variant.
 2. List every axis that changes the part number:
    series / slash sheet / shell style, size (shell, insert, AWG, amps),
    gender / contact type, finish / plating / housing color, keyway,
    termination (crimp, solder, pigtail, screw), accessory options
-   (entry size, orientation, detent).
+   (entry size, orientation, detent). For a device: connector count, insert,
+   range, or any other hardware the catalog sells as a different part number.
 3. Write tables of only commercially sold values. If the spec matrix is huge,
    curate a default PERMUTATIONS subset AND keep a legality filter.
 4. Cite the source in a comment on each table. A file inside a library folder is `(url)/path/file`. A page on the web stays a URL. If a dimension is scaled
@@ -299,7 +349,14 @@ Example iterator:
                 for gender in GENDERS:
                     yield {"spec": family, "amps": amps, "gender": gender}
 
-Stop and list the configuration count + a few sample PNs before drawing.
+A setup that keeps the hardware is one device, and it belongs in that SKU's
+`config.yaml`. Gain, a dip switch, and a preset are configurations. A
+different connector, or any other hardware change, is a different part
+number. If every row would be the same hardware, stop and follow
+`skills/device-signals-list/SKILL.md` for that one device.
+
+Stop and list the configuration count + a few sample PNs before drawing,
+and before writing any device `build.py`.
 
 
 ## PHASE 2 — CHOOSER (`{family}.py`)
@@ -350,6 +407,24 @@ The chooser only has to return a PN that exists under lib_subpath.
 If this family is a mate or accessory of an existing family, add
 find_mating_connector / find_backshell on THAT chooser as well, the way
 D38999.find_backshell returns an M85049-... PN.
+
+A device chooser returns the device PN a system places. It does not flip
+gender. Add find_mating_connector only when this device is a catalog mate
+of another family. The connectors on the device stay
+`device_connector_mpn` on the signals list, and those connector families
+keep their own choosers.
+
+How a system uses a device chooser. Place device stores these on the symbol:
+
+    MPN          choose_part(...)
+    lib_repo     LIBRARY_REPO
+    lib_subpath  LIBRARY_SUBPATH
+    rev          REVISION
+
+A system build reads a placed device with
+system_utils.mpn_of_device_refdes(refdes). The chooser only has to return
+a PN that exists under lib_subpath. The module docstring shows that place
+block, not instances_list.modify.
 
 
 ## PHASE 3 — ATTRIBUTES
@@ -403,7 +478,7 @@ series, voltage, cable_od range, finish name.
 Revision history via rev_history.part_family_append(row, path):
 
     {
-        "project_type": "part",          # or "cable"
+        "project_type": "part",          # or "cable", or "device"
         "mfg": MANUFACTURER,
         "pn": part_number,
         "rev": REVISION,
@@ -418,9 +493,26 @@ part_family_append fills datemodified, drawnby, and harnice_version.
 Same rev updates the existing row.
 
 Set state.set_project_type(...) and state.set_rev(...) once at the start of main().
+A device family sets state.set_project_type("device").
+
+Device attributes:
+
+    {"default_refdes": "U"}
+
+Ask me for the prefix when the documentation does not name one. Description
+voice for a device is ALL CAPS, "DEVICE, ...".
+
+Write `config.yaml` only when that SKU has setup that keeps the same
+hardware. Field types are `docs/fragments/configurations.md`. Leave the file
+out when there is no setup. The device build writes the empty default.
+
+Do not write `signals.tsv`, `symbol.svg`, or `body.step` in this phase.
+`build.py` is phase 6, and it follows `skills/device-signals-list/SKILL.md`.
 
 
-## PHASE 4 — GEOMETRY (one envelope, two projections)
+## PHASE 4 — GEOMETRY (parts and cables)
+
+A device family skips phases 4 and 5 and goes to phase 6.
 
 Origin is always the cable side. Name it in a comment: which rear face is
 x=0, +X toward the mating / connector face, what overlaps −X.
@@ -464,7 +556,7 @@ Do not trace a vendor STEP into a pretty model. Low fidelity that matches the
 datasheet overall length and max diameter is the contract.
 
 
-## PHASE 5 — CSYS
+## PHASE 5 — CSYS (parts and cables)
 
 Values for 2D csys are inches and degrees.
 
@@ -500,6 +592,8 @@ When the family mates to a connector, accessory, or cable:
 
 
 ## PHASE 6 — EMIT LOOP (`{family}_generator.py`)
+
+Parts and cables:
 
     from harnice.lists import rev_history
     from harnice import state, fileio
@@ -539,38 +633,114 @@ Driver flags:
 Print a text progress bar. At the family root, write a catalog CSV whose
 columns match the chooser fields.
 
+Devices:
+
+    from harnice.lists import rev_history
+    from harnice import state
+    import harnice.project_types.device as device
+
+    def build_device(part_number, rev_dir):
+        cwd = os.getcwd()
+        os.chdir(rev_dir)
+        try:
+            state.set_pn(part_number)
+            state.set_rev(REVISION)
+            state.set_project_type("device")
+            state.set_file_structure(device.file_structure())
+            device.generate_structure()
+            device.build()
+        finally:
+            os.chdir(cwd)
+
+    def main(build=True):
+        state.set_rev(REVISION)
+        state.set_project_type("device")
+        family_dir = os.path.dirname(os.path.abspath(__file__))
+        variants = list(iter_part_configurations())
+        for i, cfg in enumerate(variants, start=1):
+            pn = make_part_number(cfg)
+            part_dir = os.path.join(family_dir, pn)
+            rev_dir = os.path.join(part_dir, f"rev{REVISION}")
+            os.makedirs(rev_dir, exist_ok=True)
+            rev_history.part_family_append(revision_history_row(cfg), ...)
+            # write attributes.json, build.py, and config.yaml when this SKU has setup
+            if build:
+                build_device(pn, rev_dir)
+            print(progress_bar(i, len(variants)))
+
+Each `build.py` is the signals list for that one SKU. Follow
+`skills/device-signals-list/SKILL.md` for the script: straight-line code,
+no helper, no class, no `from harnice` import. Bake that SKU's constants
+into the file. Cite the pinout in a comment, and write the expected signal
+count there. `signals_list.new()` then `signals_list.append`. The device
+build writes `signals.tsv` and `symbol.svg`. Do not write those files
+yourself.
+
+Ask the engineering questions in that skill before the first `build.py`.
+Channel type, chassis ground, and which connector a pin lands on are my
+decisions. One answer covers every SKU that follows from it. Do not write
+the generator while a question is open. A blatantly obvious mapping is a
+comment, the same way that skill says.
+
+A body is in that `build.py` only when I asked for one. The calls are
+`skills/cad/SKILL.md`, with dimensions from `cfg`. `cad` is already bound
+when the device build runs the script. Do not write `body.step` from the
+generator.
+
+`chtype.signals` reads `channel_types.tsv` from the library path in
+`repository_locations.csv`. A missing channel type is
+`skills/channel-type/SKILL.md`, then come back here.
+
+An agent runs the generator. `rev_history.part_family_append` reads
+`drawnby.json` the same way a device build does. The drawn-by steps are
+under "Run the build" in `skills/device-signals-list/SKILL.md`. After each
+SKU, the build prints `Wrote N signal rows.` N matches the count in that
+`build.py` comment, and N is greater than 0. A mismatch is a fix of that
+file and a rebuild of that SKU.
+
+An online chatbot writes the two Python files and tells me to run the
+generator. It does not claim a build exited 0.
+
+Driver flags for a device family: `--no-build`, plus a filter when the
+catalog is large. No `--step-only`. No `--svg-only`.
+
 
 ## HARD RULES
 
 - Only SKUs the manufacturer sells.
 - Chooser PNs must be a subset of generator PNs.
-- SVG and STEP from the same envelope, same cable-side origin.
-- Origin is always the cable side. Mating-face cups do not move it.
+- Parts and cables: SVG and STEP from the same envelope, same cable-side origin.
+- Parts and cables: origin is always the cable side. Mating-face cups do not move it.
+- A device family does not write drawing.svg, model.step, signals.tsv, symbol.svg, or body.step by hand.
+- A catalog axis is a part number. A setup that keeps the hardware is config.yaml on that one device.
 - No secrets, no scraped paywalled HTML dumps — use the attached datasheet.
 - Do not invent Harnice APIs. Read the folder from `harnice --docs` before
   you guess a function. The same pages are at https://harnice.io/ when you
   can reach the internet. Use rev_history.part_family_append, state,
-  fileio, step_utils, project_types.part / project_types.cable as they exist.
-- Keep the chooser free of drawing code.
-- Description voice: ALL CAPS, "CONNECTOR, ..." / "CABLE, ..."
+  fileio, step_utils, project_types.part / project_types.cable /
+  project_types.device as they exist.
+- Keep the chooser free of drawing code and free of signals-list appends.
+- Description voice: ALL CAPS, "CONNECTOR, ..." / "CABLE, ..." / "DEVICE, ..."
 
 
 ## DONE CRITERIA
 
 - [ ] Chooser parses official and library PNs, rejects illegal ones
-- [ ] choose_part / find_mating_connector return PNs that the generator emits
-- [ ] Every emitted folder has revision history, attributes, drawing, and model
-      (cables: attributes + conductor list)
-- [ ] SVG and STEP share an envelope and a cable-side origin
-- [ ] contacts or cable identifiers match the spec names
+- [ ] choose_part returns PNs that the generator emits. find_mating_connector does too, when this family has one
+- [ ] Every part folder has revision history, attributes, drawing, and model
+- [ ] Every cable folder has revision history, attributes, and a conductor list
+- [ ] Every device folder has revision history, attributes, and build.py. The build wrote signals.tsv and symbol.svg. config.yaml is present only when that SKU has setup. body.step is present only when I asked for a body
+- [ ] Parts and cables: SVG and STEP share an envelope and a cable-side origin
+- [ ] contacts or cable identifiers match the spec names. A device's connector_id and cavity names match the pinout
 - [ ] lib_repo + lib_subpath on the revision row match the library
-- [ ] A harness snippet in the module docstring shows instances_list.modify
+- [ ] A part or cable chooser docstring shows instances_list.modify. A device chooser docstring shows MPN, lib_repo, lib_subpath, and rev for Place device
 - [ ] Datasheet URLs sit on tables and on datasheet / mass_source fields
 - [ ] You did not generate SKUs the manufacturer does not sell
+- [ ] A device family asked the signals-list questions before writing build.py, and each build printed a signal-row count that matches that file's comment
 
 Reply with:
 1. Configuration count and 5 example library PNs
-2. Origin convention (one sentence: cable side, +X toward mate)
+2. Parts and cables: origin convention (one sentence: cable side, +X toward mate). Devices: the signal-row count for each of those five PNs
 3. Paths of the two Python files, as `(url)/path/file` when they sit in a library folder
-4. How a harness script should import and call the chooser
-5. Any dimension that is an estimate rather than a callout
+4. How a harness script should import and call the chooser, or, for a device, the Place device fields
+5. Parts and cables: any dimension that is an estimate rather than a callout. Devices: whether a body was written, and any pinout assumption you recorded in a comment

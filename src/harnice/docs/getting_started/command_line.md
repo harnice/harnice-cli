@@ -69,3 +69,5 @@ harnice -b
 The first time you build from a terminal, Harnice asks for your drawn-by name and saves it on this computer. Type the name and press Enter. Later builds use that name.
 
 Harnice prints `Loaded PN: …, Rev: …`, then the rest of the build. An error is printed there. Fix the file it names and run `harnice -b` again from the same folder.
+
+A build writes `.gitignore` in the revision folder from that project type's scratch-file rules. Lines already in the file stay. Each project type page lists its rules under File Structure.

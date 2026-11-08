@@ -222,28 +222,56 @@ def save_mates(mates, path=None):
     os.replace(temporary, path)
 
 
-def require_saved_mates():
-    """Fail the build when saved mates are missing a signals-list connector.
+def release_mates_to_gui():
+    """Mark every saved mate as gui at the start of a build.
 
-    A device whose attributes have no mate_connectors still builds. Once that
-    key is present, every distinct connector_id needs a mate with that same id.
+    Poses stay. A mate the build then places becomes build again. A mate
+    this build does not place stays gui, so the page can move it.
     """
     body = load_body()
-    if body is None:
+    if not body:
         return
-    have = {mate["id"] for mate in body["mate_connectors"]}
+    if all(mate["source"] == "gui" for mate in body["mate_connectors"]):
+        return
+    mates = []
+    for mate in body["mate_connectors"]:
+        item = dict(mate)
+        item["source"] = "gui"
+        mates.append(item)
+    save_mates(mates)
+
+
+def require_saved_mates():
+    """Give every signals-list connector a mate.
+
+    A missing one is added at the origin with source gui, and that writes
+    mate_connectors when attributes.json does not have the key yet. A device
+    with no signals-list connectors is left unchanged. The physical model
+    page reads the mates this saved. It does not add them.
+    """
+    try:
+        needed = signals_list.unique_connector_ids()
+    except FileNotFoundError:
+        return
+    body = load_body()
+    mates = list(body["mate_connectors"]) if body else []
+    have = {mate["id"] for mate in mates}
     missing = []
-    for connector_id in signals_list.unique_connector_ids():
+    for connector_id in needed:
         if connector_id not in have:
             missing.append(connector_id)
     if not missing:
         return
-    joined = ", ".join(missing)
-    pronoun = "it" if len(missing) == 1 else "them"
-    raise ValueError(
-        "Physical model is missing a mate connector for signals-list "
-        f"connector(s): {joined}. Open the physical model page and place {pronoun}."
-    )
+    for connector_id in missing:
+        mates.append({
+            "id": connector_id,
+            "location": [0.0, 0.0, 0.0],
+            "alpha": 0.0,
+            "beta": 0.0,
+            "gamma": 0.0,
+            "source": "gui",
+        })
+    save_mates(mates)
 
 
 _LINK = "harnice-body-image "

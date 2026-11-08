@@ -548,6 +548,7 @@ def path(target_value, structure_dict=None, base_directory=None):
     **Special Target Values:**
 
     - **`revision history`:** the revision history file of the project you're currently working on
+    - **`gitignore`:** `.gitignore` in the revision folder
     - **`repository locations`:** the repository locations file on your computer (`repository_locations.csv`)
     - **`drawnby`:** the text file on your computer that stores your name
     - **`rev directory`:** the revsion directory of the project you're currently working on
@@ -583,6 +584,9 @@ def path(target_value, structure_dict=None, base_directory=None):
             part_directory(), f"{state.partnumber('pn')}-revision_history.tsv"
         )
         return file_path
+
+    if target_value == "gitignore":
+        return os.path.join(rev_directory(), ".gitignore")
 
     # FILES DEPENDENT ON HARNICE ROOT
 
@@ -744,6 +748,43 @@ def library_identity_for_path(folder):
         library_repo = str(row.get("repo_url") or "").strip()
         library_subpath = rest
     return library_repo, library_subpath
+
+
+def ensure_gitignore():
+    """
+    Use this when the runner writes the revision's ``.gitignore`` from the project type's ``gitignore_rules``. It runs during ``harnice -b``, before the script. A build script does not call this.
+
+    Missing rules are appended. Rules already present are left as they are.
+    An empty list does not create a file.
+    """
+    import importlib
+
+    name = str(getattr(state, "project_type", "") or "").strip()
+    if not name:
+        return
+    module = importlib.import_module(f"harnice.project_types.{name}")
+    rules = []
+    for rule in getattr(module, "gitignore_rules", []):
+        rule = str(rule).strip()
+        if rule:
+            rules.append(rule)
+    if not rules:
+        return
+
+    gitignore_path = path("gitignore")
+    if os.path.isfile(gitignore_path):
+        with open(gitignore_path, encoding="utf-8") as handle:
+            text = handle.read()
+    else:
+        text = ""
+    existing = {line.strip() for line in text.splitlines()}
+    missing = [rule for rule in rules if rule not in existing]
+    if not missing:
+        return
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += "".join(rule + "\n" for rule in missing)
+    atomic_write_text(gitignore_path, text)
 
 
 def verify_revision_structure():

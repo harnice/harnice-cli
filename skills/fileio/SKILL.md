@@ -55,6 +55,7 @@ any revision.
 - `fileio.path("revision history")` is `{part folder}/{pn}-revision_history.tsv`.
   The part folder is the parent of the revision folder. `{pn}` is
   `state.partnumber("pn")`.
+- `fileio.path("gitignore")` is `.gitignore` in the revision folder.
 - `fileio.path("repository locations")` is `repository_locations.csv` in
   the Harnice user-data folder. Harnice creates an empty file if it is
   missing. The first column is a library URL. The second column is the
@@ -77,7 +78,10 @@ token (`"1"`). `"rev"` is `"rev1"`. `"pn-rev"` is `"mypart-rev1"`.
 `state.rev` is the token a revision-history update matches.
 
 The runner calls `fileio.verify_revision_structure()` before the script
-starts. A build script does not call it.
+starts. A build script does not call it. During `harnice -b` the runner
+also calls `fileio.ensure_gitignore()`, which appends that project type's
+`gitignore_rules` to `.gitignore` in the revision folder. An empty list
+does not create a file.
 
 
 ## Harness
@@ -106,6 +110,8 @@ Folders, with `fileio.dirpath`:
 
 
 ## System
+
+`gitignore_rules` is `.gui_temp/`, `*.tmp`, `*.tmp.step`, and `.harnice-wm-*.pdf`. A harness ignores `*.tmp` and `.harnice-wm-*.pdf`. Every other project type ignores `*.tmp`.
 
 - `"build instructions"` → `build.py`
 - `"instances list"` → `instances.tsv`

@@ -32,8 +32,15 @@ fileio.path("attributes")                         |-- attributes.json
 fileio.path("block diagram symbol")               |-- symbol.svg
 fileio.path("configuration setup")                |-- config.yaml
 fileio.path("body")                               |-- body.step
-fileio.dirpath("body_images")                     L-- body_images/
+fileio.dirpath("body_images")                     |-- body_images/
+fileio.path("gitignore")                          L-- .gitignore
 ```
+
+A build writes `.gitignore` in the revision folder. This project type ignores:
+
+- `*.tmp`
+
+Rules already in the file stay.
 
 
 ---
@@ -45,7 +52,7 @@ When a Device is built in Harnice, here's what happens:
 1. Harnice runs the build instructions if it's found in the device directory.
 1. The signals list is validated and verified.
 1. A block diagram symbol SVG that can represent this device in a system block diagram is generated or updated based on the signals list.
-1. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate connector with that same id.
+1. Every signals-list `connector_id` gets a mate connector with that same id. The build adds any that are missing, at the origin.
 
 The first build writes these instructions when `build.py` does not exist yet.
 
@@ -57,7 +64,7 @@ The first build writes these instructions when `build.py` does not exist yet.
 
 A device body is `fileio.path("body")` (`body.step`). Mate connectors live in `attributes.json` under `mate_connectors`. How to write the solid, place mates, paste a face picture, and arrange devices in a system is [CAD](../cad.md).
 
-Open **attributes** to read and write `attributes.json`. Changes autosave. Open **physical model** to move mate connectors on the solid the build wrote, and to paste a picture on a face. A pasted picture stays through the next build when `images` names that file, or when the macro that rewrites `body.step` is commented out. The PNG stays in `body_images/` either way. If `attributes.json` has `mate_connectors`, every signals-list `connector_id` must have a mate with that same id. A device with no `mate_connectors` still builds. Opening the page writes that key and puts any missing required mate at the origin.
+Open **attributes** to read and write `attributes.json`. Changes autosave. Open **physical model** to move mate connectors on the solid the build wrote, and to paste a picture on a face. A pasted picture stays through the next build when `images` names that file, or when the macro that rewrites `body.step` is commented out. The PNG stays in `body_images/` either way. Every signals-list `connector_id` has a mate with that same id. The build adds any that are missing, at the origin, and that writes `mate_connectors` when the key is absent. The physical model page reads those mates. It does not add them.
 
 
 ---
@@ -81,7 +88,7 @@ Open **attributes** to read and write `attributes.json`. Changes autosave. Open 
 
         {% include-markdown "fragments/editing_attributes.md" %}
 
-1. Edit the signals list of your new device. To generate `build.py` from a pinout, ICD, or datasheet, paste the **Device signals list** prompt on [Building with AI](../ai_prompts.md); put the source file next to `build.py` in the revision folder.
+1. Edit the signals list of your new device. To generate `build.py` from a pinout, ICD, or datasheet, paste the **Device signals list** prompt on [Building with AI](../ai_prompts.md); put the source file next to `build.py` in the revision folder. A catalog of device part numbers uses the **Part family** prompt on that page. Each SKU is its own device project.
 
     ??? info "Updating a Signals List"
 

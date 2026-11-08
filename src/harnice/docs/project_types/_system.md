@@ -229,14 +229,24 @@ fileio.path("post harness instances list")               |   |-- instances_w_hrn
 fileio.path("system connector list")                     |   |-- connectors.tsv
 fileio.path("mapped channels set")                       |   |-- mapped.tsv
 fileio.path("library history")                           |   L-- libhist.tsv
-fileio.dirpath("maps")                                   L-- maps/
-fileio.path("channel map")                                   |-- channels.tsv
-fileio.path("flattened channel map")                         |-- channel_map_flattened.tsv
-fileio.path("passthrough map")                               |-- passthrough.tsv
-fileio.path("passthrough routing context")                   |-- context.tsv
-fileio.path("pending forced channels")                       |-- forced_channels_pending.tsv
-fileio.path("forced signal map")                             L-- forced_signals.tsv
+fileio.dirpath("maps")                                   |-- maps/
+fileio.path("channel map")                               |   |-- channels.tsv
+fileio.path("flattened channel map")                     |   |-- channel_map_flattened.tsv
+fileio.path("passthrough map")                           |   |-- passthrough.tsv
+fileio.path("passthrough routing context")               |   |-- context.tsv
+fileio.path("pending forced channels")                   |   |-- forced_channels_pending.tsv
+fileio.path("forced signal map")                         |   L-- forced_signals.tsv
+fileio.path("gitignore")                                 L-- .gitignore
 ```
+
+A build writes `.gitignore` in the revision folder. This project type ignores:
+
+- `.gui_temp/`
+- `*.tmp`
+- `*.tmp.step`
+- `.harnice-wm-*.pdf`
+
+Rules already in the file stay.
 
 
 ---

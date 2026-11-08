@@ -458,6 +458,13 @@ fileio.dirpath("part_directory")       |-- yourpn/
                                            |-- earlier revs/
 fileio.path("revision history")            |-- revhistory.csv
 fileio.dirpath("rev_directory")            L-- your rev/
+fileio.path("gitignore")                       L-- .gitignore
 ```
+
+A build writes `.gitignore` in the revision folder. This project type ignores:
+
+- `*.tmp`
+
+Rules already in the file stay.
 
 The empty tree above is the *macro project type* itself (`harnice.project_types.macro.file_structure()`), which has no fixed files. That is expected. A macro's real files are the ones **that macro** declares in `macro_file_structure()`, rooted at `instance_data/macro/{artifact_id}/` inside whatever project type called it.

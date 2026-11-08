@@ -7,8 +7,9 @@ description: >-
   Use when the user asks for harness build instructions, harness rules, a
   chosen network, a formboard, a node move, or a backshell clock. A system
   revision uses the system-build skill. A device pinout uses the
-  device-signals-list skill. A catalog of library SKUs uses the part-family
-  skill. Follow this skill when it is the best match. Do not ask which skill
+  device-signals-list skill. A catalog of library SKUs, including a catalog
+  of devices, uses the part-family skill. Follow this skill when it is the
+  best match. Do not ask which skill
   to follow. If the request is not clear, ask for clarification.
 ---
 
@@ -26,8 +27,8 @@ use them. Read it before you call. Do not invent a call, a signature,
 or a column.
 
 A system revision follows `skills/system/SKILL.md`. A device signals list
-follows `skills/device-signals-list/SKILL.md`. A catalog of library SKUs
-follows `skills/part-family/SKILL.md`.
+follows `skills/device-signals-list/SKILL.md`. A catalog of library SKUs,
+including a catalog of devices, follows `skills/part-family/SKILL.md`.
 
 
 ## Why the script exists
@@ -99,7 +100,7 @@ If the goal belongs on another project, stop. Say: "This would be better
 suited for {project}. Can you point me to that project? I don't want to
 modify it without your explicit permission." A system owns channel maps,
 passthroughs, circuits, and the connector choosers. A device signals
-list is a pinout. A part family is a catalog of SKUs.
+list is a pinout. A part family is a catalog of SKUs, including devices.
 
 If these calls cannot do the goal, or the goal does not name enough to
 pick a call, ask and say what is missing. Do not invent a call.

@@ -1,6 +1,8 @@
 ??? note "Default device build instructions"
     ```python
 
+    import os
+    
     # configuration is a dict keyed by field id from config.yaml.
     # Read one answer with configuration["field_id"].
     # A standalone build uses the setup defaults. A system rebuild passes that instance's answers.

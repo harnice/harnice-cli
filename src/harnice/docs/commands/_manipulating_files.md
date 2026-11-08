@@ -57,6 +57,7 @@ Here's the basics of how to read a file structure dictionary:
     **Special Target Values:**
     
     - **`revision history`:** the revision history file of the project you're currently working on
+    - **`gitignore`:** `.gitignore` in the revision folder
     - **`repository locations`:** the repository locations file on your computer (`repository_locations.csv`)
     - **`drawnby`:** the text file on your computer that stores your name
     - **`rev directory`:** the revsion directory of the project you're currently working on
@@ -259,6 +260,13 @@ Behind the scenes, Harnice stores the current part number and revision number in
     **Returns:** List of dicts, one per data row, with keys from the header row (`list`).
     
     **Raises:** `FileNotFoundError` if the path does not exist or the resolved path does not exist.
+
+??? info "`fileio.ensure_gitignore()`"
+
+    Use this when the runner writes the revision's ``.gitignore`` from the project type's ``gitignore_rules``. It runs during ``harnice -b``, before the script. A build script does not call this.
+    
+    Missing rules are appended. Rules already present are left as they are.
+    An empty list does not create a file.
 
 ??? info "`fileio.verify_revision_structure()`"
 

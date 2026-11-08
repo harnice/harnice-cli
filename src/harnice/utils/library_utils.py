@@ -5,6 +5,7 @@ import filecmp
 import json
 from harnice import cli, fileio
 from harnice.lists import instances_list, library_history, rev_history
+from harnice.utils import block_diagram_utils
 
 def _mpn_from_instances(instance_name):
     try:
@@ -17,12 +18,13 @@ def _svg_text_as_pulled(library_svg_text, mpn, instance_name):
     """Apply the same SVG id rewrite ``pull`` does when seeding an instance copy."""
     if not mpn or not instance_name:
         return library_svg_text
+    svg_id = block_diagram_utils.svg_id_for_refdes(instance_name)
     return library_svg_text.replace(
         f"{mpn}-drawing-contents-start",
-        f"{instance_name}-contents-start",
+        f"{svg_id}-contents-start",
     ).replace(
         f"{mpn}-drawing-contents-end",
-        f"{instance_name}-contents-end",
+        f"{svg_id}-contents-end",
     )
 
 
@@ -469,12 +471,15 @@ instance data.
             if filename.endswith(".svg"):
                 with open(editable_file_path, "r", encoding="utf-8") as f:
                     content = f.read()
+                svg_id = block_diagram_utils.svg_id_for_refdes(
+                    input_dict.get("instance_name")
+                )
                 content = content.replace(
                     f"{input_dict.get('mpn')}-drawing-contents-start",
-                    f"{input_dict.get('instance_name')}-contents-start",
+                    f"{svg_id}-contents-start",
                 ).replace(
                     f"{input_dict.get('mpn')}-drawing-contents-end",
-                    f"{input_dict.get('instance_name')}-contents-end",
+                    f"{svg_id}-contents-end",
                 )
                 with open(editable_file_path, "w", encoding="utf-8") as f:
                     f.write(content)

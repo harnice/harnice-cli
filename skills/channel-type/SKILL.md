@@ -19,8 +19,9 @@ Before you follow the rest of this skill, pull the latest `main` from the skills
 When you write a path to reference material, write it with respect to the library folder if one is available. Use library locations to establish where you are, then write `(url)/path/file`. Library locations are `repository_locations.csv`. The first column is the library URL. The second column is the local checkout. `url` is the URL of the checkout that contains the file. `path/file` is the path under that checkout. A file outside every checkout keeps the path I gave you.
 
 Add one channel type, and only after I have agreed to add it. This file is
-the procedure. Then go back to `skills/device-signals-list/SKILL.md` and use
-the new id.
+the procedure. Then go back to the skill you came from and use the new id.
+One device is `skills/device-signals-list/SKILL.md`. A catalog of devices is
+`skills/part-family/SKILL.md`.
 
 Read `project_types/_channel_type.md` for `chtype.signals` and
 `chtype.compatibles`. The documentation is in the command-line package

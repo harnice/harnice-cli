@@ -59,6 +59,8 @@ def apply_staged_instance_renames():
     ``{current}-contents-start`` / ``{current}-contents-end`` in the folder's
     editable SVGs and on the diagram, updates ``physical.json`` placements,
     fixed devices, and mate devices, then sets the group id to the new name.
+    A name that starts with a digit is kept for the folder and for printed
+    text. Its SVG id is that name with a leading colon.
     The attribute is removed once that is done, or when there was no folder
     to move.
 
@@ -116,21 +118,25 @@ def apply_staged_instance_renames():
             continue
         if el.get("data-harnice-gui-temp-place") == "1":
             continue
-        refdes = block_diagram_utils._refdes_from_device_group(el)
+        svg_id = (el.get("id") or "").strip()
+        refdes = block_diagram_utils.refdes_from_svg_id(svg_id)
         if not refdes:
             continue
         item_type = "system" if kind == "subsystem" else "device"
         live_ids.add(refdes)
-        update = el.get(attr_name) or ""
-        if not update:
+        raw_update = (el.get(attr_name) or "").strip()
+        if not raw_update:
             continue
+        update = block_diagram_utils.refdes_from_svg_id(raw_update)
         if update == refdes:
-            redundant.append(refdes)
+            redundant.append((svg_id, raw_update))
             continue
         pairs.append({
             "item_type": item_type,
             "from": refdes,
             "to": update,
+            "svg_id": svg_id,
+            "raw_to": raw_update,
         })
 
     if not pairs and not redundant:
@@ -359,18 +365,27 @@ def apply_staged_instance_renames():
     def rewrite_symbol_ids(folder, src, dst):
         if not is_real_dir(folder):
             return
-        start_re = re.compile(
-            r"(?<![A-Za-z0-9_.:-])"
-            + re.escape(src + "-contents-start")
-            + r"(?![A-Za-z0-9_.:-])"
-        )
-        end_re = re.compile(
-            r"(?<![A-Za-z0-9_.:-])"
-            + re.escape(src + "-contents-end")
-            + r"(?![A-Za-z0-9_.:-])"
-        )
-        new_start = dst + "-contents-start"
-        new_end = dst + "-contents-end"
+        new_id = block_diagram_utils.svg_id_for_refdes(dst)
+        new_start = new_id + "-contents-start"
+        new_end = new_id + "-contents-end"
+        old_ids = []
+        for old in (src, block_diagram_utils.svg_id_for_refdes(src)):
+            if old and old != new_id and old not in old_ids:
+                old_ids.append(old)
+        patterns = []
+        for old in old_ids:
+            patterns.append((
+                re.compile(
+                    r"(?<![A-Za-z0-9_.:-])"
+                    + re.escape(old + "-contents-start")
+                    + r"(?![A-Za-z0-9_.:-])"
+                ),
+                re.compile(
+                    r"(?<![A-Za-z0-9_.:-])"
+                    + re.escape(old + "-contents-end")
+                    + r"(?![A-Za-z0-9_.:-])"
+                ),
+            ))
         for dirpath, dirnames, filenames in os.walk(folder):
             dirnames[:] = [
                 name for name in dirnames
@@ -384,7 +399,9 @@ def apply_staged_instance_renames():
                     continue
                 with open(path, "r", encoding="utf-8") as handle:
                     file_text = handle.read()
-                updated = end_re.sub(new_end, start_re.sub(new_start, file_text))
+                updated = file_text
+                for start_re, end_re in patterns:
+                    updated = end_re.sub(new_end, start_re.sub(new_start, updated))
                 if updated != file_text:
                     fileio.atomic_write_text(path, updated)
 
@@ -475,14 +492,14 @@ def apply_staged_instance_renames():
         return text
 
     updated_svg = svg_text
-    for refdes in redundant:
-        updated_svg = strip_attr_on_id(updated_svg, refdes, refdes)
+    for svg_id, raw_update in redundant:
+        updated_svg = strip_attr_on_id(updated_svg, svg_id, raw_update)
     tokens = []
     for index, pair in enumerate(applied):
         token = "HARNICEPENDING" + str(index) + "END"
-        tokens.append((token, pair["to"]))
-        updated_svg = strip_attr_on_id(updated_svg, pair["from"], pair["to"])
-        updated_svg = rename_id_and_anchor(updated_svg, pair["from"], token)
+        tokens.append((token, block_diagram_utils.svg_id_for_refdes(pair["to"])))
+        updated_svg = strip_attr_on_id(updated_svg, pair["svg_id"], pair["raw_to"])
+        updated_svg = rename_id_and_anchor(updated_svg, pair["svg_id"], token)
     for token, dest in tokens:
         updated_svg = rename_id_and_anchor(updated_svg, token, dest)
     if updated_svg != svg_text:
@@ -1980,192 +1997,150 @@ def create_instances_from_circuits_list():
     connectors_list = list(fileio.read_tsv("system connector list"))
     circuits = circuits_list.read()
 
-    for circuit in circuits:
-        from_side_device = circuit.get("from_side_device_refdes") or ""
-        from_side_ch = circuit.get("from_side_device_chname") or ""
-        to_side_device = circuit.get("to_side_device_refdes") or ""
-        to_side_ch = circuit.get("to_side_device_chname") or ""
-        circuit_print_name = (
-            f"{circuit.get('from_signal') or ''}_of_"
-            f"{from_side_device}.{from_side_ch}<->{to_side_device}.{to_side_ch}"
-        )
-        channel_print_name = (
-            f"{from_side_device}.{from_side_ch} <-> {to_side_device}.{to_side_ch}"
-        )
+    with instances_list._one_write():
+        for circuit in circuits:
+            from_side_device = circuit.get("from_side_device_refdes") or ""
+            from_side_ch = circuit.get("from_side_device_chname") or ""
+            to_side_device = circuit.get("to_side_device_refdes") or ""
+            to_side_ch = circuit.get("to_side_device_chname") or ""
+            circuit_print_name = (
+                f"{circuit.get('from_signal') or ''}_of_"
+                f"{from_side_device}.{from_side_ch}<->{to_side_device}.{to_side_ch}"
+            )
+            channel_print_name = (
+                f"{from_side_device}.{from_side_ch} <-> {to_side_device}.{to_side_ch}"
+            )
 
-        from_connector_key = (
-            f"{circuit.get('harness_from_refdes')}.{circuit.get('harness_from_connector_name')}"
-        )
-        from_cavity = f"{from_connector_key}.{circuit.get('harness_from_cavity')}"
+            from_connector_key = (
+                f"{circuit.get('harness_from_refdes')}.{circuit.get('harness_from_connector_name')}"
+            )
+            from_cavity = f"{from_connector_key}.{circuit.get('harness_from_cavity')}"
 
-        # Look up device connector MPN and asserted harness connector name
-        from_connector_mpn = ""
-        from_harness_side_connector_id = ""
-        for connector in connectors_list:
-            if connector.get("device_refdes") == circuit.get(
-                "harness_from_refdes"
-            ) and connector.get("device_connector") == circuit.get(
-                "harness_from_connector_name"
-            ):
-                from_connector_mpn = connector.get("device_connector_mpn")
-                from_harness_side_connector_id = connector.get(
-                    "mating_harness_asserted_connector_name"
-                ) or ""
-                break
-
-        # from device connector
-        instances_list.new_instance(
-            f"{from_connector_key}.conn",
-            {
-                "harness": circuit.get("harness"),
-                "item_type": "device_connector",
-                "location_type": "node",
-                "connector_group": from_connector_key,
-                "parent_csys_instance_name": f"{from_connector_key}.node",
-                "parent_csys_outputcsys_name": "origin",
-                "device_side_refdes": circuit.get("harness_from_refdes"),
-                "device_side_connector_id": circuit.get("harness_from_connector_name"),
-                "device_side_connector_mpn": from_connector_mpn,
-                "harness_side_connector_id": from_harness_side_connector_id,
-            },
-            ignore_duplicates=True,
-        )
-
-        # from connector cavity
-        instances_list.new_instance(
-            from_cavity,
-            {
-                "harness": circuit.get("harness"),
-                "item_type": "device_connector_cavity",
-                "location_type": "node",
-                "connector_group": from_connector_key,
-                "circuit_id": circuit.get("circuit_id"),
-                "circuit_port_number": 0,
-            },
-            ignore_duplicates=True,
-        )
-
-        is_mcj = bool((circuit.get("multi_ch_junction_id") or "").strip())
-        to_connector_key = (
-            f"{circuit.get('harness_to_refdes')}.{circuit.get('harness_to_connector_name')}"
-        )
-        to_cavity = (
-            f"{to_side_device}.{to_side_ch}"
-            if is_mcj
-            else f"{to_connector_key}.{circuit.get('harness_to_cavity')}"
-        )
-
-        if not is_mcj:
             # Look up device connector MPN and asserted harness connector name
-            to_connector_mpn = ""
-            to_harness_side_connector_id = ""
+            from_connector_mpn = ""
+            from_harness_side_connector_id = ""
             for connector in connectors_list:
                 if connector.get("device_refdes") == circuit.get(
-                    "harness_to_refdes"
+                    "harness_from_refdes"
                 ) and connector.get("device_connector") == circuit.get(
-                    "harness_to_connector_name"
+                    "harness_from_connector_name"
                 ):
-                    to_connector_mpn = connector.get("device_connector_mpn")
-                    to_harness_side_connector_id = connector.get(
+                    from_connector_mpn = connector.get("device_connector_mpn")
+                    from_harness_side_connector_id = connector.get(
                         "mating_harness_asserted_connector_name"
                     ) or ""
                     break
 
-            # to device connector
+            # from device connector
             instances_list.new_instance(
-                f"{to_connector_key}.conn",
+                f"{from_connector_key}.conn",
                 {
                     "harness": circuit.get("harness"),
                     "item_type": "device_connector",
                     "location_type": "node",
-                    "connector_group": to_connector_key,
-                    "device_side_refdes": circuit.get("harness_to_refdes"),
-                    "device_side_connector_id": circuit.get("harness_to_connector_name"),
-                    "device_side_connector_mpn": to_connector_mpn,
-                    "harness_side_connector_id": to_harness_side_connector_id,
+                    "connector_group": from_connector_key,
+                    "parent_csys_instance_name": f"{from_connector_key}.node",
+                    "parent_csys_outputcsys_name": "origin",
+                    "device_side_refdes": circuit.get("harness_from_refdes"),
+                    "device_side_connector_id": circuit.get("harness_from_connector_name"),
+                    "device_side_connector_mpn": from_connector_mpn,
+                    "harness_side_connector_id": from_harness_side_connector_id,
                 },
                 ignore_duplicates=True,
             )
 
-            # to connector cavity
+            # from connector cavity
             instances_list.new_instance(
-                to_cavity,
+                from_cavity,
                 {
                     "harness": circuit.get("harness"),
                     "item_type": "device_connector_cavity",
                     "location_type": "node",
-                    "connector_group": to_connector_key,
+                    "connector_group": from_connector_key,
                     "circuit_id": circuit.get("circuit_id"),
-                    "circuit_port_number": 1,
+                    "circuit_port_number": 0,
                 },
                 ignore_duplicates=True,
             )
 
-        circuit_instance = {
-            "harness": circuit.get("harness"),
-            "item_type": "circuit",
-            "print_name": circuit_print_name,
-            "print_name_at_end_a": circuit.get("harness_from_cavity") or "",
-            "print_name_at_end_b": circuit.get("harness_to_cavity") or "",
-            "node_at_end_a": from_cavity,
-            "node_at_end_b": to_cavity,
-            "channel_group": f"channel-{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}",
-            "circuit_id": circuit.get("circuit_id"),
-            "device_side_from_cavity": circuit.get("harness_from_cavity"),
-            "device_side_to_cavity": circuit.get("harness_to_cavity"),
-            "this_harness_from_device_refdes": circuit.get("harness_from_refdes"),
-            "this_harness_from_device_channel_id": circuit.get("harness_from_channel_id"),
-            "this_harness_from_device_connector_name": circuit.get(
-                "harness_from_connector_name"
-            ),
-            "this_harness_to_device_refdes": circuit.get("harness_to_refdes"),
-            "this_harness_to_device_channel_id": circuit.get("harness_to_channel_id"),
-            "this_harness_to_device_connector_name": circuit.get(
-                "harness_to_connector_name"
-            ),
-            "this_channel_from_device_refdes": circuit.get(
-                "from_side_device_refdes"
-            ),
-            "this_channel_from_device_channel_id": circuit.get(
-                "from_side_device_chname"
-            ),
-            "this_channel_to_device_refdes": circuit.get("to_side_device_refdes"),
-            "this_channel_to_device_channel_id": circuit.get(
-                "to_side_device_chname"
-            ),
-            "this_channel_from_channel_type": circuit.get("from_channel_type"),
-            "this_channel_to_channel_type": circuit.get("to_channel_type"),
-            "signal_of_channel_type": circuit.get("from_signal"),
-        }
-        if is_mcj:
-            circuit_instance["multi_ch_junction_id"] = circuit.get(
-                "multi_ch_junction_id"
+            is_mcj = bool((circuit.get("multi_ch_junction_id") or "").strip())
+            to_connector_key = (
+                f"{circuit.get('harness_to_refdes')}.{circuit.get('harness_to_connector_name')}"
             )
-            circuit_instance["from_node_id"] = from_connector_key
+            to_cavity = (
+                f"{to_side_device}.{to_side_ch}"
+                if is_mcj
+                else f"{to_connector_key}.{circuit.get('harness_to_cavity')}"
+            )
 
-        # add circuit
-        instances_list.new_instance(
-            f"circuit-{circuit.get('circuit_id')}",
-            circuit_instance,
-            ignore_duplicates=True,
-        )
+            if not is_mcj:
+                # Look up device connector MPN and asserted harness connector name
+                to_connector_mpn = ""
+                to_harness_side_connector_id = ""
+                for connector in connectors_list:
+                    if connector.get("device_refdes") == circuit.get(
+                        "harness_to_refdes"
+                    ) and connector.get("device_connector") == circuit.get(
+                        "harness_to_connector_name"
+                    ):
+                        to_connector_mpn = connector.get("device_connector_mpn")
+                        to_harness_side_connector_id = connector.get(
+                            "mating_harness_asserted_connector_name"
+                        ) or ""
+                        break
 
-        # --- add channel
-        instances_list.new_instance(
-            f"channel-{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-"
-            f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}",
-            {
-                "item_type": "channel",
-                "print_name": channel_print_name,
-                "print_name_at_end_a": from_side_ch,
-                "print_name_at_end_b": to_side_ch,
-                "node_at_end_a": f"{from_side_device}.{from_side_ch}",
-                "node_at_end_b": f"{to_side_device}.{to_side_ch}",
-                "channel_group": (
-                    f"channel-{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-"
-                    f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}"
+                # to device connector
+                instances_list.new_instance(
+                    f"{to_connector_key}.conn",
+                    {
+                        "harness": circuit.get("harness"),
+                        "item_type": "device_connector",
+                        "location_type": "node",
+                        "connector_group": to_connector_key,
+                        "device_side_refdes": circuit.get("harness_to_refdes"),
+                        "device_side_connector_id": circuit.get("harness_to_connector_name"),
+                        "device_side_connector_mpn": to_connector_mpn,
+                        "harness_side_connector_id": to_harness_side_connector_id,
+                    },
+                    ignore_duplicates=True,
+                )
+
+                # to connector cavity
+                instances_list.new_instance(
+                    to_cavity,
+                    {
+                        "harness": circuit.get("harness"),
+                        "item_type": "device_connector_cavity",
+                        "location_type": "node",
+                        "connector_group": to_connector_key,
+                        "circuit_id": circuit.get("circuit_id"),
+                        "circuit_port_number": 1,
+                    },
+                    ignore_duplicates=True,
+                )
+
+            circuit_instance = {
+                "harness": circuit.get("harness"),
+                "item_type": "circuit",
+                "print_name": circuit_print_name,
+                "print_name_at_end_a": circuit.get("harness_from_cavity") or "",
+                "print_name_at_end_b": circuit.get("harness_to_cavity") or "",
+                "node_at_end_a": from_cavity,
+                "node_at_end_b": to_cavity,
+                "channel_group": f"channel-{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}",
+                "circuit_id": circuit.get("circuit_id"),
+                "device_side_from_cavity": circuit.get("harness_from_cavity"),
+                "device_side_to_cavity": circuit.get("harness_to_cavity"),
+                "this_harness_from_device_refdes": circuit.get("harness_from_refdes"),
+                "this_harness_from_device_channel_id": circuit.get("harness_from_channel_id"),
+                "this_harness_from_device_connector_name": circuit.get(
+                    "harness_from_connector_name"
                 ),
-                "location_type": "segment",
+                "this_harness_to_device_refdes": circuit.get("harness_to_refdes"),
+                "this_harness_to_device_channel_id": circuit.get("harness_to_channel_id"),
+                "this_harness_to_device_connector_name": circuit.get(
+                    "harness_to_connector_name"
+                ),
                 "this_channel_from_device_refdes": circuit.get(
                     "from_side_device_refdes"
                 ),
@@ -2178,66 +2153,44 @@ def create_instances_from_circuits_list():
                 ),
                 "this_channel_from_channel_type": circuit.get("from_channel_type"),
                 "this_channel_to_channel_type": circuit.get("to_channel_type"),
-            },
-            ignore_duplicates=True,
-        )
+                "signal_of_channel_type": circuit.get("from_signal"),
+            }
+            if is_mcj:
+                circuit_instance["multi_ch_junction_id"] = circuit.get(
+                    "multi_ch_junction_id"
+                )
+                circuit_instance["from_node_id"] = from_connector_key
 
-        # One harness-channel per circuit row; index disambiguates repeated harness names in chain_of_harnesses.
-        # MCJ circuits terminate on the junction, not a device connector — skip harness-channel
-        # so the channel overlay does not try to route to a missing MCJ node.
-        harness = (circuit.get("harness") or "").strip()
-        harness_chain_index_raw = circuit.get("harness_chain_index")
-        if (
-            not is_mcj
-            and harness
-            and harness_chain_index_raw is not None
-            and str(harness_chain_index_raw).strip() != ""
-        ):
-            harness_chain_index = int(harness_chain_index_raw)
-            channel_suffix = (
-                f"{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-"
-                f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}"
-            )
+            # add circuit
             instances_list.new_instance(
-                f"{harness}-{harness_chain_index}:channel-{channel_suffix}",
+                f"circuit-{circuit.get('circuit_id')}",
+                circuit_instance,
+                ignore_duplicates=True,
+            )
+
+            # --- add channel
+            instances_list.new_instance(
+                f"channel-{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-"
+                f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}",
                 {
-                    "harness": harness,
-                    "harness_chain_index": harness_chain_index,
-                    "item_type": "harness-channel",
+                    "item_type": "channel",
                     "print_name": channel_print_name,
-                    "print_name_at_end_a": circuit.get("harness_from_channel_id") or "",
-                    "print_name_at_end_b": circuit.get("harness_to_channel_id") or "",
-                    "node_at_end_a": (
-                        f"{circuit.get('harness_from_refdes') or ''}."
-                        f"{circuit.get('harness_from_channel_id') or ''}"
+                    "print_name_at_end_a": from_side_ch,
+                    "print_name_at_end_b": to_side_ch,
+                    "node_at_end_a": f"{from_side_device}.{from_side_ch}",
+                    "node_at_end_b": f"{to_side_device}.{to_side_ch}",
+                    "channel_group": (
+                        f"channel-{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-"
+                        f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}"
                     ),
-                    "node_at_end_b": (
-                        f"{circuit.get('harness_to_refdes') or ''}."
-                        f"{circuit.get('harness_to_channel_id') or ''}"
-                    ),
-                    "channel_group": f"channel-{channel_suffix}",
                     "location_type": "segment",
-                    "this_harness_from_device_refdes": circuit.get("harness_from_refdes"),
-                    "this_harness_from_device_channel_id": circuit.get(
-                        "harness_from_channel_id"
-                    ),
-                    "this_harness_from_device_connector_name": circuit.get(
-                        "harness_from_connector_name"
-                    ),
-                    "this_harness_to_device_refdes": circuit.get("harness_to_refdes"),
-                    "this_harness_to_device_channel_id": circuit.get("harness_to_channel_id"),
-                    "this_harness_to_device_connector_name": circuit.get(
-                        "harness_to_connector_name"
-                    ),
                     "this_channel_from_device_refdes": circuit.get(
                         "from_side_device_refdes"
                     ),
                     "this_channel_from_device_channel_id": circuit.get(
                         "from_side_device_chname"
                     ),
-                    "this_channel_to_device_refdes": circuit.get(
-                        "to_side_device_refdes"
-                    ),
+                    "this_channel_to_device_refdes": circuit.get("to_side_device_refdes"),
                     "this_channel_to_device_channel_id": circuit.get(
                         "to_side_device_chname"
                     ),
@@ -2247,24 +2200,89 @@ def create_instances_from_circuits_list():
                 ignore_duplicates=True,
             )
 
-    # Post-process: Update all device connector instances with device-side and harness-side info
-    for connector in fileio.read_tsv("system connector list"):
-        try:
-            instances_list.modify(
-                f"{connector.get('device_refdes')}.{connector.get('device_connector')}.conn",
-                {
-                    "device_side_refdes": connector.get("device_refdes"),
-                    "device_side_connector_id": connector.get("device_connector"),
-                    "device_side_connector_mpn": connector.get("device_connector_mpn"),
-                    "harness_side_connector_id": connector.get(
-                        "mating_harness_asserted_connector_name"
-                    )
-                    or "",
-                },
-            )
-        except ValueError:
-            # Skip if device connector instance doesn't exist (may not have been created if no circuits)
-            pass
+            # One harness-channel per circuit row; index disambiguates repeated harness names in chain_of_harnesses.
+            # MCJ circuits terminate on the junction, not a device connector — skip harness-channel
+            # so the channel overlay does not try to route to a missing MCJ node.
+            harness = (circuit.get("harness") or "").strip()
+            harness_chain_index_raw = circuit.get("harness_chain_index")
+            if (
+                not is_mcj
+                and harness
+                and harness_chain_index_raw is not None
+                and str(harness_chain_index_raw).strip() != ""
+            ):
+                harness_chain_index = int(harness_chain_index_raw)
+                channel_suffix = (
+                    f"{circuit.get('from_side_device_refdes')}.{circuit.get('from_side_device_chname')}-"
+                    f"{circuit.get('to_side_device_refdes')}.{circuit.get('to_side_device_chname')}"
+                )
+                instances_list.new_instance(
+                    f"{harness}-{harness_chain_index}:channel-{channel_suffix}",
+                    {
+                        "harness": harness,
+                        "harness_chain_index": harness_chain_index,
+                        "item_type": "harness-channel",
+                        "print_name": channel_print_name,
+                        "print_name_at_end_a": circuit.get("harness_from_channel_id") or "",
+                        "print_name_at_end_b": circuit.get("harness_to_channel_id") or "",
+                        "node_at_end_a": (
+                            f"{circuit.get('harness_from_refdes') or ''}."
+                            f"{circuit.get('harness_from_channel_id') or ''}"
+                        ),
+                        "node_at_end_b": (
+                            f"{circuit.get('harness_to_refdes') or ''}."
+                            f"{circuit.get('harness_to_channel_id') or ''}"
+                        ),
+                        "channel_group": f"channel-{channel_suffix}",
+                        "location_type": "segment",
+                        "this_harness_from_device_refdes": circuit.get("harness_from_refdes"),
+                        "this_harness_from_device_channel_id": circuit.get(
+                            "harness_from_channel_id"
+                        ),
+                        "this_harness_from_device_connector_name": circuit.get(
+                            "harness_from_connector_name"
+                        ),
+                        "this_harness_to_device_refdes": circuit.get("harness_to_refdes"),
+                        "this_harness_to_device_channel_id": circuit.get("harness_to_channel_id"),
+                        "this_harness_to_device_connector_name": circuit.get(
+                            "harness_to_connector_name"
+                        ),
+                        "this_channel_from_device_refdes": circuit.get(
+                            "from_side_device_refdes"
+                        ),
+                        "this_channel_from_device_channel_id": circuit.get(
+                            "from_side_device_chname"
+                        ),
+                        "this_channel_to_device_refdes": circuit.get(
+                            "to_side_device_refdes"
+                        ),
+                        "this_channel_to_device_channel_id": circuit.get(
+                            "to_side_device_chname"
+                        ),
+                        "this_channel_from_channel_type": circuit.get("from_channel_type"),
+                        "this_channel_to_channel_type": circuit.get("to_channel_type"),
+                    },
+                    ignore_duplicates=True,
+                )
+
+        # Post-process: Update all device connector instances with device-side and harness-side info
+        for connector in connectors_list:
+            try:
+                instances_list.modify(
+                    f"{connector.get('device_refdes')}.{connector.get('device_connector')}.conn",
+                    {
+                        "device_side_refdes": connector.get("device_refdes"),
+                        "device_side_connector_id": connector.get("device_connector"),
+                        "device_side_connector_mpn": connector.get("device_connector_mpn"),
+                        "harness_side_connector_id": connector.get(
+                            "mating_harness_asserted_connector_name"
+                        )
+                        or "",
+                    },
+                )
+            except ValueError:
+                # Skip if device connector instance doesn't exist (may not have been created if no circuits)
+                pass
 
 
 def import_harness_from_harnice_system(
@@ -2836,7 +2854,7 @@ def apply_placed_symbol_fstrings(root_g):
         return enclosing is None
 
     local = block_diagram_utils._svg_local_tag
-    refdes = (root_g.get("id") or "").strip().strip("?")
+    refdes = block_diagram_utils.refdes_from_svg_id(root_g.get("id") or "")
     stored = _device_symbol_fstring_results.get(refdes) or {}
     config = {}
     for child in list(root_g):
@@ -3324,6 +3342,63 @@ def refresh_block_diagram_placed_symbols(svg_text):
                     changed = True
         return changed
 
+    def copy_matching_svg_ids(dest_parent, src_parent):
+        """Copy dest ``id`` values onto matching src elements (pins, labels, geometry)."""
+
+        def match_key(el):
+            local = block_diagram_utils._svg_local_tag(el.tag)
+            pin = (el.get("data-pin-name") or "").strip()
+            if pin:
+                return ("pin", pin)
+            if local == "configuration":
+                return ("configuration",)
+            classes = tuple(sorted((el.get("class") or "").split()))
+            geom = tuple(
+                (k, block_diagram_utils._normalize_svg_attr_value(k, el.get(k)))
+                for k in (
+                    "cx",
+                    "cy",
+                    "r",
+                    "x",
+                    "y",
+                    "x1",
+                    "y1",
+                    "x2",
+                    "y2",
+                    "width",
+                    "height",
+                    "d",
+                    "points",
+                    "transform",
+                )
+                if el.get(k) is not None
+            )
+            return ("geom", local, classes, geom)
+
+        dest_by_key = {}
+        dups = set()
+        for el in dest_parent.iter():
+            if el is dest_parent:
+                continue
+            key = match_key(el)
+            if key in dest_by_key:
+                dups.add(key)
+            else:
+                dest_by_key[key] = el
+        for key in dups:
+            dest_by_key.pop(key, None)
+        used = set()
+        for el in src_parent.iter():
+            if el is src_parent:
+                continue
+            dest_el = dest_by_key.get(match_key(el))
+            if dest_el is None or id(dest_el) in used:
+                continue
+            dest_id = (dest_el.get("id") or "").strip()
+            if dest_id:
+                el.set("id", dest_id)
+                used.add(id(dest_el))
+
     def instance_symbol_svg_path(item_type, refdes, artifact_id=""):
         """
         Absolute path to a placed instance's symbol SVG under ``instance_data``.
@@ -3574,7 +3649,7 @@ def refresh_block_diagram_placed_symbols(svg_text):
         ):
             continue
 
-        block_diagram_utils.copy_matching_svg_ids(dest_contents, scratch_contents)
+        copy_matching_svg_ids(dest_contents, scratch_contents)
         new_inner = block_diagram_utils.serialize_svg_element_children(scratch_contents)
         spliced = block_diagram_utils.replace_svg_element_inner_by_id(
             result, dest_contents_id, new_inner

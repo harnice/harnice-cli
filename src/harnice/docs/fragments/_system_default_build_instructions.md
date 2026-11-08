@@ -1,6 +1,8 @@
 ??? note "Default system build instructions"
     ```python
 
+    import os
+    
     # ===========================================================================
     #                CHANNEL AND PASSTHROUGH MAPPING
     # ===========================================================================

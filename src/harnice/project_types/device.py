@@ -35,6 +35,10 @@ default_desc = "DEVICE, FUNCTION, ATTRIBUTES, etc."
 
 button_color = "#d376f5"
 
+gitignore_rules = [
+    "*.tmp",
+]
+
 def file_structure():
     return {
         "build.py": "build instructions",
@@ -90,6 +94,57 @@ def _validate_svg_symbol():
     signals-list ``connector_id`` and be unique within the symbol. A missing
     ``data-pin-name`` is filled from a real connector ``id`` when present.
     """
+
+    def add_svg_attribute_by_id(svg_text, element_id, name, value):
+        """Add ``name="value"`` to the opening tag of ``element_id`` if missing."""
+        span = block_diagram_utils.find_svg_element_span(svg_text, element_id)
+        if span is None:
+            return None
+        start, open_end, _close_start, _end = span
+        open_tag = svg_text[start:open_end]
+        if re.search(rf"""\b{re.escape(name)}\s*=""", open_tag):
+            return svg_text
+        insert_at = open_end - 1
+        if open_tag.rstrip().endswith("/>"):
+            insert_at = start + open_tag.rstrip().rfind("/>")
+        padded = f' {name}="{value}"'
+        return svg_text[:insert_at] + padded + svg_text[insert_at:]
+
+    def add_svg_attribute_by_attr(svg_text, find_attr, find_value, name, value):
+        """Add ``name="value"`` to the first element with ``find_attr=find_value``."""
+        needle_re = re.compile(
+            rf"""\b{re.escape(find_attr)}\s*=\s*(["']){re.escape(str(find_value))}\1"""
+        )
+        match = needle_re.search(svg_text)
+        if not match:
+            return None
+        start = svg_text.rfind("<", 0, match.start())
+        if start < 0 or ">" in svg_text[start : match.start()]:
+            return None
+        gt = svg_text.find(">", start)
+        if gt < 0:
+            return None
+        open_tag = svg_text[start : gt + 1]
+        if re.search(rf"""\b{re.escape(name)}\s*=""", open_tag):
+            return svg_text
+        insert_at = gt
+        if open_tag.rstrip().endswith("/>"):
+            insert_at = start + open_tag.rstrip().rfind("/>")
+        padded = f' {name}="{value}"'
+        return svg_text[:insert_at] + padded + svg_text[insert_at:]
+
+    def insert_before_svg_element_close(svg_text, element_id, markup):
+        """Insert ``markup`` immediately before the closing tag of ``element_id``."""
+        span = block_diagram_utils.find_svg_element_span(svg_text, element_id)
+        if span is None:
+            return None
+        _start, _open_end, close_start, _end = span
+        if close_start is None:
+            return block_diagram_utils.replace_svg_element_inner_by_id(
+                svg_text, element_id, markup
+            )
+        return svg_text[:close_start] + markup + svg_text[close_start:]
+
     _ensure_svg_symbol_exists()
     path = fileio.path("block diagram symbol")
     svg_text = Path(path).read_text(encoding="utf-8")
@@ -187,11 +242,9 @@ def _validate_svg_symbol():
     surgical = True
     for find_by, find_val, name, value in attr_patches:
         if find_by == "id":
-            nxt = block_diagram_utils.add_svg_attribute_by_id(out, find_val, name, value)
+            nxt = add_svg_attribute_by_id(out, find_val, name, value)
         else:
-            nxt = block_diagram_utils.add_svg_attribute_by_attr(
-                out, find_by, find_val, name, value
-            )
+            nxt = add_svg_attribute_by_attr(out, find_by, find_val, name, value)
         if nxt is None:
             surgical = False
             break
@@ -199,9 +252,7 @@ def _validate_svg_symbol():
     if surgical and append_parts:
         contents_id = (contents.get("id") or "").strip()
         nxt = (
-            block_diagram_utils.insert_before_svg_element_close(
-                out, contents_id, "".join(append_parts)
-            )
+            insert_before_svg_element_close(out, contents_id, "".join(append_parts))
             if contents_id
             else None
         )
@@ -725,6 +776,8 @@ def build(verbose=True, configuration=None):
 
     script_ns = None
     library_history.new()
+    from harnice.utils import physical_body
+    physical_body.release_mates_to_gui()
 
     if os.path.exists(fileio.path("build instructions")):
         init_globals = {"configuration": configuration}
@@ -739,6 +792,5 @@ def build(verbose=True, configuration=None):
     _validate_signals_list(verbose)
     _validate_svg_symbol()
     _validate_config_yaml()
-    from harnice.utils import physical_body
     physical_body.require_saved_mates()
     return script_ns

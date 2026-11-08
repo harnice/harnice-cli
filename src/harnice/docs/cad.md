@@ -139,19 +139,18 @@ Mates are stored in `fileio.path("attributes")` (`attributes.json`) under `mate_
 }
 ```
 
-`source` is `build` or `gui`.
+`source` is `build` or `gui`. The physical model page shows it and does not edit it.
 
-- A `build` mate is placed again on the next build. The rack macros write `F1`, `F2`, and the enclosure's `B1`, `B2` this way.
-- A `gui` mate keeps the pose saved in `attributes.json`. A `gui` mate with the same id replaces the build mate.
-- A mate saved without `source` is `build` when its id is `U` plus digits, and `gui` otherwise.
+- A build starts by marking every saved mate `gui`.
+- `cad.mate` marks that mate `build`. The page can select it and cannot move it.
+- A mate this build does not place stays `gui`, and the page keeps its pose.
+- A mate saved without `source` is `build` when its id is `U` plus digits, and `gui` otherwise. The next build marks it `gui` until the instructions place it.
 
-Once `mate_connectors` is present, every `connector_id` on the signals list needs a mate with that same id. The build fails if one is missing, and tells you to place it on the physical model page. A device with no `mate_connectors` key still builds.
+Every `connector_id` on the signals list needs a mate with that same id. The build adds a missing one at the origin with `source` `gui`, and that writes `mate_connectors` when the key is absent. A device with no signals-list connectors is left unchanged. The physical model page reads those mates. It does not add them. Those ids stay tied to the signals list. Other mates can be added, renamed, and deleted.
 
-Opening the physical model page writes that key when it is absent, and puts any missing required mate at the origin with `source` `gui`. Those ids stay tied to the signals list. Other mates can be added, renamed, and deleted.
+The shipped macros that write mates call `cad.keep_gui_mates` before `cad.save_mates`. That copies saved `gui` mates this run did not place. A mate this run placed keeps that pose. A custom script that calls `cad.save_mates` does the same, or the next build drops the poses you set on the page.
 
-The shipped macros that write mates call `cad.keep_gui_mates` before `cad.save_mates`. That copies saved `gui` mates onto the new model and drops a `build` mate this run did not create. A custom script that calls `cad.save_mates` does the same, or the next build replaces the poses you set on the page.
-
-On the device page, select a mate and drag its triad, or type the numbers. The properties card edits the id, the pose, and `source`. A signals-list connector id cannot be renamed or deleted. **Add mate connector** creates another mate at the origin.
+On the device page, **Selection filter** chooses whether a click can select the solid or a mate connector. Select a mate this page owns and drag its triad, or type the numbers. Each of those selected mates has a triad, and dragging one moves every selected mate this page owns. A mate the last build placed can be selected and has no triad. The properties card edits the id and, for a mate this page owns, the pose. An id another mate already has is not applied. The field turns red, and a dashed line runs from the top right of the view to that mate while the field shows that id. Location source of truth is the text of who placed it. A signals-list connector id cannot be renamed or deleted. **Add mate connector** creates another mate at the origin.
 
 ---
 
@@ -225,8 +224,8 @@ These names are on the `cad` module.
 | `cad.boolean_subtract(tools, targets)` | Cuts tool bodies out of target bodies. Each argument is a body or a list of bodies. Both are rectangular prisms. |
 | `cad.attach_png(model, uuid, filepath, orientation)` | Stores an image path and an orientation, in degrees, on a surface. The file has to exist. |
 | `cad.save_step(model, path)` | Writes the solids. Image links are comments in that file, only for images attached on this run. |
-| `cad.mate(model, uuid, location, alpha=0, beta=0, gamma=0, source="build")` | Adds a mate connector. `location` is `[x, y, z]` inches. |
-| `cad.keep_gui_mates(model, saved)` | Copies `gui` mates onto the model. A `gui` mate replaces a `build` mate with the same id. |
+| `cad.mate(model, uuid, location, alpha=0, beta=0, gamma=0, source="build")` | Adds a mate connector and marks it `build`. `location` is `[x, y, z]` inches. Passing `gui` still marks it `build`. |
+| `cad.keep_gui_mates(model, saved)` | Copies saved `gui` mates this run did not place. A mate already on the model keeps its pose. |
 | `cad.save_mates(model, path)` | Writes this model's mates into `attributes.json`. |
 | `cad.import_step(source, destination)` | Copies a STEP file. The copy is not a model. |
 

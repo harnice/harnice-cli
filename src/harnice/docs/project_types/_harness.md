@@ -47,5 +47,13 @@ fileio.path("cable overlay")                       |   L-- cable.svg
 fileio.path("build instructions")                  |-- build.py
 fileio.path("instances list")                      |-- instances.tsv
 fileio.path("library history")                     |-- libhist.tsv
-fileio.dirpath("instance_data")                    L-- instance_data/
+fileio.dirpath("instance_data")                    |-- instance_data/
+fileio.path("gitignore")                           L-- .gitignore
 ```
+
+A build writes `.gitignore` in the revision folder. This project type ignores:
+
+- `*.tmp`
+- `.harnice-wm-*.pdf`
+
+Rules already in the file stay.

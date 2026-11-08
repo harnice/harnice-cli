@@ -16,6 +16,13 @@ default_desc = "SYSTEM, SCOPE, etc."
 
 button_color = "#86e1eb"
 
+gitignore_rules = [
+    ".gui_temp/",
+    "*.tmp",
+    "*.tmp.step",
+    ".harnice-wm-*.pdf",
+]
+
 # stores all the connectors in the system
 connector_list = []
 
@@ -247,7 +254,66 @@ def build():
         # Always re-read placed device/subsystem symbols from instance_data so
         # edits (or device builds that update pins) land in the block diagram this build.
         svg_diagram = system_utils.refresh_block_diagram_placed_symbols(svg_diagram)
-        svg_diagram = block_diagram_utils.ensure_system_boundary_rect(svg_diagram)
+
+        def ensure_system_boundary_rect(svg_text):
+            """
+            Ensure a bottom-most ``#boundary`` rectangle exists under ``*-contents-start``.
+
+            Default geometry is ``0,0`` → ``1008×768`` (10.5 in × 8 in at 96 dpi), black
+            stroke, no fill. Returns the (possibly updated) SVG text. Idempotent when a
+            ``rect#boundary`` is already present. Does not rewrite the rest of the file.
+            """
+            boundary_rect_markup = (
+                '<rect id="boundary" class="system-boundary" x="0" y="0" width="1008" '
+                'height="768" fill="none" stroke="#000000" stroke-width="1" '
+                'pointer-events="none"/>'
+            )
+            if not svg_text or not str(svg_text).strip():
+                return svg_text
+            tree = block_diagram_utils._parse_block_diagram_svg_string(svg_text)
+            root = tree.getroot()
+            contents_start = None
+            for el in root.iter():
+                eid = el.get("id") or ""
+                if eid.endswith("-contents-start"):
+                    contents_start = el
+                    break
+            if contents_start is None:
+                return svg_text
+
+            contents_id = (contents_start.get("id") or "").strip()
+            existing = None
+            for child in list(contents_start):
+                if (
+                    block_diagram_utils._svg_local_tag(child.tag) == "rect"
+                    and (child.get("id") or "") == "boundary"
+                ):
+                    existing = child
+                    break
+
+            if existing is not None:
+                kids = list(contents_start)
+                if kids and kids[0] is existing:
+                    return svg_text
+                span = block_diagram_utils.find_svg_element_span(svg_text, "boundary")
+                if span is None or not contents_id:
+                    return svg_text
+                start, _open_end, _close_start, end = span
+                rect_xml = svg_text[start:end]
+                without = svg_text[:start] + svg_text[end:]
+                moved = block_diagram_utils.insert_after_svg_element_open(
+                    without, contents_id, rect_xml
+                )
+                return without if moved is None else moved
+
+            if not contents_id:
+                return svg_text
+            inserted = block_diagram_utils.insert_after_svg_element_open(
+                svg_text, contents_id, boundary_rect_markup
+            )
+            return svg_text if inserted is None else inserted
+
+        svg_diagram = ensure_system_boundary_rect(svg_diagram)
         svg_diagram = system_utils.apply_block_diagram_trace_overlays(svg_diagram)
 
         if svg_diagram != original_svg:

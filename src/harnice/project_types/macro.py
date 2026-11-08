@@ -1,3 +1,8 @@
+gitignore_rules = [
+    "*.tmp",
+]
+
+
 def file_structure():
     return {}
 

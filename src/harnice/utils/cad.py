@@ -553,12 +553,7 @@ def save_step(model, path):
         handle.write(text)
 
 
-def mate(model, uuid, location, alpha=0, beta=0, gamma=0, source="build"):
-    """Add a mate connector. ``location`` is ``[x, y, z]`` inches. Angles are degrees.
-
-    ``source`` is ``build`` or ``gui``. A later build rewrites ``build`` mates
-    and keeps the saved pose of ``gui`` mates.
-    """
+def _add_mate(model, uuid, location, alpha, beta, gamma, source):
     def number(label, value):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{label} must be a number")
@@ -587,18 +582,32 @@ def mate(model, uuid, location, alpha=0, beta=0, gamma=0, source="build"):
     })
 
 
-def keep_gui_mates(model, saved):
-    """Copy gui mates onto the model. A gui mate replaces a build mate with the same id.
+def mate(model, uuid, location, alpha=0, beta=0, gamma=0, source="build"):
+    """Add a mate connector. ``location`` is ``[x, y, z]`` inches. Angles are degrees.
 
-    Saved build mates are left out. This run's build mates stay, and a build
-    mate this run did not create is dropped.
+    This marks the mate ``build``. The page can select it and cannot move it.
+    ``source`` is accepted and does not leave the mate on the page.
     """
+    if source not in ("build", "gui"):
+        raise ValueError("mate source must be build or gui")
+    _add_mate(model, uuid, location, alpha, beta, gamma, "build")
+
+
+def keep_gui_mates(model, saved):
+    """Copy saved gui mates this run did not place.
+
+    A mate already on the model keeps the pose this run gave it. A saved
+    build mate this run did not place is left out. The build marks every
+    mate gui first, so a mate this run does not place comes back as gui.
+    """
+    have = {item["id"] for item in model.mates}
     for item in saved:
-        if item.get("source") != "gui":
+        if not isinstance(item, dict) or item.get("source") != "gui":
             continue
-        name = item["id"]
-        model.mates = [mate for mate in model.mates if mate["id"] != name]
-        mate(
+        name = item.get("id")
+        if not name or name in have:
+            continue
+        _add_mate(
             model,
             name,
             item["location"],

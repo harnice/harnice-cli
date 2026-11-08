@@ -9,6 +9,10 @@ default_desc = "TITLEBLOCK, PAPER SIZE, DESIGN"
 
 button_color = "#526e21"
 
+gitignore_rules = [
+    "*.tmp",
+]
+
 def file_structure():
     return {
         "params.json": "params",

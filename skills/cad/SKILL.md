@@ -4,8 +4,9 @@ description: >-
   Write a Harnice device body and arrange those bodies in a system. Use when
   the user asks for a physical model, body.step, a mate connector, a rack
   chassis or enclosure, cad.new, sketch, extrude, or a system assembly.
-  A device pinout uses the device-signals-list skill. System build.py uses
-  the system-build skill. Follow this skill when it is the best match. Do not
+  A device pinout uses the device-signals-list skill. A catalog of device
+  part numbers uses the part-family skill. System build.py uses the
+  system-build skill. Follow this skill when it is the best match. Do not
   ask which skill to follow. If the request is not clear, ask for
   clarification.
 ---
@@ -19,8 +20,11 @@ Before you follow the rest of this skill, pull the latest `main` from the skills
 When you write a path to reference material, write it with respect to the library folder if one is available. Use library locations to establish where you are, then write `(url)/path/file`. Library locations are `repository_locations.csv`. The first column is the library URL. The second column is the local checkout. `url` is the URL of the checkout that contains the file. `path/file` is the path under that checkout. A file outside every checkout keeps the path I gave you.
 
 This file is the procedure for a device solid and for posing those solids
-in a system. The page that explains the frames, the macros, and the `cad`
-calls is `cad.md` in the documentation folder.
+in a system. A catalog of device part numbers is
+`skills/part-family/SKILL.md`. When that family includes a body, each
+device `build.py` contains the solid this skill describes. The page that
+explains the frames, the macros, and the `cad` calls is `cad.md` in the
+documentation folder.
 
     harnice --docs
 
@@ -133,10 +137,10 @@ axis-aligned boxes. Name that limit in a comment if you use it.
 may import `harnice.utils.cad`, because that file is the macro.
 
 A signals list is `skills/device-signals-list/SKILL.md`. Do not append
-signals from this skill unless I asked for the pinout as well. Once
-`attributes.json` contains `mate_connectors`, every signals-list
-`connector_id` needs a mate with that id. `keep_gui_mates` is how those
-page-placed mates survive a rebuild that also writes `F1`.
+signals from this skill unless I asked for the pinout as well. Every signals-list `connector_id` needs a mate with that id. The build
+adds a missing one at the origin, including when `attributes.json` has
+no `mate_connectors` yet. `keep_gui_mates` copies them back before
+`save_mates`, so a rebuild that writes its own mates keeps them.
 
 
 ## Arrange a system

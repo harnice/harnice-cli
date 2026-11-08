@@ -1,7 +1,11 @@
 import ast
+from contextlib import contextmanager
 
 from harnice import fileio, state
 from harnice.lists import cached_tsv
+
+# Rows of an instances-list edit that several adds share. None between edits.
+_pending = None
 
 COLUMNS = [
     "harness",  # the physical harness (harness refdes) that this instance is part of
@@ -90,6 +94,26 @@ def read():
     return cached_tsv.read(fileio.path("instances list"))
 
 
+@contextmanager
+def _one_write():
+    """Apply every instances-list add and edit in this block as one file write."""
+    global _pending
+    if _pending is not None:
+        yield
+        return
+    with cached_tsv.edit(
+        fileio.path("instances list"), COLUMNS, allow_missing=True
+    ) as rows:
+        _pending = {
+            "rows": rows,
+            "names": {row.get("instance_name") for row in rows},
+        }
+        try:
+            yield
+        finally:
+            _pending = None
+
+
 def new_instance(instance_name, instance_data, ignore_duplicates=False):
     """
     Use this when a harness or system build needs one new item added to the instances list.
@@ -120,10 +144,8 @@ def new_instance(instance_name, instance_data, ignore_duplicates=False):
             f"Inconsistent instance_name: argument='{instance_name}' vs data['instance_name']='{instance_data['instance_name']}'"
         )
 
-    with cached_tsv.edit(
-        fileio.path("instances list"), COLUMNS, allow_missing=True
-    ) as rows:
-        if any(row.get("instance_name") == instance_name for row in rows):
+    def add(rows, names):
+        if instance_name in names:
             if not ignore_duplicates:
                 raise ValueError(
                     f"An instance with the name '{instance_name}' already exists"
@@ -140,6 +162,15 @@ def new_instance(instance_name, instance_data, ignore_duplicates=False):
         instance_data["instance_name"] = instance_name
 
         rows.append(dict(instance_data))
+        names.add(instance_name)
+
+    if _pending is not None:
+        return add(_pending["rows"], _pending["names"])
+
+    with cached_tsv.edit(
+        fileio.path("instances list"), COLUMNS, allow_missing=True
+    ) as rows:
+        return add(rows, {row.get("instance_name") for row in rows})
 
 
 def modify(instance_name, instance_data):
@@ -155,15 +186,24 @@ def modify(instance_name, instance_data):
     ## Raises
     ValueError if no instance with `instance_name` exists.
     """
-    with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
-        found = False
+
+    def change(rows):
         for row in rows:
             if row.get("instance_name") == instance_name:
                 row.update(instance_data)
-                found = True
-                break
-        if not found:
-            raise ValueError(f"Instance '{instance_name}' not found")
+                return
+        raise ValueError(f"Instance '{instance_name}' not found")
+
+    if _pending is not None:
+        change(_pending["rows"])
+        renamed = instance_data.get("instance_name")
+        if renamed not in (None, instance_name):
+            _pending["names"].discard(instance_name)
+            _pending["names"].add(renamed)
+        return
+
+    with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
+        change(rows)
 
 
 def remove_instance(instance_to_delete):
@@ -175,12 +215,20 @@ def remove_instance(instance_to_delete):
     ## Args
     - `instance_to_delete`: Instance row dict (or any dict) whose `instance_name` key identifies the instance to remove. Matching is done by `instance_name` only.
     """
-    with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
+    name = instance_to_delete.get("instance_name")
+
+    def drop(rows):
         rows[:] = [
-            instance
-            for instance in rows
-            if instance.get("instance_name") != instance_to_delete.get("instance_name")
+            instance for instance in rows if instance.get("instance_name") != name
         ]
+
+    if _pending is not None:
+        drop(_pending["rows"])
+        _pending["names"].discard(name)
+        return
+
+    with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
+        drop(rows)
 
 
 def new():
@@ -203,7 +251,8 @@ def assign_bom_line_numbers():
     ## Raises
     ValueError if any instance marked for BOM has an empty `mpn`.
     """
-    with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
+
+    def apply(rows):
         bom = []
         for instance in rows:
             if instance.get("bom_line_number") == "True":
@@ -222,6 +271,13 @@ def assign_bom_line_numbers():
             mpn = instance.get("mpn")
             if mpn in mpn_to_line:
                 instance["bom_line_number"] = mpn_to_line[mpn]
+
+    if _pending is not None:
+        apply(_pending["rows"])
+        return
+
+    with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
+        apply(rows)
 
 
 def attribute_of(target_instance, attribute):

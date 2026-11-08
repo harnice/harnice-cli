@@ -5,8 +5,9 @@ description: >-
   cable recommendations, and connector choosers that a harness will call. Use
   when the user asks for system build instructions, a channel map, or a
   passthrough route. A harness revision uses the harness-build skill. A device
-  pinout uses the device-signals-list skill. A catalog of library SKUs uses
-  the part-family skill. Follow this skill when it is the best match. Do not
+  pinout uses the device-signals-list skill. A catalog of library SKUs,
+  including a catalog of devices, uses the part-family skill. Follow this
+  skill when it is the best match. Do not
   ask which skill to follow. If the request is not clear, ask for
   clarification.
 ---
@@ -25,7 +26,8 @@ use them. Read it before you call.
 
 A harness revision follows `skills/harness/SKILL.md`. A device signals
 list follows `skills/device-signals-list/SKILL.md`. A catalog of library
-SKUs follows `skills/part-family/SKILL.md`. Arranging device solids
+SKUs, including a catalog of devices, follows `skills/part-family/SKILL.md`.
+Arranging device solids
 follows `skills/cad/SKILL.md`. This script does not write `physical.json`
 or `assembly.step`.
 

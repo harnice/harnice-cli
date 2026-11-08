@@ -203,6 +203,8 @@ def main():
     else:
         fatal(f"Project type '{item_type}' must define generate_structure()")
 
+    fileio.ensure_gitignore()
+
     # -----------------------------
     # Execute build logic
     # -----------------------------
@@ -213,6 +215,11 @@ def main():
     from harnice.utils.inkscape_utils import remember_inkscape
 
     remember_inkscape()
+    # Channel-type rows stay in memory for this build. Drop them first so
+    # this build reads the library file instead of an earlier build's copy.
+    from harnice.project_types import chtype
+
+    chtype._rows_cache.clear()
     try:
         product_module.build()
     except SystemExit as e:

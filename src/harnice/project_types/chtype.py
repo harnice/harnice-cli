@@ -12,6 +12,22 @@ def generate_structure():
     pass
 
 
+# path -> rows. Filled the first time a build reads that file. The build
+# clears this before it starts, so the next build reads the file again.
+_rows_cache = {}
+
+
+def _rows(channel_type):
+    """Rows of this channel type's channel_types.tsv, read once per build."""
+    tsv_path = os.path.abspath(path(channel_type))
+    cached = _rows_cache.get(tsv_path)
+    if cached is not None:
+        return cached
+    rows = fileio.read_tsv(tsv_path)
+    _rows_cache[tsv_path] = rows
+    return rows
+
+
 def path(channel_type):
     """
 Use this when a build needs the path of channel_types.tsv for one channel type's library checkout.
@@ -88,7 +104,7 @@ channel type.
     """
     channel_type_id, lib_repo = parse(channel_type)
 
-    for row in fileio.read_tsv(path((channel_type_id, lib_repo))):
+    for row in _rows((channel_type_id, lib_repo)):
         if int(row.get("channel_type_id")) == channel_type_id:
             signals_str = row.get("compatible_channel_types", "").strip()
             if not signals_str:
@@ -167,7 +183,7 @@ Return the list of signal names associated with a specific channel type.
     """
     chid, lib_repo = parse(channel_type)
 
-    for row in fileio.read_tsv(path(channel_type)):
+    for row in _rows(channel_type):
         if str(row.get("channel_type_id", "")).strip() == str(chid):
             return [
                 sig.strip() for sig in row.get("signals", "").split(",") if sig.strip()
@@ -206,7 +222,7 @@ type.
     chid, lib_repo = parse(channel_type)
 
     # Same on-disk file as path() / signals() / compatibles(): <lib>/channel_types.tsv
-    for row in fileio.read_tsv(path(channel_type)):
+    for row in _rows(channel_type):
         if str(row.get("channel_type_id", "")).strip() == str(chid):
             return row.get(attribute)
     return []

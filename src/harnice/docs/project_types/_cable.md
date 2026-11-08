@@ -12,8 +12,15 @@ fileio.dirpath("part_directory")       |-- yourpn/
 fileio.path("revision history")            |-- revhistory.csv
 fileio.dirpath("rev_directory")            L-- your rev/
 fileio.path("attributes")                      |-- attributes.json
-fileio.path("conductor list")                  L-- conductors.tsv
+fileio.path("conductor list")                  |-- conductors.tsv
+fileio.path("gitignore")                       L-- .gitignore
 ```
+
+A build writes `.gitignore` in the revision folder. This project type ignores:
+
+- `*.tmp`
+
+Rules already in the file stay.
 
 
 ---

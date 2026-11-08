@@ -9,6 +9,10 @@ default_desc = "FLAGNOTE, PURPOSE"
 
 button_color = "#6f7075"
 
+gitignore_rules = [
+    "*.tmp",
+]
+
 
 def file_structure():
     return {

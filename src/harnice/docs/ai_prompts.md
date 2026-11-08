@@ -31,8 +31,8 @@ Clone that repository. Read the description at the top of each `skills/*/SKILL.m
 
 Paste one of these into a chatbot. The chatbot opens the raw URL in the prompt and reads the whole file.
 
-1. [Device signals list](#device-signals-list-buildpy) — turn any pinout, ICD, or datasheet into device `build.py`
-2. [Part family](#part-family-library-skus) — encode a catalog into library SKUs
+1. [Device signals list](#device-signals-list-buildpy) — turn one pinout, ICD, or datasheet into device `build.py`
+2. [Part family](#part-family-library-skus) — encode a catalog of parts, cables, or devices into library SKUs
 3. [System build instructions](#system-build-instructions) — write or edit a system `build.py`
 4. [Harness build instructions](#harness-build-instructions) — write or edit a harness `build.py`, including layout
 5. [CAD](#cad) — write a device body, or arrange those bodies in a system
@@ -43,6 +43,8 @@ Attach the pinout, ICD, datasheet, spreadsheet, screenshot, schematic note, vend
 
 The engineering decisions stay yours: which channel type to use, whether a ground is chassis, what a connector plugs into. A channel type is electrical information only. It must not specify a connector type. Name the connector on its own, as `connector_id` and the part number. The skill tells the model to ask, with the context in front of you, and to wait for your answer.
 
+One device uses this prompt. A catalog of device part numbers uses the part-family prompt.
+
 <details class="prompt" markdown="1">
 <summary>Harnice device signals list</summary>
 
@@ -51,7 +53,7 @@ The engineering decisions stay yours: which channel type to use, whether a groun
 
 The procedure is a skill in the Harnice command-line repository. It is not in this message.
 
-The pinout, ICD, datasheet, spreadsheet, screenshot, or a path to that file is already in this chat, or it is already in the device revision folder. If it is not, say so and stop. Do not read the skill until it is.
+The pinout, ICD, datasheet, spreadsheet, screenshot, or a path to that file is already in this chat, or it is already in the device revision folder. If it is not, say so and stop. Do not read the skill until it is. A catalog of device part numbers is the part-family prompt. This prompt is one device.
 
 https://github.com/harnice/harnice-cli
 
@@ -68,9 +70,9 @@ If you cannot read the whole file, say so and ask me to paste it. Do not write `
 
 ### Part family (library SKUs)
 
-Attach the how-to-order PDF (and a drawing or photo if overall length and max diameter are not tabulated). Add one sentence of intent, for example: `Family is Neutrik powerCON TRUE1 chassis connectors. Write into neutrik/.`
+Attach the how-to-order PDF (and a drawing or photo if overall length and max diameter are not tabulated). A device catalog attaches the pinouts and says the family is devices, for example: `Family is the ACME sensor line. Each range is a device SKU. Write into acme_sensor/.` Add one sentence of intent for a part or cable family, for example: `Family is Neutrik powerCON TRUE1 chassis connectors. Write into neutrik/.`
 
-Review the catalog count before letting it emit thousands of folders. Run the generator with `--svg-only` first.
+Review the catalog count before letting it emit thousands of folders. For a part or cable family, run the generator with `--svg-only` first. For a device family, run with `--no-build` first and read the `build.py` files.
 
 <details class="prompt" markdown="1">
 <summary>Harnice part family</summary>
@@ -80,7 +82,7 @@ Review the catalog count before letting it emit thousands of folders. Run the ge
 
 The procedure is a skill in the Harnice command-line repository. It is not in this message.
 
-The how-to-order page, drawing, photo, or a path to that file is already in this chat, or it is already in the library repository. If it is not, say so and stop. Do not read the skill until it is.
+The how-to-order page, drawing, photo, pinout, or a path to that file is already in this chat, or it is already in the library repository. If it is not, say so and stop. Do not read the skill until it is. One device pinout is the device signals list prompt. A catalog of device part numbers is this prompt.
 
 https://github.com/harnice/harnice-cli
 
@@ -107,7 +109,7 @@ Paste this when the revision is a system. A harness uses the next prompt. A devi
 
 The procedure is a skill in the Harnice command-line repository. It is not in this message.
 
-This message says the revision is a system, and what the script should do, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A harness is a different skill. A device signals list is a different skill. A part family is a different skill.
+This message says the revision is a system, and what the script should do, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A harness is a different skill. A device signals list is a different skill. A part family is a different skill, including a catalog of devices.
 
 https://github.com/harnice/harnice-cli
 
@@ -134,7 +136,7 @@ Paste this when the revision is a harness. A system uses the prompt above. Name 
 
 The procedure is a skill in the Harnice command-line repository. It is not in this message.
 
-This message says the revision is a harness, and what the script should do, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A system is a different skill. A device signals list is a different skill. A part family is a different skill.
+This message says the revision is a harness, and what the script should do, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A system is a different skill. A device signals list is a different skill. A part family is a different skill, including a catalog of devices.
 
 https://github.com/harnice/harnice-cli
 
@@ -151,7 +153,7 @@ If you cannot read a whole file, say so and ask me to paste it. Do not write `bu
 
 ### CAD
 
-Paste this when the device needs a body, or when devices in a system need to be posed and fastened. Name the shape and the dimensions, or name which connector fastens to which. A pinout uses the device signals list prompt. A system `build.py` uses the system prompt.
+Paste this when one device needs a body, or when devices in a system need to be posed and fastened. Name the shape and the dimensions, or name which connector fastens to which. A pinout uses the device signals list prompt. A catalog of device part numbers uses the part-family prompt. A system `build.py` uses the system prompt.
 
 <details class="prompt" markdown="1">
 <summary>Harnice CAD</summary>
@@ -161,7 +163,7 @@ Paste this when the device needs a body, or when devices in a system need to be 
 
 The procedure is a skill in the Harnice command-line repository. It is not in this message.
 
-This message says the device body to write, or which devices to fasten, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A device signals list is a different skill. A system build.py is a different skill.
+This message says the device body to write, or which devices to fasten, or that revision is already open. If it does not, say so and stop. Do not read the skill until it does. A device signals list is a different skill. A catalog of device part numbers is the part-family skill. A system build.py is a different skill.
 
 https://github.com/harnice/harnice-cli
 

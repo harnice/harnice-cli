@@ -12,6 +12,10 @@ default_desc = "COTS COMPONENT, SIZE, COLOR, etc."
 
 button_color = "#e1e8a2"
 
+gitignore_rules = [
+    "*.tmp",
+]
+
 def file_structure():
     return {
         "drawing.svg": "drawing",

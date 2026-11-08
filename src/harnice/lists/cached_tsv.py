@@ -24,7 +24,7 @@ Edit (read → change → write under one lock)
 
     with cached_tsv.edit(fileio.path("instances list"), COLUMNS) as rows:
         rows.append({"instance_name": "foo", ...})
-        # file is written when this block exits successfully
+        # file is written when this block exits successfully and something changed
 
 ``columns`` is the header order to write. Extra keys already on disk, or
 present in ``rows`` when the block ends, are appended to that header.
@@ -202,7 +202,7 @@ def write(path, columns, rows):
 
 @contextmanager
 def edit(path, columns, *, allow_missing=False):
-    """Read rows, yield a mutable list, write the file when the block succeeds.
+    """Read rows, yield a mutable list, and write the file if the block changed it.
 
     Example::
 
@@ -213,4 +213,7 @@ def edit(path, columns, *, allow_missing=False):
         existing_fieldnames, existing_rows = _load(path, allow_missing=allow_missing)
         rows = [dict(row) for row in existing_rows]
         yield rows
-        _write(path, _headers(columns, rows, existing_fieldnames), rows)
+        fieldnames = _headers(columns, rows, existing_fieldnames)
+        if fieldnames == list(existing_fieldnames) and rows == existing_rows:
+            return
+        _write(path, fieldnames, rows)

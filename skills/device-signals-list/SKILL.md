@@ -5,9 +5,10 @@ description: >-
   then run harnice -b until the signal-row count matches the documentation.
   A channel type is electrical information only and must not specify a
   connector type. Use when the user asks for a signals list, device build
-  instructions, or build.py from a pinout. Follow this skill when it is the
-  best match. Do not ask which skill to follow. If the request is not clear,
-  ask for clarification.
+  instructions, or build.py from one pinout. A catalog of device part
+  numbers uses the part-family skill. Follow this skill when it is the best
+  match. Do not ask which skill to follow. If the request is not clear, ask
+  for clarification.
 ---
 
 # Harnice device signals-list prompt
@@ -38,6 +39,12 @@ the words include-markdown, a quoted path such as "some/path.md",
 closing `%}`) means that file continues the page, under the same folder.
 
 The same pages are at https://harnice.io/ when you can reach the internet.
+
+This skill is one device. A catalog of device part numbers is
+`skills/part-family/SKILL.md`. That skill writes one device folder per SKU
+and still writes each `build.py` the way this skill says. A body is
+`skills/cad/SKILL.md`. A missing channel type is
+`skills/channel-type/SKILL.md`.
 
 
 Write Harnice device **build instructions** (`build.py`) from the supporting

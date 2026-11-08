@@ -14,5 +14,12 @@ fileio.dirpath("rev_directory")            L-- your rev/
 fileio.path("drawing")                         |-- drawing.svg
 fileio.path("drawing png")                     |-- drawing.png
 fileio.path("attributes")                      |-- attributes.json
-fileio.path("model")                           L-- model.step
+fileio.path("model")                           |-- model.step
+fileio.path("gitignore")                       L-- .gitignore
 ```
+
+A build writes `.gitignore` in the revision folder. This project type ignores:
+
+- `*.tmp`
+
+Rules already in the file stay.

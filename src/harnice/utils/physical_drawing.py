@@ -1,13 +1,15 @@
 """Orthographic line drawing of a system physical assembly.
 
 OpenCascade hidden-line removal projects each device body to its visible
-edges and silhouettes. Each device name is drawn at the body center. The
-name is left off when half or more of that silhouette sits behind another
-body. Face photos are SVG image links on the same faces the physical-model
-viewer paints, drawn from farthest to nearest so a closer screenshot covers
-one behind it. A rectangular body fills its bounding box. A rack chassis
-back is the 17 inch panel, not the 19 inch ears. The PDF export embeds
-those links; this module leaves them as paths.
+edges and silhouettes. Devices are painted from farthest to nearest: that
+device's face photos, then its name at the body center, so a closer photo
+covers a name behind it the same way it covers the body behind it. A face
+with no photo is filled white. A photo is stretched onto the rectangle of
+its face. A rectangular body uses that
+side of its bounding box. A face that is not a rectangle, such as a rack
+chassis back, uses the rectangle of the solid on that side: the 17 inch
+panel between the ears. The PDF export embeds those links; this module
+leaves them as paths.
 
 ``orientation`` is a face name or a viewport rotation. ``(0, 0, 0)`` is the
 front view: look along +Y, +X to the right, +Z up. A dict or a 3-number
@@ -40,10 +42,6 @@ _NAMED_VIEWS = {
 # toward the camera so a rack rail does not draw through the gear in front of it.
 _FLUSH_MM = 0.05
 _FLUSH_STEP_MM = 0.05
-
-# A refdes is omitted when at least this fraction of the silhouette is behind
-# some other body. Coverage is the union of whatever is closer to the camera.
-_HIDDEN_LABEL_FRACTION = 0.5
 
 
 def _dot(a, b):
@@ -187,129 +185,6 @@ def _face_corners(bounds, face, angle, points=None):
         "tr": at(1.0, 1.0),
         "bl": at(-1.0, -1.0),
     }
-
-
-def _refdes_mostly_hidden(shapes, view, right, up):
-    """True for each shape when half or more of its silhouette is behind another.
-
-    Samples are taken on the view plane. A sample counts as hidden when some
-    other shape's surface is closer to the camera than this shape's own front
-    surface. Flush faces share a depth, so neither one hides the other.
-    """
-
-    def _project(point):
-        return (_dot(point, right), _dot(point, up), _dot(point, view))
-
-    def _triangles(shape):
-        from harnice.utils import step_utils
-
-        projected = []
-        try:
-            bodies = step_utils.tessellate_shape(shape, deflection_mm=1.0)
-        except Exception:
-            return []
-        for body in bodies:
-            vertices = body["vertices"]
-            indices = body["indices"]
-            for start in range(0, len(indices), 3):
-                tri = []
-                for index in indices[start:start + 3]:
-                    offset = index * 3
-                    point = (vertices[offset], vertices[offset + 1], vertices[offset + 2])
-                    tri.append(_project(point))
-                area = (
-                    (tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1])
-                    - (tri[2][0] - tri[0][0]) * (tri[1][1] - tri[0][1])
-                )
-                if abs(area) < 1e-8:
-                    continue
-                projected.append(tri)
-        return projected
-
-    def _bounds(tris):
-        umin = min(point[0] for tri in tris for point in tri)
-        umax = max(point[0] for tri in tris for point in tri)
-        vmin = min(point[1] for tri in tris for point in tri)
-        vmax = max(point[1] for tri in tris for point in tri)
-        return umin, vmin, umax, vmax
-
-    def _overlaps(a, b):
-        return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
-
-    def _depth_at(tri, u, v):
-        (u1, v1, d1), (u2, v2, d2), (u3, v3, d3) = tri
-        denom = (v2 - v3) * (u1 - u3) + (u3 - u2) * (v1 - v3)
-        if abs(denom) < 1e-12:
-            return None
-        wa = ((v2 - v3) * (u - u3) + (u3 - u2) * (v - v3)) / denom
-        wb = ((v3 - v1) * (u - u3) + (u1 - u3) * (v - v3)) / denom
-        wc = 1.0 - wa - wb
-        if wa < -1e-8 or wb < -1e-8 or wc < -1e-8:
-            return None
-        return wa * d1 + wb * d2 + wc * d3
-
-    def _paint(tris, umin, vmin, pitch_u, pitch_v, width, height, buffer):
-        for tri in tris:
-            xs = [point[0] for point in tri]
-            ys = [point[1] for point in tri]
-            x0 = max(0, int((min(xs) - umin) / pitch_u))
-            x1 = min(width, int((max(xs) - umin) / pitch_u) + 1)
-            y0 = max(0, int((min(ys) - vmin) / pitch_v))
-            y1 = min(height, int((max(ys) - vmin) / pitch_v) + 1)
-            for y in range(y0, y1):
-                v = vmin + (y + 0.5) * pitch_v
-                row = y * width
-                for x in range(x0, x1):
-                    depth = _depth_at(tri, umin + (x + 0.5) * pitch_u, v)
-                    if depth is None:
-                        continue
-                    slot = row + x
-                    if depth < buffer[slot]:
-                        buffer[slot] = depth
-
-    if len(shapes) < 2:
-        return [False] * len(shapes)
-    # A hundred samples on the short side keeps a body split in half from
-    # flipping the 50% test because of a single row of pixels.
-    samples = 100
-    meshes = [_triangles(shape) for shape in shapes]
-    boxes = [_bounds(tris) if tris else None for tris in meshes]
-    hidden = []
-    untouched = float("inf")
-    for index, tris in enumerate(meshes):
-        box = boxes[index]
-        if box is None:
-            hidden.append(False)
-            continue
-        umin, vmin, umax, vmax = box
-        span_u = max(umax - umin, 1e-9)
-        span_v = max(vmax - vmin, 1e-9)
-        pitch = min(span_u, span_v) / samples
-        if max(span_u, span_v) / pitch > samples * 4:
-            pitch = max(span_u, span_v) / (samples * 4)
-        width = max(1, int(round(span_u / pitch)))
-        height = max(1, int(round(span_v / pitch)))
-        pitch_u = span_u / width
-        pitch_v = span_v / height
-        own = [untouched] * (width * height)
-        ahead = [untouched] * (width * height)
-        _paint(tris, umin, vmin, pitch_u, pitch_v, width, height, own)
-        for other_index, other_tris in enumerate(meshes):
-            if other_index == index or not other_tris:
-                continue
-            if not _overlaps(box, boxes[other_index]):
-                continue
-            _paint(other_tris, umin, vmin, pitch_u, pitch_v, width, height, ahead)
-        covered = 0
-        blocked = 0
-        for near, front in zip(own, ahead):
-            if near == untouched:
-                continue
-            covered += 1
-            if front < near - _FLUSH_MM:
-                blocked += 1
-        hidden.append(covered > 0 and blocked / covered >= _HIDDEN_LABEL_FRACTION)
-    return hidden
 
 
 def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1):
@@ -507,73 +382,6 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
         center = ((xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0)
         return _project(center, right, up)
 
-    def _content_insets(href):
-        """Transparent margin of a linked photo, as fractions of its width and height.
-
-        Returns ``(left, top, right, bottom)``. A missing file or a photo with no
-        transparent edge is ``(0, 0, 0, 0)``.
-        """
-        if not href or href.startswith("data:"):
-            return (0.0, 0.0, 0.0, 0.0)
-        path = href if os.path.isabs(href) else ""
-        if not path:
-            from harnice import fileio
-
-            path = os.path.join(fileio.rev_directory(), href)
-        if not os.path.isfile(path):
-            return (0.0, 0.0, 0.0, 0.0)
-        try:
-            from PIL import Image
-        except ImportError:
-            return (0.0, 0.0, 0.0, 0.0)
-        try:
-            image = Image.open(path).convert("RGBA")
-        except Exception:
-            return (0.0, 0.0, 0.0, 0.0)
-        width, height = image.size
-        if width < 2 or height < 2:
-            return (0.0, 0.0, 0.0, 0.0)
-        pixels = image.load()
-        min_x, min_y, max_x, max_y = width, height, -1, -1
-        for y in range(height):
-            for x in range(width):
-                if pixels[x, y][3] <= 8:
-                    continue
-                min_x = min(min_x, x)
-                min_y = min(min_y, y)
-                max_x = max(max_x, x)
-                max_y = max(max_y, y)
-        if max_x < min_x:
-            return (0.0, 0.0, 0.0, 0.0)
-        return (
-            min_x / width,
-            min_y / height,
-            (width - 1 - max_x) / width,
-            (height - 1 - max_y) / height,
-        )
-
-    def _cover_face(tl, tr, bl, insets):
-        """Quad that maps a photo's opaque pixels onto the face.
-
-        ``insets`` are the transparent margins. The returned corners are the full
-        image; the margins land just outside the face and do not paint.
-        """
-        left, top, right, bottom = insets
-        span_u = 1.0 - left - right
-        span_v = 1.0 - top - bottom
-        if span_u < 0.5 or span_v < 0.5:
-            return tl, tr, bl
-
-        def at(u, v):
-            return (
-                tl[0] + (tr[0] - tl[0]) * u + (bl[0] - tl[0]) * v,
-                tl[1] + (tr[1] - tl[1]) * u + (bl[1] - tl[1]) * v,
-            )
-
-        u0 = -left / span_u
-        v0 = -top / span_v
-        return at(u0, v0), at(u0 + 1.0 / span_u, v0), at(u0, v0 + 1.0 / span_v)
-
     def _photo_in_front(photo, view, intersector):
         """True when no solid sits between the camera and the face center."""
         if intersector is None:
@@ -629,36 +437,45 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
     shapes = [device["shape"] for device in prepared]
     polylines = _visible_polylines(shapes, view, right)
     intersector = _load_intersector(shapes)
-    name_hidden = _refdes_mostly_hidden(shapes, view, right, up)
 
-    photos = []
-    labels = []
-    for device, skip_name in zip(prepared, name_hidden):
-        if skip_name:
-            continue
-        label_at = _label_point(device["shape"], right, up)
-        if device["refdes"] and label_at is not None:
-            labels.append((device["refdes"], label_at))
+    def _shape_depth(shape):
+        # ``view`` points into the scene, so a larger value is farther away.
+        bounds = _bounds_mm(shape)
+        if bounds is None:
+            return 0.0
+        xmin, ymin, zmin, xmax, ymax, zmax = bounds
+        center = ((xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0)
+        return _dot(center, view)
+
+    def _photo_depth(photo):
+        center = tuple((photo["tr"][i] + photo["bl"][i]) / 2.0 for i in range(3))
+        return _dot(center, view)
+
+    # Farthest device first. Its photos, then its name, so the name sits on
+    # its own picture and a closer photo covers a name behind it.
+    paint = []
+    for device in sorted(prepared, key=lambda item: _shape_depth(item["shape"]), reverse=True):
+        facing = []
         for photo in device["photos"]:
             normal = photo.get("normal") or (0.0, 0.0, 0.0)
             if _dot(normal, view) >= -1e-8:
                 continue
             if not _photo_in_front(photo, view, intersector):
                 continue
-            photos.append(photo)
-
-    def _photo_depth(photo):
-        # ``view`` points into the scene, so a larger value is farther away.
-        center = tuple((photo["tr"][i] + photo["bl"][i]) / 2.0 for i in range(3))
-        return _dot(center, view)
-
-    photos.sort(key=_photo_depth, reverse=True)
+            facing.append(photo)
+        facing.sort(key=_photo_depth, reverse=True)
+        paint.extend(("photo", photo) for photo in facing)
+        label_at = _label_point(device["shape"], right, up)
+        if device["refdes"] and label_at is not None:
+            paint.append(("label", (device["refdes"], label_at)))
 
     points = [point for line in polylines for point in line]
-    points.extend(label[1] for label in labels)
-    for photo in photos:
+    for kind, item in paint:
+        if kind == "label":
+            points.append(item[1])
+            continue
         for key in ("tl", "tr", "bl"):
-            points.append(_project(photo[key], right, up))
+            points.append(_project(item[key], right, up))
     if points:
         min_x = min(point[0] for point in points)
         min_y = min(point[1] for point in points)
@@ -669,13 +486,19 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
         return (point[0] - min_x, point[1] - min_y)
 
     polylines = [[shift(point) for point in line] for line in polylines]
-    labels = [(name, shift(point)) for name, point in labels]
-    shifted_photos = []
-    for photo in photos:
-        tl = shift(_project(photo["tl"], right, up))
-        tr = shift(_project(photo["tr"], right, up))
-        bl = shift(_project(photo["bl"], right, up))
-        shifted_photos.append((photo, tl, tr, bl))
+    shifted = []
+    for kind, item in paint:
+        if kind == "label":
+            name, point = item
+            shifted.append(("label", name, shift(point)))
+            continue
+        shifted.append((
+            "photo",
+            item,
+            shift(_project(item["tl"], right, up)),
+            shift(_project(item["tr"], right, up)),
+            shift(_project(item["bl"], right, up)),
+        ))
 
     content_w = 0.0
     content_h = 0.0
@@ -699,22 +522,42 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
         ),
         f'  <g id="{_xml_attr(artifact_id)}-contents-start">',
         f'    <g id="{_xml_attr(artifact_id)}-scale_group" transform="scale({_num(factor)})">',
-        '      <g id="photos">',
+        '      <g id="bodies">',
     ]
-    for photo, tl, tr, bl in shifted_photos:
-        width = max(float(photo.get("width") or 0.0), 1e-6) * PX_PER_MM
-        height = max(float(photo.get("height") or 0.0), 1e-6) * PX_PER_MM
-        tl, tr, bl = _cover_face(tl, tr, bl, _content_insets(photo.get("href") or ""))
-        a = (tr[0] - tl[0]) / width
-        b = (tr[1] - tl[1]) / width
-        c = (bl[0] - tl[0]) / height
-        d = (bl[1] - tl[1]) / height
-        href = _xml_attr(photo.get("href") or "")
-        matrix = " ".join(_num(item) for item in (a, b, c, d, tl[0], tl[1]))
+    for entry in shifted:
+        if entry[0] == "photo":
+            _kind, photo, tl, tr, bl = entry
+            width = max(float(photo.get("width") or 0.0), 1e-6) * PX_PER_MM
+            height = max(float(photo.get("height") or 0.0), 1e-6) * PX_PER_MM
+            a = (tr[0] - tl[0]) / width
+            b = (tr[1] - tl[1]) / width
+            c = (bl[0] - tl[0]) / height
+            d = (bl[1] - tl[1]) / height
+            href = photo.get("href") or ""
+            if not href:
+                corner = (tr[0] + bl[0] - tl[0], tr[1] + bl[1] - tl[1])
+                outline = " ".join(
+                    f"{_num(point[0])} {_num(point[1])}"
+                    for point in (tl, tr, corner, bl)
+                )
+                lines.append(
+                    f'        <path d="M {outline} Z" fill="#ffffff" stroke="none"/>'
+                )
+                continue
+            href = _xml_attr(href)
+            matrix = " ".join(_num(value) for value in (a, b, c, d, tl[0], tl[1]))
+            lines.append(
+                f'        <image href="{href}" xlink:href="{href}" '
+                f'x="0" y="0" width="{_num(width)}" height="{_num(height)}" '
+                f'transform="matrix({matrix})" preserveAspectRatio="none"/>'
+            )
+            continue
+        _kind, name, point = entry
         lines.append(
-            f'        <image href="{href}" xlink:href="{href}" '
-            f'x="0" y="0" width="{_num(width)}" height="{_num(height)}" '
-            f'transform="matrix({matrix})" preserveAspectRatio="none"/>'
+            f'        <text id="{_xml_attr(name)}-label" x="{_num(point[0])}" y="{_num(point[1])}" '
+            f'font-size="{_num(font)}px" font-family="Helvetica, Arial, sans-serif" '
+            f'fill="#000000" text-anchor="middle" dominant-baseline="middle">'
+            f"{_xml_text(name)}</text>"
         )
     lines.append("      </g>")
     lines.append('      <g id="edges">')
@@ -723,15 +566,6 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
         lines.append(
             f'        <polyline points="{rendered}" fill="none" stroke="#000000" '
             f'stroke-width="{_num(stroke)}" stroke-linejoin="round" stroke-linecap="round"/>'
-        )
-    lines.append("      </g>")
-    lines.append('      <g id="labels">')
-    for name, point in labels:
-        lines.append(
-            f'        <text id="{_xml_attr(name)}-label" x="{_num(point[0])}" y="{_num(point[1])}" '
-            f'font-size="{_num(font)}px" font-family="Helvetica, Arial, sans-serif" '
-            f'fill="#000000" text-anchor="middle" dominant-baseline="middle">'
-            f"{_xml_text(name)}</text>"
         )
     lines.append("      </g>")
     lines.append("    </g>")
@@ -810,23 +644,28 @@ def render_system_drawing(
             if bounds is not None:
                 records = physical_body.read_image_records(device["step_path"])
                 vertices = step_utils.shape_vertices(shape)
-                for face, record in records.items():
-                    image = physical_body.face_image_path(device["step_path"], face)
+                for face in physical_body.FACE_NAMES:
+                    record = records.get(face) or {}
+                    image = ""
+                    if record:
+                        image = physical_body.face_image_path(device["step_path"], face)
                     corners = _face_corners(
                         bounds, face, record.get("orientation") or 0.0, vertices
                     )
-                    if not image or corners is None:
+                    if corners is None:
                         continue
-                    absolute = os.path.realpath(image)
-                    try:
-                        rev = os.path.realpath(fileio.rev_directory())
-                        inside = os.path.commonpath([absolute, rev]) == rev
-                    except ValueError:
-                        inside = False
-                    if inside:
-                        href = os.path.relpath(absolute, rev).replace(os.sep, "/")
-                    else:
-                        href = absolute.replace(os.sep, "/")
+                    href = ""
+                    if image:
+                        absolute = os.path.realpath(image)
+                        try:
+                            rev = os.path.realpath(fileio.rev_directory())
+                            inside = os.path.commonpath([absolute, rev]) == rev
+                        except ValueError:
+                            inside = False
+                        if inside:
+                            href = os.path.relpath(absolute, rev).replace(os.sep, "/")
+                        else:
+                            href = absolute.replace(os.sep, "/")
                     moved = gp_Vec(*corners["normal"])
                     moved.Transform(trsf)
                     photos.append({
