@@ -878,26 +878,57 @@ def _read_named_step_shapes(path):
     return named or None
 
 
+# Meshes already built in this process, keyed by path, mtime, size, and deflection.
+_STEP_MESHES = {}
+
+
 def tessellate_step_file(path, deflection_mm=0.5):
     """Read a STEP file and mesh it. Returns the same structure as ``tessellate_shape``.
 
     Assembly labels become ``{instance_name}-bodyN`` so a click can name the
     instance and still distinguish multiple solids in one library part.
+
+    The mesh stays in this process. A later call returns that same list until
+    the file's size or mtime changes, which a build does by rewriting the STEP.
+    Callers must not modify the list.
     """
     failure = ocp_import_error()
     if failure is not None:
         raise ImportError(ocp_unavailable_message(failure)) from failure
+    try:
+        stat = os.stat(path)
+    except OSError:
+        stat = None
+    cache_key = None
+    if stat is not None:
+        cache_key = (
+            os.path.normcase(os.path.abspath(path)),
+            stat.st_mtime_ns,
+            stat.st_size,
+            float(deflection_mm),
+        )
+        cached = _STEP_MESHES.get(cache_key)
+        if cached is not None:
+            return cached
     named = _read_named_step_shapes(path)
+    bodies = None
     if named:
         bodies = []
         for name, shape in named:
             bodies.extend(tessellate_shape(shape, deflection_mm, name=name))
-        if bodies:
-            return bodies
-    shape = read_step_shape(path)
-    if shape is None:
-        raise ValueError(f"could not read STEP file: {path}")
-    return tessellate_shape(shape, deflection_mm)
+        if not bodies:
+            bodies = None
+    if bodies is None:
+        shape = read_step_shape(path)
+        if shape is None:
+            raise ValueError(f"could not read STEP file: {path}")
+        bodies = tessellate_shape(shape, deflection_mm)
+    if cache_key is not None:
+        path_key = cache_key[0]
+        for old in [key for key in _STEP_MESHES if key[0] == path_key and key != cache_key]:
+            _STEP_MESHES.pop(old, None)
+        _STEP_MESHES[cache_key] = bodies
+    return bodies
 
 
 def pose_trsf(x, y, z, alpha=0.0, beta=0.0, gamma=0.0):
