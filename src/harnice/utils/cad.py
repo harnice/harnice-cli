@@ -597,8 +597,7 @@ def keep_gui_mates(model, saved):
     """Copy saved gui mates this run did not place.
 
     A mate already on the model keeps the pose this run gave it. A saved
-    build mate this run did not place is left out. The build marks every
-    mate gui first, so a mate this run does not place comes back as gui.
+    build mate this run did not place is left out.
     """
     have = {item["id"] for item in model.mates}
     for item in saved:

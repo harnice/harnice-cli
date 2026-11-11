@@ -972,9 +972,30 @@ def drawnby():
     """
     data = read_drawnby()
     name = ((data or {}).get("name") or "").strip()
-    if not name:
-        raise RuntimeError(
-            "Drawn-by name is not set. Open the Harnice console and use "
-            "Settings (gear) → Drawn by… to enter your name."
-        )
-    return {"name": name}
+    if name:
+        return {"name": name}
+
+    path = drawnby_path()
+    if _should_prompt_for_identity_files():
+        if os.path.exists(path):
+            print(f"Drawn-by name is not set in:\n{path}", flush=True)
+        else:
+            print(f"drawnby.json was not found at:\n{path}", flush=True)
+        while True:
+            print("Enter your drawn-by name:", flush=True)
+            try:
+                line = input()
+            except EOFError:
+                break
+            name = (line or "").strip()
+            if not name:
+                print("Drawn-by name cannot be blank.", flush=True)
+                continue
+            write_drawnby(name)
+            return {"name": name}
+
+    raise RuntimeError(
+        "Drawn-by name is not set. Open the Harnice console and use "
+        "Settings (gear) → Drawn by… to enter your name, "
+        f'or write {{"name": "YOUR NAME"}} to {path}.'
+    )

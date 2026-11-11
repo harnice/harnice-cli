@@ -111,9 +111,10 @@ links. After the first build that writes the solid I asked for, comment
 out that `run_macro` before I paste. Tell me that. Leave the call in
 `build.py` only when I still want the macro to replace the body.
 
-The rectangular macro writes no mates. The two rack macros write `U1`
-upward, and the enclosure also writes `B1` on the back. Those ids are
-`source` `build`. Read `cad.md` for where they sit and which way +X points.
+The rectangular macro writes no mates. The rack chassis macro writes `F1`
+upward. The enclosure writes `F1` on the front and `B1` on the back. Those
+ids are `source` `build`. Read `cad.md` for where they sit and which way +X
+points.
 
 Anything else is a custom solid in the device `build.py`, using `cad`.
 Follow the example and the function table in `cad.md`. Then:

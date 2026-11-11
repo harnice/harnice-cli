@@ -204,11 +204,14 @@ keys (mass, datasheet, family) may ride along.
           fileio.path("build instructions") # devices; the build writes the signals list
 
 The driver calls rev_history.part_family_append(), writes the files, then
-builds the project (in-process part.build(), cable.build(), or device.build();
-Build per folder on earlier part families). Progress bars and --step-only /
---svg-only / --no-build exist because regenerating 8,000 cables is a real job.
-A device family uses --no-build and a filter flag. It does not grow
---step-only or --svg-only.
+builds each SKU with `harnice -b` from that revision folder. Do not use
+in-process part.build() / cable.build() / device.build() as the check.
+Do not suppress errors from that build: no `check=False`, no swallowed
+stderr, no catch-and-continue past a nonzero exit. A failed `harnice -b`
+stops the family and the traceback is the review. Progress bars and
+--step-only / --svg-only / --no-build exist because regenerating 8,000
+cables is a real job. A device family uses --no-build and a filter flag.
+It does not grow --step-only or --svg-only.
 
 
 ## What is still messy (do not repeat)
@@ -234,7 +237,7 @@ A device family uses --no-build and a filter flag. It does not grow
 ## Goals for the next version
 
 1. Shared part-family kit in Harnice (flagnote rays, SVG helpers, STEP write,
-   revision-history row, progress bar, in-process build,
+   revision-history row, progress bar, `harnice -b` per SKU,
    cache_run_constant_lookups). Until that exists, keep the generator boring
    and local.
 2. Two files, always. {family}.py is the chooser. {family}_generator.py is the
@@ -595,14 +598,23 @@ When the family mates to a connector, accessory, or cable:
 
 Parts and cables:
 
+    import subprocess
     from harnice.lists import rev_history
     from harnice import state, fileio
-    import harnice.project_types.part as part   # or cable
 
     REVISION = "1"
     DATE_STARTED = "<today>"
     LIBRARY_REPO = "https://github.com/you/your-library"
     LIBRARY_SUBPATH = "my_family"
+
+    def build_sku(rev_dir):
+        # Always harnice -b. Do not call part.build() in-process.
+        # Do not suppress errors: check=True, keep stderr, stop on failure.
+        subprocess.run(
+            ["harnice", "-b"],
+            cwd=rev_dir,
+            check=True,
+        )
 
     def main(step_only=False, svg_only=False, build=True):
         state.set_rev(REVISION)
@@ -617,11 +629,18 @@ Parts and cables:
             rev_history.part_family_append(revision_history_row(cfg), ...)
             # write attributes, svg, step
             if build and not (step_only or svg_only):
-                build_part(pn, rev_dir)   # in-process; avoid subprocess per SKU
+                build_sku(rev_dir)
             print(progress_bar(i, len(variants)))
 
-Prefer in-process build (set state, part.generate_structure(), part.build())
-over a separate Build per SKU.
+Always build each SKU with `harnice -b` from that revision folder.
+Do not call part.build() / cable.build() / device.build() in-process as
+the check. Do not suppress errors from `harnice -b`: run with
+`check=True` (or equivalent), leave stdout and stderr visible, and stop
+on a nonzero exit. A traceback is the review. Fix the SKU and rebuild.
+
+If `harnice` is not on PATH:
+
+    python3 /path/to/harnice-cli/src/harnice/__main__.py -b
 
 Cache fileio.harnice_version and fileio.drawnby once per run.
 part_family_append otherwise shells out to git on every SKU.
@@ -635,22 +654,18 @@ columns match the chooser fields.
 
 Devices:
 
+    import subprocess
     from harnice.lists import rev_history
     from harnice import state
-    import harnice.project_types.device as device
 
-    def build_device(part_number, rev_dir):
-        cwd = os.getcwd()
-        os.chdir(rev_dir)
-        try:
-            state.set_pn(part_number)
-            state.set_rev(REVISION)
-            state.set_project_type("device")
-            state.set_file_structure(device.file_structure())
-            device.generate_structure()
-            device.build()
-        finally:
-            os.chdir(cwd)
+    def build_device(rev_dir):
+        # Always harnice -b. Do not call device.build() in-process.
+        # Do not suppress errors: check=True, keep stderr, stop on failure.
+        subprocess.run(
+            ["harnice", "-b"],
+            cwd=rev_dir,
+            check=True,
+        )
 
     def main(build=True):
         state.set_rev(REVISION)
@@ -665,7 +680,7 @@ Devices:
             rev_history.part_family_append(revision_history_row(cfg), ...)
             # write attributes.json, build.py, and config.yaml when this SKU has setup
             if build:
-                build_device(pn, rev_dir)
+                build_device(rev_dir)
             print(progress_bar(i, len(variants)))
 
 Each `build.py` is the signals list for that one SKU. Follow
@@ -691,12 +706,16 @@ generator.
 `repository_locations.csv`. A missing channel type is
 `skills/channel-type/SKILL.md`, then come back here.
 
-An agent runs the generator. `rev_history.part_family_append` reads
+An agent runs the generator, and every SKU build is `harnice -b` from that
+revision folder. Do not suppress errors from those builds. A failed
+`harnice -b` is the review: fix that SKU and rebuild. Do not skip the
+build, do not catch the failure and keep going, and do not claim success
+when the exit code was nonzero. `rev_history.part_family_append` reads
 `drawnby.json` the same way a device build does. The drawn-by steps are
 under "Run the build" in `skills/device-signals-list/SKILL.md`. After each
-SKU, the build prints `Wrote N signal rows.` N matches the count in that
-`build.py` comment, and N is greater than 0. A mismatch is a fix of that
-file and a rebuild of that SKU.
+device SKU, the build prints `Wrote N signal rows.` N matches the count in
+that `build.py` comment, and N is greater than 0. A mismatch is a fix of
+that file and a rebuild of that SKU.
 
 An online chatbot writes the two Python files and tells me to run the
 generator. It does not claim a build exited 0.
@@ -713,6 +732,9 @@ catalog is large. No `--step-only`. No `--svg-only`.
 - Parts and cables: origin is always the cable side. Mating-face cups do not move it.
 - A device family does not write drawing.svg, model.step, signals.tsv, symbol.svg, or body.step by hand.
 - A catalog axis is a part number. A setup that keeps the hardware is config.yaml on that one device.
+- Always build each emitted SKU with `harnice -b` from that revision folder.
+  Do not use in-process part.build() / cable.build() / device.build() as the
+  check. Do not suppress errors from that build.
 - No secrets, no scraped paywalled HTML dumps — use the attached datasheet.
 - Do not invent Harnice APIs. Read the folder from `harnice --docs` before
   you guess a function. The same pages are at https://harnice.io/ when you
@@ -737,6 +759,7 @@ catalog is large. No `--step-only`. No `--svg-only`.
 - [ ] Datasheet URLs sit on tables and on datasheet / mass_source fields
 - [ ] You did not generate SKUs the manufacturer does not sell
 - [ ] A device family asked the signals-list questions before writing build.py, and each build printed a signal-row count that matches that file's comment
+- [ ] An agent built every emitted SKU with `harnice -b` (or `python3 /path/to/harnice-cli/src/harnice/__main__.py -b`) from that revision folder, did not use in-process part/cable/device.build() as the check, and did not suppress errors from those builds. An online chatbot told me to run the generator and did not invent exit codes
 
 Reply with:
 1. Configuration count and 5 example library PNs

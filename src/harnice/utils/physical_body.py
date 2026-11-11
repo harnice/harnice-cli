@@ -222,23 +222,22 @@ def save_mates(mates, path=None):
     os.replace(temporary, path)
 
 
-def release_mates_to_gui():
-    """Mark every saved mate as gui at the start of a build.
+def drop_build_mates():
+    """Remove saved build mates at the start of a build.
 
-    Poses stay. A mate the build then places becomes build again. A mate
-    this build does not place stays gui, so the page can move it.
+    Page mates stay, with the same pose. The build script then adds the
+    build mates for this run. A build mate the script does not add is gone.
     """
     body = load_body()
     if not body:
         return
-    if all(mate["source"] == "gui" for mate in body["mate_connectors"]):
-        return
-    mates = []
+    kept = []
     for mate in body["mate_connectors"]:
-        item = dict(mate)
-        item["source"] = "gui"
-        mates.append(item)
-    save_mates(mates)
+        if mate["source"] != "build":
+            kept.append(mate)
+    if len(kept) == len(body["mate_connectors"]):
+        return
+    save_mates(kept)
 
 
 def require_saved_mates():

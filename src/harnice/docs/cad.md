@@ -141,14 +141,14 @@ Mates are stored in `fileio.path("attributes")` (`attributes.json`) under `mate_
 
 `source` is `build` or `gui`. The physical model page shows it and does not edit it.
 
-- A build starts by marking every saved mate `gui`.
+- A build starts by removing every saved mate whose `source` is `build`. A mate whose `source` is `gui` stays, with the same pose.
 - `cad.mate` marks that mate `build`. The page can select it and cannot move it.
-- A mate this build does not place stays `gui`, and the page keeps its pose.
-- A mate saved without `source` is `build` when its id is `U` plus digits, and `gui` otherwise. The next build marks it `gui` until the instructions place it.
+- The build script then adds this run's build mates. A build mate the script does not add is already gone.
+- A mate saved without `source` is `build` when its id is `U` plus digits, and `gui` otherwise. A `U` id with no `source` is removed at the start of the next build, the same as any other build mate.
 
 Every `connector_id` on the signals list needs a mate with that same id. The build adds a missing one at the origin with `source` `gui`, and that writes `mate_connectors` when the key is absent. A device with no signals-list connectors is left unchanged. The physical model page reads those mates. It does not add them. Those ids stay tied to the signals list. Other mates can be added, renamed, and deleted.
 
-The shipped macros that write mates call `cad.keep_gui_mates` before `cad.save_mates`. That copies saved `gui` mates this run did not place. A mate this run placed keeps that pose. A custom script that calls `cad.save_mates` does the same, or the next build drops the poses you set on the page.
+The shipped macros that write mates call `cad.keep_gui_mates` before `cad.save_mates`. That copies saved `gui` mates this run did not place. A mate this run placed keeps that pose. A custom script that calls `cad.save_mates` does the same. A `save_mates` that skips `keep_gui_mates` replaces the list, and the page poses are gone.
 
 On the device page, **Selection filter** chooses whether a click can select the solid or a mate connector. Select a mate this page owns and drag its triad, or type the numbers. Each of those selected mates has a triad, and dragging one moves every selected mate this page owns. A mate the last build placed can be selected and has no triad. The properties card edits the id and, for a mate this page owns, the pose. An id another mate already has is not applied. The field turns red, and a dashed line runs from the top right of the view to that mate while the field shows that id. Location source of truth is the text of who placed it. A signals-list connector id cannot be renamed or deleted. **Add mate connector** creates another mate at the origin.
 

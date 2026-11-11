@@ -777,7 +777,7 @@ def build(verbose=True, configuration=None):
     script_ns = None
     library_history.new()
     from harnice.utils import physical_body
-    physical_body.release_mates_to_gui()
+    physical_body.drop_build_mates()
 
     if os.path.exists(fileio.path("build instructions")):
         init_globals = {"configuration": configuration}

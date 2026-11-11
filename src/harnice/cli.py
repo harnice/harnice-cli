@@ -415,34 +415,16 @@ def _run_console_server_only():
 
 
 def _ensure_drawnby():
-    """Ask for a drawn-by name when ``drawnby.json`` is missing.
+    """Ask for a drawn-by name when missing (interactive CLI only).
 
-    Interactive terminals only. The desktop app collects the name in its
-    settings dialog, and a non-interactive run (piped stdin, including the
-    console Build button) leaves a missing file for ``fileio.drawnby()`` to
-    report.
+    Delegates to ``fileio.drawnby()``, which prompts and writes ``drawnby.json``
+    when stdin is a terminal. Non-interactive runs (piped stdin, including the
+    console Build button) leave a missing file for later ``fileio.drawnby()``
+    calls to report.
     """
-    path = fileio.drawnby_path()
-    if os.path.exists(path):
-        return
     if not fileio._should_prompt_for_identity_files():
         return
-    print(f"drawnby.json was not found at:\n{path}", flush=True)
-    while True:
-        print("Enter your drawn-by name:", flush=True)
-        try:
-            line = input()
-        except EOFError:
-            fatal(
-                "Drawn-by name is not set. "
-                f'Write {{"name": "YOUR NAME"}} to {path}.'
-            )
-        name = (line or "").strip()
-        if not name:
-            warn("Drawn-by name cannot be blank.")
-            continue
-        fileio.write_drawnby(name)
-        return
+    fileio.drawnby()
 
 
 def prompt(text, default=None):
