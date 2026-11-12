@@ -1,10 +1,12 @@
 """Orthographic line drawing of a system physical assembly.
 
 OpenCascade hidden-line removal projects each device body to its visible
-edges and silhouettes. Devices are painted from farthest to nearest: that
-device's face photos, then its name at the body center, so a closer photo
-covers a name behind it the same way it covers the body behind it. A face
-with no photo is filled white. A photo is stretched onto the rectangle of
+edges and silhouettes. Each face turned toward the camera gets its photo,
+and each device gets its name at the body center. A face with no photo is
+filled white. A photo is drawn when any part of its face can be seen, and
+rays cast through each face decide which photo is on top where they
+overlap: the body a ray lands on is the one painted there. A name sits on
+its own photo and under any closer body. A photo is stretched onto the rectangle of
 its face. A rectangular body uses that
 side of its bounding box. A face that is not a rectangle, such as a rack
 chassis back, uses the rectangle of the solid on that side: the 17 inch
@@ -19,6 +21,8 @@ look straight at that face of the bounding box, with the picture upright
 the way the viewer shows it.
 """
 
+import bisect
+import heapq
 import math
 import os
 
@@ -42,6 +46,11 @@ _NAMED_VIEWS = {
 # toward the camera so a rack rail does not draw through the gear in front of it.
 _FLUSH_MM = 0.05
 _FLUSH_STEP_MM = 0.05
+
+# Face photos are sampled on a _SAMPLES x _SAMPLES grid of rays. A sample with
+# a solid more than _HIDDEN_MM in front of it is hidden.
+_SAMPLES = 10
+_HIDDEN_MM = 0.5
 
 
 def _dot(a, b):
@@ -382,39 +391,284 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
         center = ((xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0)
         return _project(center, right, up)
 
-    def _photo_in_front(photo, view, intersector):
-        """True when no solid sits between the camera and the face center."""
-        if intersector is None:
-            return True
-        from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
+    def _ray_caster(shapes, view):
+        """``cast(point)`` -> ``(offset_mm, body_index)`` of the first body hit.
 
-        center = tuple((photo["tr"][i] + photo["bl"][i]) / 2.0 for i in range(3))
-        distance = 1.0e5
-        origin = tuple(center[i] - view[i] * distance for i in range(3))
-        line = gp_Lin(gp_Pnt(*origin), gp_Dir(*view))
-        try:
-            intersector.Perform(line, 0.0, distance * 2.0)
-            count = intersector.NbPnt()
-        except Exception:
-            return True
-        if count < 1:
-            return True
-        nearest = min(intersector.WParameter(index) for index in range(1, count + 1))
-        return nearest >= distance - 0.5
-
-    def _load_intersector(shapes):
+        The ray runs along ``view`` through ``point``. ``offset_mm`` is how far
+        in front of ``point`` the hit is, so a hit on the plane of ``point`` is
+        about 0 and a hit behind it is negative. ``cast`` returns None when the
+        ray meets nothing. ``_ray_caster`` returns None when OpenCascade cannot
+        cast rays; then every face is kept and painted in depth order.
+        """
         if not shapes:
             return None
         try:
             from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+            from OCP.TopAbs import TopAbs_FACE
+            from OCP.TopExp import TopExp
+            from OCP.TopTools import TopTools_IndexedMapOfShape
+            from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
         except ImportError:
             return None
         try:
             intersector = IntCurvesFace_ShapeIntersector()
             intersector.Load(_compound(shapes), 1e-7)
+            # One face map in body order, so a face index falls in its
+            # body's range.
+            faces = TopTools_IndexedMapOfShape()
+            ends = []
+            for shape in shapes:
+                TopExp.MapShapes_s(shape, TopAbs_FACE, faces)
+                ends.append(faces.Extent())
         except Exception:
             return None
-        return intersector
+        direction = gp_Dir(*view)
+        reach = 1.0e5
+
+        def cast(point):
+            origin = gp_Pnt(*(point[i] - view[i] * reach for i in range(3)))
+            try:
+                intersector.Perform(gp_Lin(origin, direction), 0.0, reach * 2.0)
+                count = intersector.NbPnt()
+                if count < 1:
+                    return None
+                nearest = min(range(1, count + 1), key=intersector.WParameter)
+                found = faces.FindIndex(intersector.Face(nearest))
+                distance = intersector.WParameter(nearest)
+            except Exception:
+                return None
+            owner = None
+            if found > 0:
+                owner = bisect.bisect_left(ends, found)
+            return reach - distance, owner
+
+        return cast
+
+    def _paint_order(prepared, view, right, up):
+        """Photos and refdes in the order they are written to the SVG.
+
+        Only faces turned toward the camera count. A face is kept when any
+        part of it can be seen. Each face is sampled on a grid, and a sample
+        is seen when no solid sits more than ``_HIDDEN_MM`` in front of it.
+        Where a ray lands on a body, that body's face is painted over every
+        other face covering that spot. That holds for gear inside an open
+        rack frame and for flush faces. Anything the rays leave open paints
+        from farthest to nearest. Flush faces paint largest first. A refdes
+        is painted over its own photo and under whatever body the ray at its
+        center meets first.
+        """
+
+        def flat(point):
+            return (_dot(point, right), _dot(point, up))
+
+        def box_of(points):
+            xs = [point[0] for point in points]
+            ys = [point[1] for point in points]
+            return (min(xs), min(ys), max(xs), max(ys))
+
+        def boxes_touch(a, b):
+            return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+
+        def inside(face, point):
+            ox, oy = face["origin"]
+            ax, ay = face["a"]
+            bx, by = face["b"]
+            det = face["det"]
+            x, y = point[0] - ox, point[1] - oy
+            s = (x * by - y * bx) / det
+            t = (ax * y - ay * x) / det
+            return 0.0 < s < 1.0 and 0.0 < t < 1.0
+
+        def grid(photo):
+            tl, tr, bl = photo["tl"], photo["tr"], photo["bl"]
+            for i in range(_SAMPLES):
+                for j in range(_SAMPLES):
+                    u = (i + 0.5) / _SAMPLES
+                    v = (j + 0.5) / _SAMPLES
+                    yield tuple(
+                        tl[k] + u * (tr[k] - tl[k]) + v * (bl[k] - tl[k])
+                        for k in range(3)
+                    )
+
+        def front_depth(bounds):
+            xmin, ymin, zmin, xmax, ymax, zmax = bounds
+            return min(
+                x * view[0] + y * view[1] + z * view[2]
+                for x in (xmin, xmax)
+                for y in (ymin, ymax)
+                for z in (zmin, zmax)
+            )
+
+        bodies = []
+        for device in prepared:
+            bounds = _bounds_mm(device["shape"])
+            if bounds is None:
+                bodies.append(None)
+                continue
+            xmin, ymin, zmin, xmax, ymax, zmax = bounds
+            corners = [
+                (x, y, z) for x in (xmin, xmax) for y in (ymin, ymax) for z in (zmin, zmax)
+            ]
+            bodies.append({
+                "box": box_of([flat(corner) for corner in corners]),
+                "center": ((xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0),
+                "front": front_depth(bounds),
+            })
+
+        faces = []
+        for index, device in enumerate(prepared):
+            for photo in device["photos"]:
+                normal = photo.get("normal") or (0.0, 0.0, 0.0)
+                if _dot(normal, view) >= -1e-8:
+                    continue
+                origin = flat(photo["tl"])
+                tr = flat(photo["tr"])
+                bl = flat(photo["bl"])
+                a = (tr[0] - origin[0], tr[1] - origin[1])
+                b = (bl[0] - origin[0], bl[1] - origin[1])
+                det = a[0] * b[1] - a[1] * b[0]
+                if abs(det) < 1e-12:
+                    continue
+                corner = (tr[0] + bl[0] - origin[0], tr[1] + bl[1] - origin[1])
+                center = tuple((photo["tr"][i] + photo["bl"][i]) / 2.0 for i in range(3))
+                faces.append({
+                    "device": index,
+                    "photo": photo,
+                    "origin": origin,
+                    "a": a,
+                    "b": b,
+                    "det": det,
+                    "box": box_of([origin, tr, bl, corner]),
+                    "depth": _dot(center, view),
+                    "area": float(photo.get("width") or 0.0) * float(photo.get("height") or 0.0),
+                    "kept": True,
+                })
+
+        cast = _ray_caster([device["shape"] for device in prepared], view)
+        # Which body each ray lands on, at the 2D spot the ray passes through,
+        # and how much screen area that sample stands for.
+        seen = []
+        if cast is not None:
+            for face in faces:
+                crowded = any(
+                    other is not None
+                    and index != face["device"]
+                    and boxes_touch(other["box"], face["box"])
+                    for index, other in enumerate(bodies)
+                )
+                if not crowded:
+                    continue
+                share = abs(face["det"]) / (_SAMPLES * _SAMPLES)
+                visible = False
+                for point in grid(face["photo"]):
+                    hit = cast(point)
+                    if hit is None or hit[0] <= _HIDDEN_MM:
+                        visible = True
+                    if hit is not None and hit[1] is not None:
+                        seen.append((flat(point), hit[1], share))
+                face["kept"] = visible
+
+        def covering(point, device=None, skip=None):
+            return [
+                index for index, face in enumerate(faces)
+                if face["kept"]
+                and (device is None or face["device"] == device)
+                and face["device"] != skip
+                and face["box"][0] <= point[0] <= face["box"][2]
+                and face["box"][1] <= point[1] <= face["box"][3]
+                and inside(face, point)
+            ]
+
+        # A ray that lands on a body shows that body, even where its own
+        # samples were all covered.
+        for point, owner, _share in seen:
+            for index in covering(point, device=owner):
+                faces[index]["kept"] = True
+
+        nodes = []
+        node_of_face = {}
+        for index, face in enumerate(faces):
+            if not face["kept"]:
+                continue
+            node_of_face[index] = len(nodes)
+            nodes.append({
+                "item": ("photo", face["photo"]),
+                "key": (-round(face["depth"] / _FLUSH_MM), -face["area"], 0, len(nodes)),
+            })
+        # (before, after) -> screen area that is wrong if ``after`` paints first.
+        edges = {}
+
+        def need(before, after, weight):
+            edges[(before, after)] = edges.get((before, after), 0.0) + weight
+
+        for point, owner, share in seen:
+            mine = covering(point, device=owner)
+            if not mine:
+                continue
+            top = min(mine, key=lambda index: faces[index]["depth"])
+            for index in covering(point, skip=owner):
+                need(node_of_face[index], node_of_face[top], share)
+
+        for index, device in enumerate(prepared):
+            body = bodies[index]
+            if not device["refdes"] or body is None:
+                continue
+            label = len(nodes)
+            point = flat(body["center"])
+            mine = covering(point, device=index)
+            own_faces = [
+                face for face in faces if face["kept"] and face["device"] == index
+            ]
+            if own_faces:
+                nearest = min(own_faces, key=lambda face: face["depth"])
+                key = (-round(nearest["depth"] / _FLUSH_MM), -nearest["area"], 1, label)
+            else:
+                key = (-round(body["front"] / _FLUSH_MM), 0.0, 1, label)
+            nodes.append({"item": ("label", index), "key": key})
+            # A refdes is a point, so give it more weight than any face sample.
+            for face_index in mine:
+                need(node_of_face[face_index], label, float("inf"))
+            hit = cast(body["center"]) if cast is not None else None
+            seer = hit[1] if hit is not None else None
+            if seer == index:
+                for face_index in covering(point, skip=index):
+                    need(node_of_face[face_index], label, 1.0)
+            elif seer is not None:
+                for face_index in covering(point, device=seer):
+                    need(label, node_of_face[face_index], 1.0)
+
+        # Topological order. Ties go farthest first. Faces that overlap each
+        # other, like a rack frame and the gear seen through it, can form a
+        # cycle. Then the face whose waiting costs the least area goes next.
+        after = [[] for _node in nodes]
+        incoming = [{} for _node in nodes]
+        for (before, later), weight in edges.items():
+            if before == later:
+                continue
+            after[before].append(later)
+            incoming[later][before] = weight
+        ready = [(node["key"], index) for index, node in enumerate(nodes) if not incoming[index]]
+        heapq.heapify(ready)
+        done = [False] * len(nodes)
+        order = []
+        while len(order) < len(nodes):
+            if not ready:
+                stuck = min(
+                    (sum(incoming[index].values()), nodes[index]["key"], index)
+                    for index in range(len(nodes))
+                    if not done[index]
+                )
+                ready.append((nodes[stuck[2]]["key"], stuck[2]))
+            _key, index = heapq.heappop(ready)
+            if done[index]:
+                continue
+            done[index] = True
+            order.append(nodes[index]["item"])
+            for later in after[index]:
+                incoming[later].pop(index, None)
+                if not incoming[later] and not done[later]:
+                    heapq.heappush(ready, (nodes[later]["key"], later))
+        return order
 
     _require_opencascade()
     factor = _number("scale", 1 if scale is None else scale)
@@ -436,37 +690,14 @@ def render_svg(artifact_id, devices, scale=1, orientation="front", lineweight=1)
         })
     shapes = [device["shape"] for device in prepared]
     polylines = _visible_polylines(shapes, view, right)
-    intersector = _load_intersector(shapes)
-
-    def _shape_depth(shape):
-        # ``view`` points into the scene, so a larger value is farther away.
-        bounds = _bounds_mm(shape)
-        if bounds is None:
-            return 0.0
-        xmin, ymin, zmin, xmax, ymax, zmax = bounds
-        center = ((xmin + xmax) / 2.0, (ymin + ymax) / 2.0, (zmin + zmax) / 2.0)
-        return _dot(center, view)
-
-    def _photo_depth(photo):
-        center = tuple((photo["tr"][i] + photo["bl"][i]) / 2.0 for i in range(3))
-        return _dot(center, view)
-
-    # Farthest device first. Its photos, then its name, so the name sits on
-    # its own picture and a closer photo covers a name behind it.
     paint = []
-    for device in sorted(prepared, key=lambda item: _shape_depth(item["shape"]), reverse=True):
-        facing = []
-        for photo in device["photos"]:
-            normal = photo.get("normal") or (0.0, 0.0, 0.0)
-            if _dot(normal, view) >= -1e-8:
-                continue
-            if not _photo_in_front(photo, view, intersector):
-                continue
-            facing.append(photo)
-        facing.sort(key=_photo_depth, reverse=True)
-        paint.extend(("photo", photo) for photo in facing)
+    for kind, item in _paint_order(prepared, view, right, up):
+        if kind == "photo":
+            paint.append(("photo", item))
+            continue
+        device = prepared[item]
         label_at = _label_point(device["shape"], right, up)
-        if device["refdes"] and label_at is not None:
+        if label_at is not None:
             paint.append(("label", (device["refdes"], label_at)))
 
     points = [point for line in polylines for point in line]

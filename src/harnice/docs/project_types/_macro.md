@@ -428,7 +428,7 @@ On first seed the macro writes a blank SVG. It does not add, move, or delete pri
 
 Draws the system physical assembly as one orthographic view. OpenCascade projects each placed device body to its visible edges and silhouettes, then the drawing adds that device's instance name. The name is left off when other bodies hide half or more of its silhouette. Hidden lines, mate connectors, and devices named in `hidden_instances` are left out.
 
-A face photo that faces the camera is an SVG `<image>` link to the PNG already stored on that device, relative to the revision folder. The picture sits on the bounding-box face, the same face the physical-model viewer paints. The images are painted from farthest to nearest, so a closer screenshot covers one behind it. `pdf_generator` embeds those links as raster images when it writes the PDF.
+A face photo that faces the camera is an SVG `<image>` link to the PNG already stored on that device, relative to the revision folder. The picture sits on the bounding-box face, the same face the physical-model viewer paints. A screenshot is drawn when any part of its face can be seen, even if its center is covered. Where a body shows, its screenshot is painted over the others there, so gear seen through an open rack frame stays on top of the frame's face. Anything else paints from farthest to nearest. `pdf_generator` embeds those links as raster images when it writes the PDF.
 
 **Args:**
 
