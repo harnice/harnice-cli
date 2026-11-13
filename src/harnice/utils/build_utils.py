@@ -4,7 +4,7 @@ import json
 import math
 import os
 
-from harnice import fileio
+from harnice import fileio, state
 from harnice import build_sandbox
 from harnice.lists import library_history
 from harnice.utils import library_utils
@@ -93,6 +93,11 @@ def run_macro(
         **kwargs,  # merges/overrides
     }
 
+    owner = getattr(state, "pn", None)
+    print(
+        f"Harnice: running macro {macro_part_number} to make {artifact_id}"
+        + (f" for {owner}" if owner else "")
+    )
     build_sandbox.run_path(script_path, run_name="__main__", init_globals=init_globals)
 
 

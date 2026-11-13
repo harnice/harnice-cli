@@ -185,6 +185,13 @@ def _repeat_of_key(key):
     return (key[2] or "").strip()
 
 
+def _endpoint_label(key):
+    """``MIC1.out1``, or ``X1.ch0 face A`` for one face of a passthrough, for build messages."""
+    label = f"{key[0]}.{key[1]}"
+    repeat = _repeat_of_key(key)
+    return f"{label} face {repeat}" if repeat else label
+
+
 def _row_is_multi_endpoint(row):
     return bool((row.get("from_repeat_channel_id") or "").strip())
 
@@ -637,6 +644,16 @@ def map(from_key, to_key=None, multi_ch_junction_key=""):
     else:
         _reject_if_not_same_group(from_key, None)
     _apply_mapping(from_key, to_key=to_key, multi_ch_junction_key=multi_ch_junction_key)
+    if multi_ch_junction_key:
+        print(
+            f"Harnice: mapped channel {_endpoint_label(from_key)} onto "
+            f"multi-channel junction {multi_ch_junction_key}"
+        )
+    else:
+        print(
+            f"Harnice: mapped channel {_endpoint_label(from_key)} to "
+            f"{_endpoint_label(to_key)}"
+        )
 
 
 def force(from_key, to_key):
@@ -687,6 +704,15 @@ def force(from_key, to_key):
     # Different names stay pending until circuits_list.force() pairs each
     # from-side signal to a to-side signal. That pairing is not in this cell.
     signal_names_match = sorted(from_names) == sorted(to_names)
+    print(
+        f"Harnice: force-mapped channel {_endpoint_label(from_key)} to "
+        f"{_endpoint_label(to_key)} even though their channel types differ"
+        + (
+            ""
+            if signal_names_match
+            else " (pair its signals with circuits_list.force() before circuits_list.new())"
+        )
+    )
     if not signal_names_match:
         commented = equiv + "  # this line does not include forced circuits"
         row["manual_map_channel_python_equiv"] = commented
@@ -805,6 +831,7 @@ def map_unmapped_compatibles_alphabetically():
     Skips every channel that has more than one endpoint (passthroughs), even
     if nothing else is left. Map those faces with ``map()`` or ``route()``.
     """
+    auto_mapped_count = 0
     with cached_tsv.edit(fileio.path("channel map"), COLUMNS) as channels:
         mapped = already_mapped_set()
         unique_groups_of_connected_harnesses = sorted(
@@ -866,9 +893,17 @@ def map_unmapped_compatibles_alphabetically():
                         continue
 
                     _map_into(channels, mapped, from_key, to_key)
+                    auto_mapped_count += 1
+                    print(
+                        f"Harnice: auto-mapped channel {_endpoint_label(from_key)} to "
+                        f"{_endpoint_label(to_key)} (compatible types, in harness group "
+                        f"{group_of_connected_harnesses})"
+                    )
                     break
 
         _write_mapped_set(mapped)
+        if not auto_mapped_count:
+            print("Harnice: auto-mapping found no unmapped compatible channel pairs")
 
 
 def passthroughs_consumed_as_patch_ends():
@@ -1332,4 +1367,8 @@ def flatten():
     out_path = fileio.path("flattened channel map")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     cached_tsv.write(out_path, FLATTENED_COLUMNS, rows)
+    print(
+        f"Harnice: flattened channel map has {len(rows)} mapped channels "
+        "(this system plus every subsystem inside it)"
+    )
     return rows

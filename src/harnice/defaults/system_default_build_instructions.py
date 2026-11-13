@@ -3,6 +3,8 @@ import os
 # ===========================================================================
 #                CHANNEL AND PASSTHROUGH MAPPING
 # ===========================================================================
+print("Mapping channels between devices...")
+
 # system.build() already called channel_map.new() - one row per channel endpoint.
 #
 # A patch is two endpoints. Each key is:
@@ -55,6 +57,8 @@ channel_map.map_unmapped_compatibles_alphabetically()
 # subsystem.name, or subsystem.subsystem.name. Channel ids are not.
 channel_map.flatten()
 
+print("Routing mapped channels through passthroughs and harnesses...")
+
 # one row per passthrough channel, plus routing context (availables per
 # group / from->to type / directionality). Dual-mapped passthroughs are omitted.
 passthrough_map.new()
@@ -74,6 +78,8 @@ passthrough_map.new()
 
 # shortest remaining path; writes chain_of_connectors / chain_of_harnesses
 passthrough_map.resolve()
+
+print("Building circuits and adding them to the instances list...")
 
 # expand every mapped patch (and its passthrough path) into conductor circuits.
 # multi-ch junction rows become from_channel.signal -> mcj.signal (first type's signals)
@@ -99,6 +105,8 @@ system_utils.find_connector_with_no_circuit(connector_list, circuits)
 # ===========================================================================
 #              ADD APPEARANCES TO CHANNEL TYPES AND CIRCUITS
 # ===========================================================================
+print("Assigning colors and recommended cables to channels and circuits...")
+
 # Channel traces use channel_default_appearance from the channel type's
 # channel_types.tsv. Circuit traces use signal_default_appearances for
 # signal_of_channel_type. The maps below write an instance appearance, and
@@ -222,116 +230,120 @@ for instance in instances_list.read():
 
 
 # ===========================================================================
-#              SUBSYSTEM SYMBOLS
+#              GENERATE OUTPUTS
 # ===========================================================================
-# Each run_macro call is one symbol (switch instances in the console to edit it).
-# scale is applied to the system block diagram primitive in the symbol.
-# Each build replaces that primitive's contents with a new copy of the
-# block diagram and leaves its position. Each show_* flag is one layer:
-# True draws it, False sets display="none".
-# Connector pins come from unique ICD connectors. The ICD is written after
-# build instructions, so a second build is required after ICD changes.
-# This macro also runs device signals-list / symbol-pin verification on the ICD.
-scale = 0.1
-
-build_utils.run_macro(
-    "subsystem_symbol",
-    "macros/system_artifacts",
-    "https://github.com/harnice/harnice-general-library",
-    artifact_id="subsystem-symbol-1",
-    scale=scale,
-    show_boundary=True,
-    show_devices=True,
-    show_subsystems=True,
-    show_harnesses=True,
-    show_mating_connectors=True,
-    show_external_interface_flags=True,
-    show_harness_labels=True,
-    show_channel_traces=True,
-    show_circuit_traces=True,
-)
-
-# Orthographic drawing of the physical assembly. One view per call.
-# scale is the drawing scale. lineweight is the sheet stroke in px.
-build_utils.run_macro(
-    "physical_model_drawing",
-    "macros/system_artifacts",
-    "https://github.com/harnice/harnice-general-library",
-    artifact_id="physical-1",
-    scale=1,
-    lineweight=1,
-    hidden_instances=[],
-    orientation="front",
-)
-
 # Store the default trace layout styles into a variable to be used later when
 # generating the GUI block diagram layouts if desired.
 default_trace_overlay_style = dict(svg_utils.trace_overlay_style)
 
-# Example of how to edit the trace layouts for various outputs. Copy and paste
-# svg_utils.regenerate_trace_overlays and modify the style dict before a macro
-# to modify that macro's trace layout appearance.
-svg_utils.regenerate_trace_overlays(
-    style={
-        "label_font_size": 0.5,
-        "segment_spacing": 1.5,
-        "stroke_width": 0.5 / 96,
-        "min_label_segment_length": None,
-        "network_segment_stroke_width": 1.8,
-        "network_segment_font_size": 11,
-        "network_node_radius": 2.2,
-        "network_node_font_size": 10,
-    },
-)
+generate_outputs = True  # change to False if you'd like to skip the outputs generation process
+if generate_outputs:
+    print("Drawing the subsystem symbol, physical view, block diagram, and PDF...")
 
-# Block diagram sheet. Writes {artifact_id}-master.svg for the PDF generator.
-# scale is the drawing scale. Each show_* flag is one of the old sheet
-# checkboxes: True draws that layer, False hides it.
-build_utils.run_macro(
-    "block-diagram-svg-exporter",
-    "macros/system_artifacts",
-    "https://github.com/harnice/harnice-general-library",
-    artifact_id="block-diagram-1",
-    scale=1,
-    show_boundary=True,
-    show_devices=True,
-    show_subsystems=True,
-    show_harnesses=True,
-    show_mating_connectors=True,
-    show_external_interface_flags=True,
-    show_harness_labels=True,
-    show_channel_traces=True,
-    show_circuit_traces=True,
-)
+    # Each run_macro call is one symbol (switch instances in the console to edit it).
+    # scale is applied to the system block diagram primitive in the symbol.
+    # Each build replaces that primitive's contents with a new copy of the
+    # block diagram and leaves its position. Each show_* flag is one layer:
+    # True draws it, False sets display="none".
+    # Connector pins come from unique ICD connectors. The ICD is written after
+    # build instructions, so a second build is required after ICD changes.
+    # This macro also runs device signals-list / symbol-pin verification on the ICD.
+    scale = 0.1
 
-# Each run_macro call is one PDF file.
-build_utils.run_macro(
-    "pdf_generator",
-    "macros/harness_artifacts",
-    "https://github.com/harnice/harnice-general-library",
-    artifact_id="pdf_drawing-1",
-    page_setup={
-        "pages": [
-            {
-                "tblock_mpn": "harnice_tblock",
-                "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
-                "tblock_lib_subpath": "titleblocks/",
-                "page_size_in": [11.0, 8.5],
-                "tblock_anchor": "bottom-right",
-                "tblock_offset_px": [40.0, 40.0],
-                "text_replacements": {
-                    "tblock-key-pagedesc": "block_diagram",
-                    "tblock-key-desc": rev_history.info(field="desc"),
-                    "tblock-key-pn": state.partnumber("pn"),
-                    "tblock-key-drawnby": rev_history.info(field="drawnby"),
-                    "tblock-key-rev": state.partnumber("R"),
-                    "tblock-key-scale": scale,
-                    "tblock-key-sheet": "autosheet",
+    build_utils.run_macro(
+        "subsystem_symbol",
+        "macros/system_artifacts",
+        "https://github.com/harnice/harnice-general-library",
+        artifact_id="subsystem-symbol-1",
+        scale=scale,
+        show_boundary=True,
+        show_devices=True,
+        show_subsystems=True,
+        show_harnesses=True,
+        show_mating_connectors=True,
+        show_external_interface_flags=True,
+        show_harness_labels=True,
+        show_channel_traces=True,
+        show_circuit_traces=True,
+    )
+
+    # Orthographic drawing of the physical assembly. One view per call.
+    # scale is the drawing scale. lineweight is the sheet stroke in px.
+    build_utils.run_macro(
+        "physical_model_drawing",
+        "macros/system_artifacts",
+        "https://github.com/harnice/harnice-general-library",
+        artifact_id="physical-1",
+        scale=1,
+        lineweight=1,
+        hidden_instances=[],
+        orientation="front",
+    )
+
+    # Example of how to edit the trace layouts for various outputs. Copy and paste
+    # svg_utils.regenerate_trace_overlays and modify the style dict before a macro
+    # to modify that macro's trace layout appearance.
+    svg_utils.regenerate_trace_overlays(
+        style={
+            "label_font_size": 0.5,
+            "segment_spacing": 1.5,
+            "stroke_width": 0.5 / 96,
+            "min_label_segment_length": None,
+            "network_segment_stroke_width": 1.8,
+            "network_segment_font_size": 11,
+            "network_node_radius": 2.2,
+            "network_node_font_size": 10,
+        },
+    )
+
+    # Block diagram sheet. Writes {artifact_id}-master.svg for the PDF generator.
+    # scale is the drawing scale. Each show_* flag is one of the old sheet
+    # checkboxes: True draws that layer, False hides it.
+    build_utils.run_macro(
+        "block-diagram-svg-exporter",
+        "macros/system_artifacts",
+        "https://github.com/harnice/harnice-general-library",
+        artifact_id="block-diagram-1",
+        scale=1,
+        show_boundary=True,
+        show_devices=True,
+        show_subsystems=True,
+        show_harnesses=True,
+        show_mating_connectors=True,
+        show_external_interface_flags=True,
+        show_harness_labels=True,
+        show_channel_traces=True,
+        show_circuit_traces=True,
+    )
+
+    # Each run_macro call is one PDF file.
+    build_utils.run_macro(
+        "pdf_generator",
+        "macros/harness_artifacts",
+        "https://github.com/harnice/harnice-general-library",
+        artifact_id="pdf_drawing-1",
+        page_setup={
+            "pages": [
+                {
+                    "tblock_mpn": "harnice_tblock",
+                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
+                    "tblock_lib_subpath": "titleblocks/",
+                    "page_size_in": [11.0, 8.5],
+                    "tblock_anchor": "bottom-right",
+                    "tblock_offset_px": [40.0, 40.0],
+                    "text_replacements": {
+                        "tblock-key-pagedesc": "block_diagram",
+                        "tblock-key-desc": rev_history.info(field="desc"),
+                        "tblock-key-pn": state.partnumber("pn"),
+                        "tblock-key-drawnby": rev_history.info(field="drawnby"),
+                        "tblock-key-rev": state.partnumber("R"),
+                        "tblock-key-scale": scale,
+                        "tblock-key-sheet": "autosheet",
+                    },
                 },
-            },
-        ],
-    },
-)
+            ],
+        },
+    )
 
 
 # ===========================================================================

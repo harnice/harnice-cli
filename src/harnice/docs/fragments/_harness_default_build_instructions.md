@@ -367,183 +367,186 @@
                     detail_flag_note_counter += 1
     
     # ===========================================================================
-    #                  BUILD HARNESS OUTPUTS
+    #                  GENERATE OUTPUTS
     # ===========================================================================
     instances = instances_list.read()
     scales = {"A": 0.25, "B": 0.3, "C": 1}
-    
-    build_utils.run_macro(
-        "bom_exporter_bottom_up",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="bom-1",
-    )
-    build_utils.run_macro(
-        "tooling_list_exporter",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="tool_list-1",
-    )
-    build_utils.run_macro(
-        "standard_harnice_formboard",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="formboard-overview",
-        dimension=0,
-        scale=scales.get("A"),
-        input_instances=formboard_overview_instances,
-    )
-    build_utils.run_macro(
-        "standard_harnice_formboard",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="formboard-detail",
-        scale=scales.get("C"),
-        input_instances=formboard_detail_instances,
-    )
     
     # Store the default trace layout styles into a variable to be used later when
     # generating the GUI block diagram layouts if desired.
     default_trace_overlay_style = dict(svg_utils.trace_overlay_style)
     
-    # Example of how to edit the trace layouts for various outputs. Copy and paste
-    # svg_utils.regenerate_trace_overlays and modify the style dict before a macro 
-    # to modify that macro's trace layout appearance. 
-    svg_utils.regenerate_trace_overlays(
-        style={
-            "label_font_size": 0.5,
-            "segment_spacing": 1.5,
-            "stroke_width": 0.5 / 96,
-            "min_label_segment_length": None,
-            "network_segment_stroke_width": 1.8,
-            "network_segment_font_size": 11,
-            "network_node_radius": 2.2,
-            "network_node_font_size": 10,
-        },
-    )
-    build_utils.run_macro(
-        "trace_layout_visualizer",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="conductor_layout-1",
-        trace_item_types=["conductor"],
-        scale=scales.get("A"),
-    )
-    build_utils.run_macro(
-        "trace_layout_visualizer",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="cable_layout-1",
-        trace_item_types=["cable"],
-        scale=scales.get("A"),
-    )
-    build_utils.run_macro(
-        "circuit_visualizer",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="circuitviz-1",
-        input_instances=instances_list.read(),
-    )
-    build_utils.run_macro(
-        "revision_history_table",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="revhistory-1",
-    )
+    generate_outputs = True  # change to False if you'd like to skip the outputs generation process
+    if generate_outputs:
     
-    build_notes_list_instances = []
-    for instance in instances_list.read():
-        if (
-            instance.get("item_type") == "note"
-            and instance.get("note_type") == "build_note"
-        ):
-            build_notes_list_instances.append(instance)
+        build_utils.run_macro(
+            "bom_exporter_bottom_up",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="bom-1",
+        )
+        build_utils.run_macro(
+            "tooling_list_exporter",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="tool_list-1",
+        )
+        build_utils.run_macro(
+            "standard_harnice_formboard",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="formboard-overview",
+            dimension=0,
+            scale=scales.get("A"),
+            input_instances=formboard_overview_instances,
+        )
+        build_utils.run_macro(
+            "standard_harnice_formboard",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="formboard-detail",
+            scale=scales.get("C"),
+            input_instances=formboard_detail_instances,
+        )
     
-    build_utils.run_macro(
-        "build_notes_table",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="build_notes_table-1",
-        input_instances=build_notes_list_instances,
-    )
-    build_utils.run_macro(
-        "wirelist_exporter",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="wirelist-1",
-        input_instances=instances_list.read(),
-    )
-    build_utils.run_macro(
-        "harness_step_builder",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="harness-step-1",
-        chosen_network=bundle_network,
-        input_instances=instances_list.read(),
-    )
-    # Each run_macro call is one PDF drawing (switch instances in the console to edit layout).
-    # page_setup is the list of pages; edit it here, not in the PDF editor.
-    build_utils.run_macro(
-        "pdf_generator",
-        "macros/harness_artifacts",
-        "https://github.com/harnice/harnice-general-library",
-        artifact_id="pdf_drawing-1",
-        page_setup={
-            "pages": [
-                {
-                    "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
-                    "tblock_lib_subpath": "titleblocks/",
-                    "page_size_in": [11.0, 8.5],
-                    "tblock_anchor": "bottom-right",
-                    "tblock_offset_px": [40.0, 40.0],
-                    "text_replacements": {
-                        "tblock-key-pagedesc": "overview",
-                        "tblock-key-desc": rev_history.info(field="desc"),
-                        "tblock-key-pn": state.partnumber("pn"),
-                        "tblock-key-drawnby": rev_history.info(field="drawnby"),
-                        "tblock-key-rev": state.partnumber("R"),
-                        "tblock-key-scale": scales.get("A"),
-                        "tblock-key-sheet": "autosheet",
+        # Example of how to edit the trace layouts for various outputs. Copy and paste
+        # svg_utils.regenerate_trace_overlays and modify the style dict before a macro 
+        # to modify that macro's trace layout appearance. 
+        svg_utils.regenerate_trace_overlays(
+            style={
+                "label_font_size": 0.5,
+                "segment_spacing": 1.5,
+                "stroke_width": 0.5 / 96,
+                "min_label_segment_length": None,
+                "network_segment_stroke_width": 1.8,
+                "network_segment_font_size": 11,
+                "network_node_radius": 2.2,
+                "network_node_font_size": 10,
+            },
+        )
+        build_utils.run_macro(
+            "trace_layout_visualizer",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="conductor_layout-1",
+            trace_item_types=["conductor"],
+            scale=scales.get("A"),
+        )
+        build_utils.run_macro(
+            "trace_layout_visualizer",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="cable_layout-1",
+            trace_item_types=["cable"],
+            scale=scales.get("A"),
+        )
+        build_utils.run_macro(
+            "circuit_visualizer",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="circuitviz-1",
+            input_instances=instances_list.read(),
+        )
+        build_utils.run_macro(
+            "revision_history_table",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="revhistory-1",
+        )
+    
+        build_notes_list_instances = []
+        for instance in instances_list.read():
+            if (
+                instance.get("item_type") == "note"
+                and instance.get("note_type") == "build_note"
+            ):
+                build_notes_list_instances.append(instance)
+    
+        build_utils.run_macro(
+            "build_notes_table",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="build_notes_table-1",
+            input_instances=build_notes_list_instances,
+        )
+        build_utils.run_macro(
+            "wirelist_exporter",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="wirelist-1",
+            input_instances=instances_list.read(),
+        )
+        build_utils.run_macro(
+            "harness_step_builder",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="harness-step-1",
+            chosen_network=bundle_network,
+            input_instances=instances_list.read(),
+        )
+        # Each run_macro call is one PDF drawing (switch instances in the console to edit layout).
+        # page_setup is the list of pages; edit it here, not in the PDF editor.
+        build_utils.run_macro(
+            "pdf_generator",
+            "macros/harness_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="pdf_drawing-1",
+            page_setup={
+                "pages": [
+                    {
+                        "tblock_mpn": "harnice_tblock",
+                        "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
+                        "tblock_lib_subpath": "titleblocks/",
+                        "page_size_in": [11.0, 8.5],
+                        "tblock_anchor": "bottom-right",
+                        "tblock_offset_px": [40.0, 40.0],
+                        "text_replacements": {
+                            "tblock-key-pagedesc": "overview",
+                            "tblock-key-desc": rev_history.info(field="desc"),
+                            "tblock-key-pn": state.partnumber("pn"),
+                            "tblock-key-drawnby": rev_history.info(field="drawnby"),
+                            "tblock-key-rev": state.partnumber("R"),
+                            "tblock-key-scale": scales.get("A"),
+                            "tblock-key-sheet": "autosheet",
+                        },
                     },
-                },
-                {
-                    "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
-                    "tblock_lib_subpath": "titleblocks/",
-                    "page_size_in": [11.0, 8.5],
-                    "tblock_anchor": "bottom-right",
-                    "tblock_offset_px": [40.0, 40.0],
-                    "text_replacements": {
-                        "tblock-key-pagedesc": "to-from table",
-                        "tblock-key-desc": rev_history.info(field="desc"),
-                        "tblock-key-pn": state.partnumber("pn"),
-                        "tblock-key-drawnby": rev_history.info(field="drawnby"),
-                        "tblock-key-rev": state.partnumber("R"),
-                        "tblock-key-scale": scales.get("A"),
-                        "tblock-key-sheet": "autosheet",
+                    {
+                        "tblock_mpn": "harnice_tblock",
+                        "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
+                        "tblock_lib_subpath": "titleblocks/",
+                        "page_size_in": [11.0, 8.5],
+                        "tblock_anchor": "bottom-right",
+                        "tblock_offset_px": [40.0, 40.0],
+                        "text_replacements": {
+                            "tblock-key-pagedesc": "to-from table",
+                            "tblock-key-desc": rev_history.info(field="desc"),
+                            "tblock-key-pn": state.partnumber("pn"),
+                            "tblock-key-drawnby": rev_history.info(field="drawnby"),
+                            "tblock-key-rev": state.partnumber("R"),
+                            "tblock-key-scale": scales.get("A"),
+                            "tblock-key-sheet": "autosheet",
+                        },
                     },
-                },
-                {
-                    "tblock_mpn": "harnice_tblock",
-                    "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
-                    "tblock_lib_subpath": "titleblocks/",
-                    "page_size_in": [11.0, 8.5],
-                    "tblock_anchor": "bottom-right",
-                    "tblock_offset_px": [40.0, 40.0],
-                    "text_replacements": {
-                        "tblock-key-pagedesc": "channel map",
-                        "tblock-key-desc": rev_history.info(field="desc"),
-                        "tblock-key-pn": state.partnumber("pn"),
-                        "tblock-key-drawnby": rev_history.info(field="drawnby"),
-                        "tblock-key-rev": state.partnumber("R"),
-                        "tblock-key-scale": scales.get("A"),
-                        "tblock-key-sheet": "autosheet",
+                    {
+                        "tblock_mpn": "harnice_tblock",
+                        "tblock_lib_repo": "https://github.com/harnice/harnice-general-library",
+                        "tblock_lib_subpath": "titleblocks/",
+                        "page_size_in": [11.0, 8.5],
+                        "tblock_anchor": "bottom-right",
+                        "tblock_offset_px": [40.0, 40.0],
+                        "text_replacements": {
+                            "tblock-key-pagedesc": "channel map",
+                            "tblock-key-desc": rev_history.info(field="desc"),
+                            "tblock-key-pn": state.partnumber("pn"),
+                            "tblock-key-drawnby": rev_history.info(field="drawnby"),
+                            "tblock-key-rev": state.partnumber("R"),
+                            "tblock-key-scale": scales.get("A"),
+                            "tblock-key-sheet": "autosheet",
+                        },
                     },
-                },
-            ],
-        },
-    )
+                ],
+            },
+        )
     
     # Reset the trace overlay style to default saved earlier to set the gui trace
     # overlay style. 

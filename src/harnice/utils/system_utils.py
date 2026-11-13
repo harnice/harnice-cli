@@ -2284,6 +2284,19 @@ def create_instances_from_circuits_list():
                 # Skip if device connector instance doesn't exist (may not have been created if no circuits)
                 pass
 
+    counts = {}
+    for instance in instances_list.read():
+        item_type = instance.get("item_type")
+        counts[item_type] = counts.get(item_type, 0) + 1
+    print(
+        "Harnice: instances list now has "
+        f"{counts.get('circuit', 0)} circuits, "
+        f"{counts.get('channel', 0)} channels, "
+        f"{counts.get('harness-channel', 0)} harness channels, "
+        f"{counts.get('device_connector', 0)} device connectors, and "
+        f"{counts.get('device_connector_cavity', 0)} cavities"
+    )
+
 
 def import_harness_from_harnice_system(
     system_pn,

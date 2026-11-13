@@ -207,7 +207,12 @@ def _passthrough_channel_obeys_directionality(
     directionality 0:  either orientation works (reversible pairs)
     """
     def port_mates(port_type, channel_type):
-        return bool(port_type and port_type in chtype.compatibles(channel_type))
+        # Compatibility is declared on either row; one direction is enough.
+        if not port_type or not channel_type:
+            return False
+        return chtype.parse(port_type) in chtype.compatibles(
+            channel_type
+        ) or chtype.parse(channel_type) in chtype.compatibles(port_type)
 
     if directionality == 1:
         ok = port_mates(a_type, from_channel_type) and port_mates(
@@ -386,6 +391,16 @@ def new():
             passthrough_channels_in_system.append(channel_row)
 
     _write_passthrough_map(passthrough_channels_in_system)
+    passthrough_refdes = sorted(
+        {row["passthrough_device_refdes"] for row in passthrough_channels_in_system}
+    )
+    if passthrough_refdes:
+        print(
+            f"Harnice: found {len(passthrough_channels_in_system)} passthrough channels "
+            f"on {len(passthrough_refdes)} devices: {', '.join(passthrough_refdes)}"
+        )
+    else:
+        print("Harnice: found no passthrough devices in this system")
 
     # Pass 1: unique (from_channel_type, to_channel_type) pairs per group_of_connected_harnesses
     unique_pairs_by_group_of_connected_harnesses = {}
@@ -905,6 +920,12 @@ def route(
         _write_passthrough_map(map_rows)
         # context availables unchanged (already 0; do not go negative)
         _write_routing_context(list(system.passthrough_routing_context))
+        if not satisfaction:
+            print(
+                f"Harnice: routed channel {to_from_channel_device_refdes}."
+                f"{to_from_channel_id} through passthrough {intended_device_refdes}, "
+                "which has no free channel left (added an imaginary channel)"
+            )
         return -1
 
     # --- Real path: need a free physical channel ---
@@ -986,6 +1007,12 @@ def route(
         )
 
     _write_routing_context(updated_context)
+    if not satisfaction:
+        print(
+            f"Harnice: routed channel {to_from_channel_device_refdes}."
+            f"{to_from_channel_id} through passthrough {intended_device_refdes}."
+            f"{chosen_id}"
+        )
     return 0
 
 
@@ -1417,6 +1444,35 @@ def resolve():
     if not passthrough_harness_lookup and not channel_harness_lookup:
         return
 
+    def _print_resolved_path(channel):
+        """One build message naming the passthroughs and harnesses a channel runs through."""
+        ends = (
+            f"{channel.get('from_device_refdes')}.{channel.get('from_device_channel_id')} to "
+            f"{channel.get('to_device_refdes')}.{channel.get('to_device_channel_id')}"
+        )
+        connector_tokens = [
+            t for t in (channel.get("chain_of_connectors") or "").split(";") if t
+        ]
+        passthroughs = []
+        for token in connector_tokens[1:-1]:
+            refdes = token.rsplit(".", 1)[0]
+            if refdes not in passthroughs:
+                passthroughs.append(refdes)
+        harnesses = []
+        for harness in (channel.get("chain_of_harnesses") or "").split(";"):
+            if harness and harness != "<unmated>" and harness not in harnesses:
+                harnesses.append(harness)
+
+        if not harnesses:
+            path = "with no harness"
+        elif len(harnesses) == 1:
+            path = f"in harness {harnesses[0]}"
+        else:
+            path = f"through harnesses {', '.join(harnesses)}"
+        if passthroughs:
+            path += f" via passthrough {', '.join(passthroughs)}"
+        print(f"Harnice: channel {ends} runs {path}")
+
     updated_channel_map = []
     # Shared working copy: refresh after assign() writes; flush satisfaction stamps in batches.
     map_rows = read()
@@ -1526,6 +1582,9 @@ def resolve():
         updated_channel_map.append(channel)
 
     channel_map._write_channel_map(updated_channel_map)
+    for channel in updated_channel_map:
+        if channel.get("from_device_channel_id") and channel.get("to_device_channel_id"):
+            _print_resolved_path(channel)
     _write_routing_context(list(system.passthrough_routing_context))
     _print_imaginary_warnings(read())
 

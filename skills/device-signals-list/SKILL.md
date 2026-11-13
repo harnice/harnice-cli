@@ -484,7 +484,8 @@ read. If the build raises, fix the row it names and run it again.
 - Terminating channel: one endpoint, `repeat_channel_id` blank.
 - Passthrough: same `channel_id` on exactly two connectors, two different
   `repeat_channel_id` values, and the two channel types compatible
-  (`chtype.compatibles`).
+  (`chtype.compatibles`). Either row naming the other is enough. The
+  compatibility does not need to be listed in both directions.
 - More than two endpoints on one `channel_id` is an error.
 
 One thing the build will not catch: `signals_list.new()` followed by zero

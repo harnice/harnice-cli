@@ -117,8 +117,12 @@ that contains a comma is quoted. After that quoting is removed, the cells
 
 Use the `lib_repo` I gave you, not the URL in the example.
 
-When the mate row is in the same file, add this new id to that mate's
-`compatible_channel_types` as well. The existing rows name both directions.
+Compatibility does not need to be listed in both directions. Harnice treats
+two types as compatible when either row names the other. Put the mate in the
+new row's `compatible_channel_types` and leave the mate's row alone. Do not
+add the new id to the mate's row, even if older rows in the file name each
+other both ways. If the mate's row already names the new id, the new row may
+leave the mate out.
 
 Leave `status`, `linked documentation`, the limit and capacity columns, and
 both appearance columns blank unless I gave those values. Do not invent a

@@ -547,6 +547,17 @@ def new():
 
     cached_tsv.write(fileio.path("circuits list"), COLUMNS, circuits_list)
 
+    circuits_per_harness = {}
+    for circuit in circuits_list:
+        harness = circuit.get("harness") or "(no harness)"
+        circuits_per_harness[harness] = circuits_per_harness.get(harness, 0) + 1
+    print(
+        f"Harnice: compiled {len(circuits_list)} circuits across "
+        f"{len(circuits_per_harness)} harnesses"
+    )
+    for harness, count in sorted(circuits_per_harness.items()):
+        print(f"Harnice:   harness {harness} carries {count} circuits")
+
 
 def force(from_key, signal_pairs, drop=()):
     """
