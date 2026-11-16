@@ -3,6 +3,7 @@ import csv
 import json
 import math
 import re
+import shutil
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from harnice import build_sandbox, cli, fileio, state
@@ -503,7 +504,7 @@ def apply_staged_instance_renames():
     for token, dest in tokens:
         updated_svg = rename_id_and_anchor(updated_svg, token, dest)
     if updated_svg != svg_text:
-        fileio.atomic_write_text(bd_path, updated_svg)
+        block_diagram_utils.write_block_diagram_svg(bd_path, updated_svg)
 
     return [(pair["item_type"], pair["from"], pair["to"]) for pair in applied]
 
@@ -521,11 +522,16 @@ def export_bom_from_block_diagram():
     (graphics nested inside a subsystem/device symbol are ignored). Rows for
     ``component subsystem`` have ``system`` set to ``TRUE``.
     When a device ``<g>`` has a ``<configuration>`` child, its JSON object is written to
-    the ``configuration`` column (compact one-line JSON).
+    the ``configuration`` column (compact one-line JSON), the last column. Each answer is
+    also written to a column named after its field id, between the standard columns and
+    ``configuration``: booleans as ``TRUE`` / ``FALSE``, lists and dicts as compact JSON,
+    unset values blank. A field id that matches a standard column is left only in the JSON.
 
     Harnesses are taken from ``circle.harness-refdes-marker`` elements that have both a
     non-empty ``data-refdes`` and ``data-pn``. Library fields come from ``data-lib-repo``,
-    ``data-lib-subpath``, and ``data-rev``. Those rows have ``harness`` set to ``TRUE``.
+    ``data-lib-subpath``, and ``data-rev``. Those rows have ``harness`` set to ``TRUE``,
+    and ``design_exists`` set to ``TRUE`` when the marker's ``data-design-exists`` is
+    ``TRUE`` (the "Design exists" box in the harness properties panel).
     One BOM row is emitted per unique harness refdes (first marker wins).
 
     **Returns:**
@@ -542,6 +548,7 @@ def export_bom_from_block_diagram():
         "harness",
         "system",
         "configuration",
+        "design_exists",
     ]
     bd_path = fileio.path("block diagram")
     if not os.path.isfile(bd_path):
@@ -597,6 +604,7 @@ def export_bom_from_block_diagram():
                 "harness": "",
                 "system": "TRUE" if comp_kind == "subsystem" else "",
                 "configuration": configuration,
+                "design_exists": "",
             }
         )
         refdes_list.append(refdes)
@@ -630,12 +638,46 @@ def export_bom_from_block_diagram():
                 "harness": "TRUE",
                 "system": "",
                 "configuration": "",
+                "design_exists": (
+                    "TRUE"
+                    if (el.get("data-design-exists") or "").strip().upper() == "TRUE"
+                    else ""
+                ),
             }
         )
         refdes_list.append(refdes)
 
+    # Break each configuration answer out into a column named after its field id.
+    # Columns appear in the order a field is first seen, between the standard
+    # columns and the full JSON configuration column, which stays last. A device
+    # without that field leaves it blank. A field id that matches a standard
+    # column is not broken out, so it never overwrites that column.
+    config_columns = []
+    for row in rows:
+        try:
+            answers = json.loads(row["configuration"]) if row["configuration"] else {}
+        except json.JSONDecodeError:
+            answers = {}
+        if not isinstance(answers, dict):
+            answers = {}
+        for field_id, value in answers.items():
+            column = str(field_id)
+            if column in bom_labels:
+                continue
+            if column not in config_columns:
+                config_columns.append(column)
+            if value is None:
+                value = ""
+            elif isinstance(value, bool):
+                value = "TRUE" if value else "FALSE"
+            elif isinstance(value, (list, dict)):
+                value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            row[column] = str(value)
+
     with open(fileio.path("bom"), "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=bom_labels, delimiter="\t")
+        fieldnames = [label for label in bom_labels if label != "configuration"]
+        fieldnames = fieldnames + config_columns + ["configuration"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -1796,11 +1838,282 @@ def find_connector_with_no_circuit(connector_list, circuits_list):
             )
 
 
+class HarnessDesignError(ValueError):
+    """
+    Raised by ``verify_harness_conductors_against_circuits_list()`` when a harness design
+    does not match the system.
+
+    ``err.harness_refdes`` is the harness that was checked. ``err.problems`` is a list of
+    dicts, one per problem, each with a ``"kind"`` and a ``"message"``. The kinds are:
+
+    - ``"harness_has_no_conductors"``: the post harness instances list has no conductors
+      for this harness (no design imported, or the list was not rebuilt).
+    - ``"system_has_no_circuits"``: the system has no circuits on this harness.
+    - ``"connector_has_no_harness_connector_name"``: a device connector on this harness
+      has no harness connector name in the block diagram.
+    - ``"connector_missing_from_harness"``: the system names a harness connector that the
+      harness design does not have.
+    - ``"connector_missing_from_system"``: the harness design has a connector that the
+      system does not name.
+    - ``"circuit_end_has_no_cavity"``: a circuit ends on a device connector with no cavity.
+    - ``"circuit_end_has_no_harness_connector_name"``: a circuit ends on a device connector
+      that has no harness connector name in the block diagram.
+    - ``"circuit_has_no_conductor"``: no conductor joins the two harness cavities a circuit
+      needs.
+
+    The message has one line per problem, after a line naming the harness.
+    """
+
+    def __init__(self, harness_refdes, problems):
+        self.harness_refdes = harness_refdes
+        self.problems = problems
+        super().__init__(
+            f"Harness design {harness_refdes} does not match the system:\n  "
+            + "\n  ".join(problem["message"] for problem in problems)
+        )
+
+
+def verify_harness_conductors_against_circuits_list(harness_refdes, post_harness_instances):
+    """
+    Use this when a system build should stop if one imported harness design's conductors do not satisfy the circuits required by the parent system.
+
+    Checks one harness using only the post harness instances list, so it checks the same
+    data that later system outputs read. Rebuild that list first in the build
+    instructions, because the automatic rebuild only runs after they finish. Read it
+    once and pass the rows to each call, so the file is not re-read for every harness:
+
+    ```python
+    post_harness_instances_list.rebuild()
+    post_harness_instances = fileio.read_tsv("post harness instances list")
+    for bom_row in fileio.read_tsv("bom"):
+        if bom_row.get("harness") == "TRUE" and bom_row.get("design_exists") == "TRUE":
+            system_utils.verify_harness_conductors_against_circuits_list(
+                bom_row["device_refdes"], post_harness_instances
+            )
+    ```
+
+    Only four kinds of row are used, all with ``harness`` equal to ``harness_refdes``:
+
+    - **System rows** (the system's own rows, unchanged): ``circuit`` rows and
+      ``device_connector`` rows.
+    - **Harness rows** (the harness design's rows, with names prefixed with
+      ``{harness_refdes}.``, for example ``TEST-2.P0``): ``conductor`` rows and
+      ``harness_connector`` rows. They are only in the list when "Design exists" is
+      ticked on the harness, which is why the loop above checks ``design_exists``.
+
+    Two things are checked:
+
+    - **Connector names.** The system's ``device_connector`` rows on this harness name
+      the harness connector that mates there (``harness_side_connector_id``). That set of
+      names must be exactly the same as the harness rows' ``harness_connector`` names. Which
+      device each connector mates with is not compared.
+    - **Circuits.** Every system ``circuit`` row on this harness must be carried by a
+      harness row ``conductor``. Each circuit end (``node_at_end_a`` / ``node_at_end_b``, such
+      as ``SNK-0.J1.2``) is turned into a harness connector name and cavity through the
+      ``device_connector`` rows (``SNK-0.J1.2`` becomes ``P0`` cavity ``2``). A conductor
+      whose two ends (such as ``TEST-2.P0.2``) are those same two points, in either order,
+      carries the circuit. A circuit with a blank cavity on either end always fails.
+      Extra conductors that carry no circuit are allowed.
+
+    Every problem in this harness (connector name mismatches and circuits no conductor
+    carries) is collected before raising, so one error lists them all for this harness.
+    To report every harness instead of stopping at the first that fails, wrap each call
+    in ``try`` inside the loop.
+
+    **Args:**
+    - `harness_refdes` (str): Reference designator of the harness to check, such as ``"TEST-2"``.
+    - `post_harness_instances` (list): Rows of the post harness instances list, as returned
+      by ``fileio.read_tsv("post harness instances list")``. They are not changed.
+
+    **Raises:**
+    - `HarnessDesignError`: If anything is wrong. It is a ``ValueError``. Its message has
+      one line per problem, and ``err.problems`` lists each problem as a dict with a
+      ``"kind"`` and a ``"message"``, so build instructions can accept some kinds and
+      still fail on the rest. The kinds are listed on ``HarnessDesignError``.
+    """
+    prefix = f"{harness_refdes}."
+    system_circuit_rows = []
+    system_connector_rows = []
+    harness_conductor_rows = []
+    harness_connector_rows = []
+    mpn = ""
+    for row in post_harness_instances:
+        instance_name = row.get("instance_name") or ""
+        item_type = row.get("item_type")
+        if item_type == "harness" and instance_name == harness_refdes:
+            mpn = (row.get("mpn") or "").strip()
+        if (row.get("harness") or "").strip() != harness_refdes:
+            continue
+        if instance_name.startswith(prefix):
+            if item_type == "conductor":
+                harness_conductor_rows.append(row)
+            elif item_type == "harness_connector":
+                harness_connector_rows.append(row)
+        elif item_type == "circuit":
+            system_circuit_rows.append(row)
+        elif item_type == "device_connector":
+            system_connector_rows.append(row)
+
+    if not harness_conductor_rows:
+        raise HarnessDesignError(
+            harness_refdes,
+            [
+                {
+                    "kind": "harness_has_no_conductors",
+                    "message": (
+                        f"No conductors were found in the post-harness instances list for harness {mpn} in "
+                        f"position {harness_refdes}. Check that the design exists, contains circuits, and that "
+                        "post_harness_instances_list.rebuild() ran first."
+                    ),
+                }
+            ],
+        )
+    if not system_circuit_rows:
+        raise HarnessDesignError(
+            harness_refdes,
+            [
+                {
+                    "kind": "system_has_no_circuits",
+                    "message": f"This system defines no circuit rows for harness {mpn} in position {harness_refdes}.",
+                }
+            ],
+        )
+
+    problems = []
+
+    # --- Connector names: system rows and harness rows must list exactly the same ones ---
+    connector_name_by_device_connector = {}
+    system_connector_names = set()
+    for row in system_connector_rows:
+        device_refdes = (row.get("device_side_refdes") or "").strip()
+        device_connector = (row.get("device_side_connector_id") or "").strip()
+        name = (row.get("harness_side_connector_id") or "").strip()
+        if not name:
+            problems.append(
+                {
+                    "kind": "connector_has_no_harness_connector_name",
+                    "message": (
+                        f"Device connector {device_refdes}.{device_connector} on harness {harness_refdes} "
+                        "has no harness connector name in the block diagram"
+                    ),
+                }
+            )
+            continue
+        connector_name_by_device_connector[(device_refdes, device_connector)] = name
+        system_connector_names.add(name)
+
+    harness_connector_names = {
+        row["instance_name"][len(prefix):] for row in harness_connector_rows
+    }
+
+    for name in sorted(system_connector_names - harness_connector_names):
+        problems.append(
+            {
+                "kind": "connector_missing_from_harness",
+                "message": f"Connector {name} is in the system but not in the harness design",
+            }
+        )
+    for name in sorted(harness_connector_names - system_connector_names):
+        problems.append(
+            {
+                "kind": "connector_missing_from_system",
+                "message": f"Connector {name} is in the harness design but not in the system",
+            }
+        )
+
+    # --- Circuits: each needs a conductor between the same two connector cavities ---
+
+    # Every pair of harness connector cavities that some conductor joins. A conductor end
+    # looks like "TEST-2.P0.2": harness prefix, then connector "P0", then cavity "2".
+    # Each pair is stored as a frozenset so the order of the two ends does not matter:
+    # P0.2-to-P6B.2 and P6B.2-to-P0.2 are the same connection.
+    connected_cavity_pairs = set()
+    for conductor_row in harness_conductor_rows:
+        end_a = (conductor_row.get("node_at_end_a") or "")[len(prefix):]
+        end_b = (conductor_row.get("node_at_end_b") or "")[len(prefix):]
+        end_a_connector, _, end_a_cavity = end_a.rpartition(".")
+        end_b_connector, _, end_b_cavity = end_b.rpartition(".")
+        connected_cavity_pairs.add(
+            frozenset([(end_a_connector, end_a_cavity), (end_b_connector, end_b_cavity)])
+        )
+
+    def split_circuit_end(circuit_end):
+        """Split a circuit end such as "SNK-0.J1.2" into ("SNK-0", "J1", "2").
+
+        The cavity comes back blank when the end has none, such as "X-6.B.".
+        """
+        device_and_connector, _, cavity = circuit_end.rpartition(".")
+        device_refdes, _, device_connector = device_and_connector.rpartition(".")
+        return device_refdes, device_connector, cavity
+
+    for circuit_row in system_circuit_rows:
+        # Each circuit end is a device connector cavity, such as "SNK-0.J1.2".
+        end_a = (circuit_row.get("node_at_end_a") or "").strip()
+        end_b = (circuit_row.get("node_at_end_b") or "").strip()
+        end_a_device, end_a_device_connector, end_a_cavity = split_circuit_end(end_a)
+        end_b_device, end_b_device_connector, end_b_cavity = split_circuit_end(end_b)
+
+        # The harness connector that plugs into each device connector, such as
+        # SNK-0.J1 -> P0. Blank when the system names no harness connector there.
+        end_a_harness_connector = connector_name_by_device_connector.get(
+            (end_a_device, end_a_device_connector), ""
+        )
+        end_b_harness_connector = connector_name_by_device_connector.get(
+            (end_b_device, end_b_device_connector), ""
+        )
+
+        # Report the first thing that stops this circuit from being carried.
+        problem_kind = ""
+        problem = ""
+        if not end_a_cavity:
+            problem_kind = "circuit_end_has_no_cavity"
+            problem = f"{end_a_device}.{end_a_device_connector} has no cavity"
+        elif not end_b_cavity:
+            problem_kind = "circuit_end_has_no_cavity"
+            problem = f"{end_b_device}.{end_b_device_connector} has no cavity"
+        elif not end_a_harness_connector:
+            problem_kind = "circuit_end_has_no_harness_connector_name"
+            problem = (
+                f"{end_a_device}.{end_a_device_connector} has no harness connector name in the block diagram"
+            )
+        elif not end_b_harness_connector:
+            problem_kind = "circuit_end_has_no_harness_connector_name"
+            problem = (
+                f"{end_b_device}.{end_b_device_connector} has no harness connector name in the block diagram"
+            )
+        else:
+            # Both ends map to harness cavities. Some conductor must join exactly these two.
+            circuit_cavity_pair = frozenset(
+                [(end_a_harness_connector, end_a_cavity), (end_b_harness_connector, end_b_cavity)]
+            )
+            if circuit_cavity_pair not in connected_cavity_pairs:
+                problem_kind = "circuit_has_no_conductor"
+                problem = (
+                    f"no conductor connects {end_a_harness_connector}.{end_a_cavity} "
+                    f"to {end_b_harness_connector}.{end_b_cavity}"
+                )
+
+        if problem:
+            problems.append(
+                {
+                    "kind": problem_kind,
+                    "message": f"Circuit {circuit_row.get('circuit_id')} ({end_a} to {end_b}): {problem}",
+                }
+            )
+
+    if problems:
+        raise HarnessDesignError(harness_refdes, problems)
+
+
 def _import_bom_devices(update_instances_list=True):
     """
     Pull every BOM device, subsystem, or harness into ``instance_data`` and optionally the instances list.
 
     Devices with ``build.py`` are built via ``device.build()``.
+    A harness is only pulled when its BOM row has ``design_exists`` set to ``TRUE``.
+    Otherwise it is added to the instances list from its BOM row alone, and any
+    ``instance_data/harness/{refdes}`` left from an earlier build is removed, so it is
+    not checked against the circuits list.
     A subsystem import also copies that system's channel map to
     ``instance_data/system/{refdes}/maps/channels.tsv``. That file is the
     source of truth for ``channel_map.flatten()``.
@@ -1855,6 +2168,26 @@ def _import_bom_devices(update_instances_list=True):
     for row in bom_rows:
         item_type = bom_item_type(row)
         is_harness = item_type == "harness"
+        destination_directory = os.path.join(
+            instance_data_root, item_type, row.get("device_refdes")
+        )
+
+        if is_harness and (row.get("design_exists") or "").strip().upper() != "TRUE":
+            if os.path.isdir(destination_directory):
+                shutil.rmtree(destination_directory)
+            if update_instances_list:
+                instances_list.new_instance(
+                    row.get("device_refdes"),
+                    {
+                        "mfg": row.get("MFG"),
+                        "mpn": row.get("MPN"),
+                        "item_type": item_type,
+                        "lib_repo": row.get("lib_repo"),
+                        "lib_subpath": row.get("lib_subpath"),
+                        "lib_rev_used_here": row.get("rev"),
+                    },
+                )
+            continue
 
         library_utils.pull(
             {
@@ -1868,9 +2201,7 @@ def _import_bom_devices(update_instances_list=True):
                 "device_configuration": (row.get("configuration") or "").strip(),
             },
             update_instances_list=update_instances_list,
-            destination_directory=os.path.join(
-                instance_data_root, item_type, row.get("device_refdes")
-            ),
+            destination_directory=destination_directory,
             include_filenames=("instances.tsv",) if is_harness else None,
             replace_destination=is_harness,
         )
@@ -1959,6 +2290,32 @@ def _import_bom_devices(update_instances_list=True):
                 state.set_file_structure(saved_file_structure)
             if saved_harness is not None:
                 state.set_harness(saved_harness)
+
+
+def _write_device_3d_positions_to_instances_list():
+    """
+    Write each device's 3D position into the instances list.
+
+    Writes ``3d_translate`` ``{x, y, z, alpha, beta, gamma}`` on every
+    ``device`` instance that has a body. The pose is in the system frame:
+    inches and ZYX Euler degrees, the same pose ``assembly.step`` uses, with
+    fasten mates solved. A device with no ``body.step`` is left blank.
+
+    ``system.build()`` calls this right after ``_import_bom_devices`` adds the
+    device rows, before the build instructions run.
+    """
+    from harnice.utils import physical_assembly
+
+    poses = physical_assembly.device_poses()
+    with instances_list._one_write():
+        for instance in instances_list.read():
+            if instance.get("item_type") != "device":
+                continue
+            pose = poses.get(instance.get("instance_name"))
+            if pose:
+                instances_list.modify(
+                    instance.get("instance_name"), {"3d_translate": pose}
+                )
 
 
 def create_instances_from_circuits_list():
@@ -2828,7 +3185,6 @@ def apply_placed_symbol_fstrings(root_g):
                 tspan = ET.Element(tag)
                 tspan.set("x", x)
                 tspan.set("dy", "0" if index == 0 else dy_step)
-                tspan.set("data-line", line)
                 tspan.text = line if line else "\u00a0"
                 el.append(tspan)
             return
@@ -3538,6 +3894,8 @@ def refresh_block_diagram_placed_symbols(svg_text):
 
     tree = block_diagram_utils._parse_block_diagram_svg_string(svg_text)
     root = tree.getroot()
+    # Compare what the file will hold, not leftover editor state.
+    block_diagram_utils.canonicalize_svg_tree(root)
     parent_map = block_diagram_utils._svg_build_parent_map(root)
     local = block_diagram_utils._svg_local_tag
     result = svg_text
@@ -3653,6 +4011,7 @@ def refresh_block_diagram_placed_symbols(svg_text):
         apply_placed_symbol_fstrings(scratch_root)
         apply_device_text_unmirror(scratch_root)
         drop_connector_label_blank_lines(scratch_root)
+        block_diagram_utils.canonicalize_svg_tree(scratch_root)
         label_blank = drop_connector_label_blank_lines(dest_contents)
 
         if (

@@ -379,15 +379,24 @@
     generate_outputs = True  # change to False if you'd like to skip the outputs generation process
     if generate_outputs:
     
+        # Bill of materials. Each BOM line gets a total row. An instance listed
+        # in bom_disclosure also gets its own row under it, with one column per key.
+        bom_disclosure = {}
+        for instance in instances_list.read():
+            if instance.get("item_type") == "cable" and instance.get("length"):
+                bom_disclosure[instance.get("instance_name")] = {
+                    "Length with margin": float(instance.get("length")) + 12,
+                }
         build_utils.run_macro(
-            "bom_exporter_bottom_up",
-            "macros/harness_artifacts",
+            "bom_table_bottom_up",
+            "macros/drawing_artifacts",
             "https://github.com/harnice/harnice-general-library",
             artifact_id="bom-1",
+            per_instance_disclosure=bom_disclosure,
         )
         build_utils.run_macro(
             "tooling_list_exporter",
-            "macros/harness_artifacts",
+            "macros/drawing_artifacts",
             "https://github.com/harnice/harnice-general-library",
             artifact_id="tool_list-1",
         )
@@ -449,7 +458,7 @@
         )
         build_utils.run_macro(
             "revision_history_table",
-            "macros/harness_artifacts",
+            "macros/drawing_artifacts",
             "https://github.com/harnice/harnice-general-library",
             artifact_id="revhistory-1",
         )
@@ -464,7 +473,7 @@
     
         build_utils.run_macro(
             "build_notes_table",
-            "macros/harness_artifacts",
+            "macros/drawing_artifacts",
             "https://github.com/harnice/harnice-general-library",
             artifact_id="build_notes_table-1",
             input_instances=build_notes_list_instances,
@@ -488,7 +497,7 @@
         # page_setup is the list of pages; edit it here, not in the PDF editor.
         build_utils.run_macro(
             "pdf_generator",
-            "macros/harness_artifacts",
+            "macros/drawing_artifacts",
             "https://github.com/harnice/harnice-general-library",
             artifact_id="pdf_drawing-1",
             page_setup={

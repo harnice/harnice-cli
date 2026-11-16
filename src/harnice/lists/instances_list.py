@@ -1,4 +1,5 @@
 import ast
+import json
 from contextlib import contextmanager
 
 from harnice import fileio, state
@@ -306,6 +307,31 @@ def attribute_of(target_instance, attribute):
                     except (ValueError, SyntaxError):
                         pass
             return raw
+
+
+def configuration_value(instance, field_id):
+    """
+    Use this when a system build needs one saved configuration answer of a placed device.
+
+    Return one field from an instance's `device_configuration` column, the compact JSON of that device's saved configuration answers.
+
+    ## Args
+    - `instance`: One row of the instances list (a dict, e.g. from `instances_list.read()`).
+    - `field_id`: The configuration field `id`, e.g. `"ip_address"`.
+
+    ## Returns
+    The saved value, or `""` if the instance has no saved answers, the JSON does not parse, or the field is not answered.
+    """
+    text = (instance.get("device_configuration") or "").strip()
+    if not text:
+        return ""
+    try:
+        answers = json.loads(text)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(answers, dict) or answers.get(field_id) is None:
+        return ""
+    return answers[field_id]
 
 
 def instance_in_connector_group_with_item_type(connector_group, item_type):

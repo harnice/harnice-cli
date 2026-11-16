@@ -117,7 +117,7 @@ Folders, with `fileio.dirpath`:
 - `"instances list"` → `instances.tsv`
 - `"block diagram"` → `blockdiagram.svg`
 - `"icd"` → `signals.tsv`
-- `"bom"` → `lists/bom.tsv`. Tab-separated. A system build script reads a placed device with `fileio.read_tsv("bom")`, finds the row by `device_refdes`, and parses the `configuration` cell with `json.loads`. A program outside Harnice opens the same file. The value is a string, a number, `True`, `False`, `None`, or a list of strings. A `json`, `yaml`, or `toml` field is still the document text. A device build script does not open this file. It reads `configuration["field_id"]`. The page is `docs/interacting_with_data/_reading_device_configurations.md`.
+- `"bom"` → `lists/bom.tsv`. Tab-separated. A system build script reads a placed device with `fileio.read_tsv("bom")`, finds the row by `device_refdes`, and parses the `configuration` cell with `json.loads`. A program outside Harnice opens the same file. Each answer is also in its own column named after the field id, before `configuration`, which is the last column (text: `TRUE` / `FALSE`, unset is blank, lists as JSON), for spreadsheets. Parse `configuration` when the type matters. The value is a string, a number, `True`, `False`, `None`, or a list of strings. A `json`, `yaml`, or `toml` field is still the document text. A device build script does not open this file. It reads `configuration["field_id"]`. The page is `docs/interacting_with_data/_reading_device_configurations.md`.
 - `"circuits list"` → `lists/circuits.tsv`
 - `"post harness instances list"` → `lists/instances_w_hrns.tsv`
 - `"system connector list"` → `lists/connectors.tsv`

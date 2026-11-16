@@ -64,9 +64,19 @@ The `channel_map.map` calls above are one example. Use `answers` for whatever th
 | Column | Description |
 |--------|-------------|
 | `device_refdes` | Instance name on the block diagram. This is the row key. |
-| `configuration` | One compact JSON object of that device's answers. An empty cell means the instance has no saved answers. Harness rows leave this cell empty. |
+| one column per field id | One column per configuration field, named after the field id, such as `ip_address`. The same answers as the `configuration` cell, one per column, for reading in a spreadsheet. A device without that field leaves it blank. |
+| `configuration` | The last column. One compact JSON object of that device's answers. An empty cell means the instance has no saved answers. Harness rows leave this cell empty. |
 
 The other BOM columns (`MFG`, `MPN`, `lib_repo`, `lib_subpath`, `rev`, `harness`, `system`) identify the part. A configuration field id is a key inside the `configuration` cell.
+
+The field columns come after the standard columns and before `configuration`, in the order each field first appears on the block diagram. A column exists when at least one placed device has saved an answer for that field. A field id that matches a standard column name (such as `rev`) does not get its own column; read it from `configuration`. Each cell is text:
+
+- A string or number is written as is.
+- `true` and `false` are `TRUE` and `FALSE`.
+- An unset answer is blank.
+- A list, or the data of a `json`, `yaml`, or `toml` field, is compact JSON text.
+
+A TSV cell cannot tell `"1"` from `1` or a blank from an unset answer. When the type matters, parse the `configuration` cell instead.
 
 After a system build, the instances list copies that same JSON string into `device_configuration`. Parse that cell the same way.
 

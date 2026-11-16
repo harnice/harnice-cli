@@ -105,9 +105,15 @@ def _editable_file_differs_from_library(lib_file, editable_file, mpn, instance_n
             return not filecmp.cmp(lib_file, editable_file, shallow=False)
         return _svg_text_as_pulled(lib_text, mpn, instance_name) != edit_text
     try:
-        return not filecmp.cmp(lib_file, editable_file, shallow=False)
+        with open(lib_file, "rb") as f:
+            lib_bytes = f.read()
+        with open(editable_file, "rb") as f:
+            edit_bytes = f.read()
     except OSError:
         return True
+    # Line endings alone (CRLF vs LF, e.g. a file saved on Windows) aren't a
+    # change; the SVG branch above already ignores them by reading text.
+    return lib_bytes.replace(b"\r\n", b"\n") != edit_bytes.replace(b"\r\n", b"\n")
 
 
 def _lib_used_rev(destination_directory):
@@ -485,11 +491,16 @@ instance data.
                     f.write(content)
 
         else:
-            # Compare the existing editable file and the library version
-            if not filecmp.cmp(
-                lib_used_do_not_edit_file, editable_file_path, shallow=False
+            # Compare the existing editable file and the library version, the same
+            # way the console's "differs from library" dot does (line endings and
+            # the pull's SVG id rewrite don't count).
+            if _editable_file_differs_from_library(
+                lib_used_do_not_edit_file,
+                editable_file_path,
+                input_dict.get("mpn"),
+                input_dict.get("instance_name"),
             ):
-                Modified = Modified or True
+                Modified = True
 
     # === Load revision row from revision history TSV in source library ===
     revhistory_path = os.path.join(
@@ -610,7 +621,11 @@ def resolve_source_library_revision_folder(input_dict):
         input_dict.get("mpn"),
         input_dict.get("lib_rev_used_here"),
     )
-    return os.path.join(source_lib_path, source_folder_name), rev_to_use
+    folder = os.path.join(source_lib_path, source_folder_name)
+    fileio.note_reference_in_worktree(
+        source_lib_path, f"{input_dict.get('mpn')} {source_folder_name}"
+    )
+    return folder, rev_to_use
 
 
 def read_default_refdes_prefix_for_import(input_dict):

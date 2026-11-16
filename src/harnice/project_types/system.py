@@ -1,5 +1,6 @@
 import os
 import csv
+import xml.etree.ElementTree as ET
 from harnice import fileio, state
 from harnice import build_sandbox
 from harnice.lists import (
@@ -50,7 +51,6 @@ def file_structure():
         # view shows one of them at a time.
         "contexts": {},
         "instance_data": {},
-        "harnesses": {},
         "lists": {
             "bom.tsv": "bom",
             "circuits.tsv": "circuits list",
@@ -72,7 +72,6 @@ def file_structure():
 
 def generate_structure():
     os.makedirs(fileio.dirpath("instance_data"), exist_ok=True)
-    os.makedirs(fileio.dirpath("harnesses"), exist_ok=True)
     os.makedirs(fileio.dirpath("lists"), exist_ok=True)
     os.makedirs(fileio.dirpath("maps"), exist_ok=True)
     os.makedirs(fileio.dirpath("contexts"), exist_ok=True)
@@ -206,7 +205,7 @@ def build():
 
     # write empty block diagram if none exists
     if not os.path.exists(fileio.path("block diagram")):
-        fileio.atomic_write_text(
+        block_diagram_utils.write_block_diagram_svg(
             fileio.path("block diagram"),
             build_utils.default_contents(
                 "system_default_block_diagram.svg",
@@ -226,6 +225,8 @@ def build():
     # create_instances_from_circuits_list)
     system_utils.export_bom_from_block_diagram()
     system_utils._import_bom_devices(update_instances_list=True)
+    # each device row gets its 3d_translate from the physical view
+    system_utils._write_device_3d_positions_to_instances_list()
     system_utils.make_connector_list()
     channel_map.new()
 
@@ -315,6 +316,10 @@ def build():
 
         svg_diagram = ensure_system_boundary_rect(svg_diagram)
         svg_diagram = system_utils.apply_block_diagram_trace_overlays(svg_diagram)
+        try:
+            svg_diagram = block_diagram_utils.canonical_svg_text(svg_diagram)
+        except ET.ParseError:
+            pass
 
         if svg_diagram != original_svg:
             fileio.atomic_write_text(bd_path, svg_diagram)

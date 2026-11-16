@@ -699,6 +699,140 @@ def dirpath(target_key, structure_dict=None, base_directory=None):
         return os.path.join(rev_directory(), base_directory, *path_key)
 
 
+def worktree_main_copy(folder):
+    """``(main_path, worktree_root)`` for **folder**.
+
+    When **folder** sits in a linked git worktree (a branch worktree in app
+    data), ``main_path`` is the same folder in the repository's main folder
+    and ``worktree_root`` is the worktree's root. Otherwise ``main_path`` is
+    **folder** and ``worktree_root`` is ``""``. Reads git's pointer files
+    (``.git`` → ``gitdir`` → ``commondir``); starts no git process.
+    """
+    path = os.path.normpath(os.path.abspath(os.path.expanduser(str(folder or ""))))
+    cursor = path
+    while True:
+        entry = os.path.join(cursor, ".git")
+        if os.path.isdir(entry):
+            return path, ""
+        if os.path.isfile(entry):
+            break
+        parent = os.path.dirname(cursor)
+        if parent == cursor:
+            return path, ""
+        cursor = parent
+    try:
+        with open(os.path.join(cursor, ".git"), encoding="utf-8") as fh:
+            line = fh.read().strip()
+        if not line.startswith("gitdir:"):
+            return path, ""
+        git_dir = line.split(":", 1)[1].strip()
+        if not os.path.isabs(git_dir):
+            git_dir = os.path.join(cursor, git_dir)
+        with open(os.path.join(git_dir, "commondir"), encoding="utf-8") as fh:
+            common = fh.read().strip()
+    except OSError:
+        # No commondir: a submodule, not a worktree.
+        return path, ""
+    if not os.path.isabs(common):
+        common = os.path.join(git_dir, common)
+    common = os.path.normpath(common)
+    if os.path.basename(common) != ".git":
+        return path, ""
+    main = os.path.dirname(common)
+    return os.path.normpath(os.path.join(main, os.path.relpath(path, cursor))), cursor
+
+
+def _head_branch(git_dir):
+    try:
+        with open(os.path.join(git_dir, "HEAD"), encoding="utf-8") as fh:
+            head = fh.read().strip()
+    except OSError:
+        return ""
+    prefix = "ref: refs/heads/"
+    return head[len(prefix):] if head.startswith(prefix) else ""
+
+
+def _sparse_holds(sparse_file, rel):
+    """True when a cone-mode sparse-checkout file checks out folder *rel*."""
+    try:
+        with open(sparse_file, encoding="utf-8") as fh:
+            lines = {line.strip() for line in fh if line.strip()}
+    except OSError:
+        return True  # not sparse: the whole tree is checked out
+    parts = rel.strip("/").split("/")
+    for i in range(1, len(parts) + 1):
+        folder = "/" + "/".join(parts[:i]) + "/"
+        # "/a/" with "!/a/*/" includes only a's own files; alone, all of a.
+        if folder in lines and "!" + folder + "*/" not in lines:
+            return True
+    return False
+
+
+def worktrees_holding(folder):
+    """Branch worktrees that also check out **folder**, which is in a main folder.
+
+    Returns ``[(branch, worktree_root), ...]``. Reads ``.git/worktrees/*``
+    directly, so it is cheap enough to ask during a build.
+    """
+    path = os.path.normpath(os.path.abspath(str(folder or "")))
+    cursor = path
+    while not os.path.isdir(os.path.join(cursor, ".git")):
+        parent = os.path.dirname(cursor)
+        if parent == cursor:
+            return []
+        cursor = parent
+    admin = os.path.join(cursor, ".git", "worktrees")
+    if not os.path.isdir(admin):
+        return []
+    rel = os.path.relpath(path, cursor).replace(os.sep, "/")
+    found = []
+    for name in sorted(os.listdir(admin)):
+        entry = os.path.join(admin, name)
+        try:
+            with open(os.path.join(entry, "gitdir"), encoding="utf-8") as fh:
+                wt_root = os.path.dirname(os.path.normpath(fh.read().strip()))
+        except OSError:
+            continue
+        if not os.path.isdir(wt_root):
+            continue
+        if _sparse_holds(os.path.join(entry, "info", "sparse-checkout"), rel):
+            found.append((_head_branch(entry), wt_root))
+    return found
+
+
+_worktree_notes_printed = set()
+
+
+def note_reference_in_worktree(folder, label):
+    """Print a ``harnice:`` line when a referenced **folder** is also in a branch worktree.
+
+    References always resolve to the main folder (``docs/getting_started/worktrees.md``).
+    This says so when a branch worktree holds another copy that the build did
+    not use. Printed once per folder per process.
+    """
+    path = os.path.normpath(os.path.abspath(str(folder or "")))
+    if path in _worktree_notes_printed:
+        return
+    try:
+        holding = worktrees_holding(path)
+    except Exception:
+        return
+    holding = [(b, root) for b, root in holding if b]
+    if not holding:
+        return
+    _worktree_notes_printed.add(path)
+    cursor = path
+    while not os.path.isdir(os.path.join(cursor, ".git")):
+        cursor = os.path.dirname(cursor)
+    main_branch = _head_branch(os.path.join(cursor, ".git")) or "detached"
+    for branch, _root in holding:
+        print(
+            f"harnice: {label} is also in worktree {branch}; this build used the main "
+            f"folder's copy (branch {main_branch}). Delete the {branch} worktree and check out {branch} "
+            "in the main folder to build against it."
+        )
+
+
 def library_identity_for_path(folder):
     """If **folder** sits inside a library, return ``(repo_url, lib_subpath)``.
 
@@ -708,11 +842,13 @@ def library_identity_for_path(folder):
 
     Containment is an exact string prefix after ``abspath`` / ``normpath`` —
     no case folding, no ``relpath``. Longest matching library root wins.
+    A folder in a branch worktree is matched as its copy in the main folder,
+    which is where ``repository_locations.csv`` points.
     """
     folder = str(folder or "").strip()
     if not folder:
         return "", ""
-    folder = os.path.normpath(os.path.abspath(os.path.expanduser(folder)))
+    folder = worktree_main_copy(folder)[0]
     folder = folder.replace("\\", "/").rstrip("/")
     if not folder:
         return "", ""

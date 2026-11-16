@@ -112,6 +112,64 @@
     - `ValueError`: If a connector is found that has no associated circuits. The error
         message suggests checking the channel map and channel compatibility.
 
+??? info "`system_utils.verify_harness_conductors_against_circuits_list(harness_refdes, post_harness_instances)`"
+
+    Use this when a system build should stop if one imported harness design's conductors do not satisfy the circuits required by the parent system.
+    
+    Checks one harness using only the post harness instances list, so it checks the same
+    data that later system outputs read. Rebuild that list first in the build
+    instructions, because the automatic rebuild only runs after they finish. Read it
+    once and pass the rows to each call, so the file is not re-read for every harness:
+    
+    ```python
+    post_harness_instances_list.rebuild()
+    post_harness_instances = fileio.read_tsv("post harness instances list")
+    for bom_row in fileio.read_tsv("bom"):
+        if bom_row.get("harness") == "TRUE" and bom_row.get("design_exists") == "TRUE":
+            system_utils.verify_harness_conductors_against_circuits_list(
+                bom_row["device_refdes"], post_harness_instances
+            )
+    ```
+    
+    Only four kinds of row are used, all with ``harness`` equal to ``harness_refdes``:
+    
+    - **System rows** (the system's own rows, unchanged): ``circuit`` rows and
+      ``device_connector`` rows.
+    - **Harness rows** (the harness design's rows, with names prefixed with
+      ``{harness_refdes}.``, for example ``TEST-2.P0``): ``conductor`` rows and
+      ``harness_connector`` rows. They are only in the list when "Design exists" is
+      ticked on the harness, which is why the loop above checks ``design_exists``.
+    
+    Two things are checked:
+    
+    - **Connector names.** The system's ``device_connector`` rows on this harness name
+      the harness connector that mates there (``harness_side_connector_id``). That set of
+      names must be exactly the same as the harness rows' ``harness_connector`` names. Which
+      device each connector mates with is not compared.
+    - **Circuits.** Every system ``circuit`` row on this harness must be carried by a
+      harness row ``conductor``. Each circuit end (``node_at_end_a`` / ``node_at_end_b``, such
+      as ``SNK-0.J1.2``) is turned into a harness connector name and cavity through the
+      ``device_connector`` rows (``SNK-0.J1.2`` becomes ``P0`` cavity ``2``). A conductor
+      whose two ends (such as ``TEST-2.P0.2``) are those same two points, in either order,
+      carries the circuit. A circuit with a blank cavity on either end always fails.
+      Extra conductors that carry no circuit are allowed.
+    
+    Every problem in this harness (connector name mismatches and circuits no conductor
+    carries) is collected before raising, so one error lists them all for this harness.
+    To report every harness instead of stopping at the first that fails, wrap each call
+    in ``try`` inside the loop.
+    
+    **Args:**
+    - `harness_refdes` (str): Reference designator of the harness to check, such as ``"TEST-2"``.
+    - `post_harness_instances` (list): Rows of the post harness instances list, as returned
+      by ``fileio.read_tsv("post harness instances list")``. They are not changed.
+    
+    **Raises:**
+    - `HarnessDesignError`: If anything is wrong. It is a ``ValueError``. Its message has
+      one line per problem, and ``err.problems`` lists each problem as a dict with a
+      ``"kind"`` and a ``"message"``, so build instructions can accept some kinds and
+      still fail on the rest. The kinds are listed on ``HarnessDesignError``.
+
 ??? info "`system_utils.mpn_of_device_refdes(refdes)`"
 
     Use this when a system build needs the manufacturer part number of a device reference designator.

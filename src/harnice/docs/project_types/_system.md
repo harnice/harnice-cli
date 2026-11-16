@@ -221,7 +221,6 @@ fileio.path("assembly")                                  |-- assembly.step
 fileio.path("available network")                         |-- available_network.json
 fileio.dirpath("contexts")                               |-- contexts/
 fileio.dirpath("instance_data")                          |-- instance_data/
-fileio.dirpath("harnesses")                              |-- harnesses/
 fileio.dirpath("lists")                                  |-- lists/
 fileio.path("bom")                                       |   |-- bom.tsv
 fileio.path("circuits list")                             |   |-- circuits.tsv

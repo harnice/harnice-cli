@@ -61,8 +61,8 @@ build_utils.run_macro(
 
 **Required arguments**
 
-- `macro_part_number` — the MPN folder name in the library (`standard_harnice_formboard`, `bom_exporter_bottom_up`, …).
-- `lib_subpath` — directories between the library root and the MPN folder. Shipped Harnice macros use `macros/harness_artifacts`, `macros/system_artifacts`, or `macros/device_artifacts`.
+- `macro_part_number` — the MPN folder name in the library (`standard_harnice_formboard`, `bom_table_bottom_up`, …).
+- `lib_subpath` — directories between the library root and the MPN folder. Shipped Harnice macros use `macros/drawing_artifacts`, `macros/harness_artifacts`, `macros/system_artifacts`, or `macros/device_artifacts`.
 - `lib_repo` — the repo URL as listed in `library_locations.csv`, or `"local"` for a project-local library.
 - `artifact_id` — the instance name of this run. Must be unique in the current project's library history unless you pass `rerun=True`.
 
@@ -117,17 +117,18 @@ Shipped Harnice macros are in the [general library](https://github.com/harnice/h
 ```
 macros/
 ├── device_artifacts/      # macros that write a device body
-├── harness_artifacts/     # macros that write harness deliverables (drawings, tables, STEP, …)
+├── drawing_artifacts/     # sheets and tables any project type can use (BOM, PDF, revision history, …)
+├── harness_artifacts/     # macros that write harness deliverables (formboards, wirelists, STEP, …)
 └── system_artifacts/      # macros that write system deliverables (subsystem symbol, …)
 ```
 
 Each MPN is a library part:
 
 ```
-macros/harness_artifacts/bom_exporter_bottom_up/
-├── bom_exporter_bottom_up-revision_history.tsv
+macros/drawing_artifacts/bom_table_bottom_up/
+├── bom_table_bottom_up-revision_history.tsv
 └── rev1/
-    └── bom_exporter_bottom_up.py
+    └── bom_table_bottom_up.py
 ```
 
 That is the same shape as a connector or a titleblock: part-number folder, revision history, revision folder, files. Rolling a macro revision is the same form/fit/function decision as rolling a part revision. Callers that omit `lib_rev_used_here` get the latest; callers that pin a rev keep getting that rev. See [Libraries](../getting_started/libraries.md).
@@ -137,7 +138,7 @@ That is the same shape as a connector or a titleblock: part-number folder, revis
 
 ## What macros do
 
-Every shipped Harnice macro reads design data (typically the instances list) and writes files under `instance_data/macro/{artifact_id}/`: BOMs, formboards, PDF sheets, analysis drawings, tables, and similar deliverables. Default harness build instructions call a stack of them at the end of the script; default system build instructions call `subsystem_symbol` and `physical_model_drawing`.
+Every shipped Harnice macro reads design data (typically the instances list) and writes files under `instance_data/macro/{artifact_id}/`: BOMs, formboards, PDF sheets, analysis drawings, tables, and similar deliverables. Default harness build instructions call a stack of them at the end of the script; default system build instructions call `subsystem_symbol`, `physical_model_drawing`, `block-diagram-svg-exporter`, `bom_table_bottom_up`, and `pdf_generator`.
 
 You can write any rule you want in Python, save it to a library, and call it from build instructions.
 
@@ -225,18 +226,17 @@ These are the macros that ship in the general library. Unless noted, `lib_repo` 
 
 | MPN | Library folder | Who calls it by default |
 |---|---|---|
-| `bom_exporter_bottom_up` | `macros/harness_artifacts` | default harness build (`artifact_id="bom-1"`) |
-| `tooling_list_exporter` | `macros/harness_artifacts` | default harness build (`artifact_id="tool_list-1"`) |
+| `bom_table_bottom_up` | `macros/drawing_artifacts` | default harness and system build (`artifact_id="bom-1"`) |
+| `tooling_list_exporter` | `macros/drawing_artifacts` | default harness build (`artifact_id="tool_list-1"`) |
 | `standard_harnice_formboard` | `macros/harness_artifacts` | default harness build, twice (overview + detail) |
 | `basic_segment_generator` | `macros/harness_artifacts` | `standard_harnice_formboard`, once per segment |
 | `trace_layout_visualizer` | `macros/harness_artifacts` | default harness build, twice (conductors + cables) |
 | `circuit_visualizer` | `macros/harness_artifacts` | default harness build (`artifact_id="circuitviz-1"`) |
-| `revision_history_table` | `macros/harness_artifacts` | default harness build (`artifact_id="revhistory-1"`) |
-| `build_notes_table` | `macros/harness_artifacts` | default harness build (`artifact_id="build_notes_table-1"`) |
+| `revision_history_table` | `macros/drawing_artifacts` | default harness build (`artifact_id="revhistory-1"`) |
+| `build_notes_table` | `macros/drawing_artifacts` | default harness build (`artifact_id="build_notes_table-1"`) |
 | `wirelist_exporter` | `macros/harness_artifacts` | default harness build (`artifact_id="wirelist-1"`) |
 | `harness_step_builder` | `macros/harness_artifacts` | default harness build (`artifact_id="harness-step-1"`) |
-| `cutlist_exporter_bottom_up` | `macros/harness_artifacts` | not in the default script; call it yourself |
-| `pdf_generator` | `macros/harness_artifacts` | default harness and system build (`artifact_id="pdf_drawing-1"`) |
+| `pdf_generator` | `macros/drawing_artifacts` | default harness and system build (`artifact_id="pdf_drawing-1"`) |
 | `subsystem_symbol` | `macros/system_artifacts` | default system build (`artifact_id="subsystem-symbol-1"`) |
 | `physical_model_drawing` | `macros/system_artifacts` | default system build (`artifact_id="physical-1"`, before `pdf_generator`) |
 | `build_rectangular_physical_model` | `macros/device_artifacts` | device build, when you want a rectangular body (`artifact_id="body-1"`) |
@@ -246,18 +246,130 @@ These are the macros that ship in the general library. Unless noted, `lib_repo` 
 
 
 
-### `bom_exporter_bottom_up`
+### `bom_table_bottom_up`
 
-Rolls every instance that has a `bom_line_number` into one row per line number: quantity, MPN, item type, library fields, exact length, and length plus a 12-inch margin (cables are rounded to two decimals before summing). Writes a TSV and an SVG table that grows **up** from the bottom-right, with a `bom_table_item` flagnote bubble in the item column.
+Builds a bill of materials table in any project type. Reads the instances list and groups every instance that has a `bom_line_number` by that number. It does not check the project type: whatever is in the `bom_line_number` column is what goes on the BOM. Stops with an error if no instance has a line number.
 
-**Args:** none beyond `artifact_id` (reads `instances_list` itself).
+Assign the line numbers first. Mark the instances that belong on the BOM with `bom_line_number` `True`, then call `instances_list.assign_bom_line_numbers()`, which gives every instance with the same MPN the same number.
+
+- The default harness build marks `harness_connector`, `cable`, and `backshell` instances.
+- The default system build marks `device`, `harness`, and `system` instances. Circuits also carry an MPN (the recommended cable), but they belong on the harness BOMs, so they are not marked.
+
+**The table:**
+
+- Each BOM line gets a total row: a numbered bubble, QTY (every instance on that line), MFG, and MPN.
+- Under it, an instance gets its own row only if `per_instance_disclosure` lists it with at least one non-blank value. An arrow marks these rows, their text is italic, and the INSTANCE column shows the instance name. Only the header row is bold.
+- Each column header in `per_instance_disclosure` becomes a column. The total row shows the sum of that column when every disclosed value on that line is a number. If any value is blank or not a number, the total stays blank.
+- The macro draws the bubble and the arrow itself, straight into the table SVG. It uses no library part and writes no files besides the TSV and the SVG. The SVG table grows **up** from the bottom-right.
+
+**Args:**
+
+- `per_instance_disclosure` — optional. A dict of `{instance_name: {column header: value}}`. Instances not in it get no row of their own. Default `{}`, so only total rows are drawn.
+
+Build the dict in build instructions with a normal loop, then pass it in.
+
+Harness default (cable lengths):
+
+```python
+bom_disclosure = {}
+for instance in instances_list.read():
+    if instance.get("item_type") == "cable" and instance.get("length"):
+        bom_disclosure[instance.get("instance_name")] = {
+            "Length with margin": float(instance.get("length")) + 12,
+        }
+```
+
+System default (one configuration field per device; `instances_list.configuration_value` reads one saved answer from `device_configuration`):
+
+```python
+bom_disclosure = {}
+for instance in instances_list.read():
+    bom_disclosure[instance.get("instance_name")] = {
+        "IP address": instances_list.configuration_value(instance, "ip_address"),
+    }
+```
+
+Then: `per_instance_disclosure=bom_disclosure`.
+
+#### Disclosure recipes
+
+The macro never decides what to show. Build instructions build `bom_disclosure` with a normal loop, so a value can come from anything build instructions can read. In a system, a placed device's `instance_name` is its refdes, so the dict is keyed per refdes.
+
+Only instances with a `bom_line_number` appear. Entries for other instances (circuits, connectors in a system) are ignored. Build the dict right before the `run_macro` call so it reads the current instances list.
+
+**Show any instances-list column.** Read the column from the instance row:
+
+```python
+bom_disclosure = {}
+for instance in instances_list.read():
+    bom_disclosure[instance.get("instance_name")] = {
+        "Print name": instance.get("print_name"),
+        "Library": instance.get("lib_subpath"),
+    }
+```
+
+**Show a value from a file in `instance_data/`.** A placed device's files are in `instance_data/device/{refdes}/`. Open the file and put the value in the dict. This counts each device's signals from its signals list. `fileio` is always available in build instructions; `os` needs `import os` at the top of the file (the default build instructions already have it).
+
+```python
+bom_disclosure = {}
+for instance in instances_list.read():
+    if instance.get("item_type") != "device":
+        continue
+    signals_path = os.path.join(
+        fileio.dirpath("instance_data"), "device", instance.get("instance_name"), "signals.tsv"
+    )
+    if os.path.isfile(signals_path):
+        bom_disclosure[instance.get("instance_name")] = {
+            "Signals": len(fileio.read_tsv(signals_path)),
+        }
+```
+
+**Do math on a value.** Instances-list cells are text. Convert with `float()` or `int()`, do the math in Python, and put the number in the dict.
+
+- Return a number, not text, when you want a total. The total row sums a column only when every disclosed value on that line is a number. A blank or text value (such as `"30 in"`) leaves the total blank.
+- Decimals are rounded to two places in the table and the TSV. Totals print as decimals (`4.0`), even when every value is a whole number.
+- The total row only sums. For an average, a maximum, or anything else, work it out in build instructions and put it in a column of its own.
+- Skip an instance whose value is blank or does not convert, or `float()` stops the build.
+
+Cable lengths, two ways:
+
+```python
+bom_disclosure = {}
+for instance in instances_list.read():
+    if instance.get("item_type") != "cable" or not instance.get("length"):
+        continue
+    length = float(instance.get("length"))
+    bom_disclosure[instance.get("instance_name")] = {
+        "Length + 5% + 12 in": length * 1.05 + 12,
+        "Length (ft)": length / 12,
+    }
+```
+
+Each key is one column, and each column gets its own total.
+
+Distance from origin, from the `3d_translate` column. That cell holds a dict as text (`{'x': …, 'y': …, 'z': …, 'alpha': …, 'beta': …, 'gamma': …}`), so turn it back into a dict with `ast.literal_eval` first. Add `import ast` and `import math` at the top of the file (the default harness build instructions already import `math`).
+
+```python
+bom_disclosure = {}
+for instance in instances_list.read():
+    if not instance.get("3d_translate"):
+        continue
+    translate = ast.literal_eval(instance.get("3d_translate"))
+    bom_disclosure[instance.get("instance_name")] = {
+        "Distance From Origin": math.sqrt(
+            translate["x"] ** 2 + translate["y"] ** 2 + translate["z"] ** 2
+        ),
+    }
+```
+
+Only instances on the BOM show a row, so this shows a distance only for BOM instances that have a `3d_translate`.
 
 **Writes** (under `instance_data/macro/{artifact_id}/`):
 
-- `{pn-rev}-{artifact_id}.tsv` — `bom tsv`
-- `{pn-rev}-{artifact_id}-master.svg` — `bom svg` (picked up later by `pdf_generator`)
+- `{artifact_id}.tsv` — `bom tsv`. One `line` row per BOM line and one `instance` row per disclosed instance (`row_type` column), with one column per disclosure header.
+- `{artifact_id}-master.svg` — `bom svg` (picked up later by `pdf_generator`)
 
-Default call: `artifact_id="bom-1"`.
+Default call: `artifact_id="bom-1"`, before `pdf_generator`.
 
 
 ### `tooling_list_exporter`
@@ -378,17 +490,6 @@ Builds one 3D STEP of the harness from the chosen network and the instances list
 **Writes:** `{pn-rev}-{artifact_id}.step`.
 
 Default call: `artifact_id="harness-step-1"`.
-
-
-### `cutlist_exporter_bottom_up`
-
-Same grouping idea as the BOM, but only for BOM lines that have a length. Each line number gets a bold total row (exact length and length + 12 in margin) plus one row per cut (instance name and that cut's length). BOM bubbles and `down_right_arrow` flagnotes mark the rows.
-
-**Args:** none beyond `artifact_id` (reads `instances_list`).
-
-**Writes:** `{pn-rev}-{artifact_id}.tsv`, `{pn-rev}-{artifact_id}-master.svg`.
-
-Not in the default harness script. Call it next to `bom_exporter_bottom_up` if you want a cut list on the drawing.
 
 
 ### `pdf_generator`

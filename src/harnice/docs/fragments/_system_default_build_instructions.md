@@ -103,7 +103,38 @@
     # check for circuits with no connectors
     system_utils.find_connector_with_no_circuit(connector_list, circuits)
     
-    # TODO: HARNESS VALIDATION (imported harnesses contain conductors that match the required circuits)
+    # check that each imported harness design has the system's connectors and
+    # carries every circuit the system requires of it. The post harness instances
+    # list is normally rebuilt after this script, so rebuild it here first.
+    post_harness_instances_list.rebuild()
+    post_harness_instances = fileio.read_tsv("post harness instances list")
+    for bom_row in fileio.read_tsv("bom"):
+        if bom_row.get("harness") == "TRUE" and bom_row.get("design_exists") == "TRUE":
+            system_utils.verify_harness_conductors_against_circuits_list(
+                bom_row["device_refdes"], post_harness_instances
+            )
+    
+    # A mismatch stops the build with system_utils.HarnessDesignError. To accept
+    # some kinds of problem and still stop on the rest, catch it and re-raise when
+    # anything unexpected is left. err.problems lists each problem with a "kind"
+    # and a "message"; the kinds are listed on system_utils.HarnessDesignError.
+    # For example, to allow circuits that end on a device connector with no cavity:
+    #
+    #     try:
+    #         system_utils.verify_harness_conductors_against_circuits_list(
+    #             bom_row["device_refdes"], post_harness_instances
+    #         )
+    #     except system_utils.HarnessDesignError as err:
+    #         unexpected = [
+    #             problem for problem in err.problems
+    #             if problem["kind"] != "circuit_end_has_no_cavity"
+    #         ]
+    #         if unexpected:
+    #             raise
+    #         cli.warn(str(err))  # still show the accepted problems
+    #
+    # To report every harness before stopping, collect the errors in the loop and
+    # raise after it instead of raising on the first one.
     
     # ===========================================================================
     #              ADD APPEARANCES TO CHANNEL TYPES AND CIRCUITS
@@ -233,6 +264,17 @@
     
     
     # ===========================================================================
+    #                   ASSIGN BOM LINE NUMBERS
+    # ===========================================================================
+    # Placed devices, harnesses, and subsystems go on the system BOM. Circuits also
+    # carry an MPN (the recommended cable above) but belong to the harness BOMs.
+    for instance in instances_list.read():
+        if instance.get("item_type") in ["device", "harness", "system"] and instance.get("mpn"):
+            instances_list.modify(instance.get("instance_name"), {"bom_line_number": True})
+    instances_list.assign_bom_line_numbers()
+    
+    
+    # ===========================================================================
     #              GENERATE OUTPUTS
     # ===========================================================================
     # Store the default trace layout styles into a variable to be used later when
@@ -319,10 +361,25 @@
             show_circuit_traces=True,
         )
     
+        # Bill of materials. Each BOM line gets a total row. An instance listed
+        # in bom_disclosure also gets its own row under it, with one column per key.
+        bom_disclosure = {}
+        for instance in instances_list.read():
+            bom_disclosure[instance.get("instance_name")] = {
+                "IP address": instances_list.configuration_value(instance, "ip_address"),
+            }
+        build_utils.run_macro(
+            "bom_table_bottom_up",
+            "macros/drawing_artifacts",
+            "https://github.com/harnice/harnice-general-library",
+            artifact_id="bom-1",
+            per_instance_disclosure=bom_disclosure,
+        )
+    
         # Each run_macro call is one PDF file.
         build_utils.run_macro(
             "pdf_generator",
-            "macros/harness_artifacts",
+            "macros/drawing_artifacts",
             "https://github.com/harnice/harnice-general-library",
             artifact_id="pdf_drawing-1",
             page_setup={

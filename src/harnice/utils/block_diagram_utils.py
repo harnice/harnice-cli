@@ -186,7 +186,7 @@ def _parse_block_diagram_svg_file(bd_path):
         raise ET.ParseError("%s\nin %s" % (exc, bd_path)) from exc
 
 
-def _parse_block_diagram_svg_string(svg_text):
+def _parse_block_diagram_svg_string(svg_text, keep_comments=False):
     def format_parse_error(exc, text):
         message = str(exc)
         match = re.search(r"line (\d+), column (\d+)", message)
@@ -235,14 +235,20 @@ def _parse_block_diagram_svg_string(svg_text):
         lines[line_no - 1] = before + rest[attr.end() :]
         return "".join(lines)
 
+    def parse(text):
+        if not keep_comments:
+            return ET.parse(StringIO(text))
+        parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+        return ET.parse(StringIO(text), parser=parser)
+
     prepared = prepare_block_diagram_svg_text(svg_text)
     try:
-        return ET.parse(StringIO(prepared))
+        return parse(prepared)
     except ET.ParseError as exc:
         repaired = drop_duplicate_attribute(prepared, exc)
         if repaired and repaired != prepared:
             try:
-                return ET.parse(StringIO(repaired))
+                return parse(repaired)
             except ET.ParseError as again:
                 exc = again
                 prepared = repaired
@@ -463,6 +469,201 @@ def serialize_svg_element_children(parent):
         _svg_fragment_preserve_bound_prefixes(ET.tostring(child, encoding="unicode"))
         for child in list(parent)
     )
+
+
+def canonicalize_svg_tree(root):
+    """Strip editor runtime state and round numbers in place.
+
+    The canonical serializer runs this on every write. The placed-symbol
+    refresh also runs it on its scratch copy, so that compare sees what the
+    file will hold.
+    """
+    # Editor state that must never reach the file:
+    # (tag, class token or None, attribute, value). A value of None removes
+    # the attribute, a string sets it. Add a line here when the editor starts
+    # setting a new attribute at runtime.
+    runtime_attrs = (
+        # svg_text.js writes the wrapped line on each tspan. The tspan text is
+        # the same line (U+00A0 for a blank line), so the file does not need it.
+        ("tspan", None, "data-line", None),
+        # Selection reveals one harness's markers. They are hidden on disk.
+        ("circle", "harness-refdes-marker", "opacity", "0"),
+        ("circle", "harness-refdes-marker", "pointer-events", "none"),
+    )
+    # Classes the editor adds while the canvas is open.
+    runtime_classes = ("selected", "hovered", "dragging")
+    # Attributes whose numbers are rounded to 6 decimal places.
+    rounded_attrs = (
+        "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "dx", "dy",
+        "width", "height", "stroke-width", "font-size", "opacity", "transform",
+        "d", "points", "viewBox", "data-wrap-width",
+    )
+    number_re = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+    def round_number(match):
+        # 7.199999999999999 -> 7.2. Short numbers come back unchanged.
+        token = match.group(0)
+        mantissa = re.split(r"[eE]", token)[0]
+        decimals = len(mantissa.split(".", 1)[1]) if "." in mantissa else 0
+        if decimals <= 6 and mantissa == token:
+            return token
+        value = round(float(token), 6)
+        if value == 0:
+            return "0"
+        return format(value, ".6f").rstrip("0").rstrip(".")
+
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        tag = _svg_local_tag(el.tag)
+        classes = (el.get("class") or "").split()
+
+        kept = [c for c in classes if c not in runtime_classes]
+        if kept != classes:
+            if kept:
+                el.set("class", " ".join(kept))
+            else:
+                del el.attrib["class"]
+            classes = kept
+
+        for rule_tag, rule_class, attr, value in runtime_attrs:
+            if rule_tag != tag:
+                continue
+            if rule_class is not None and rule_class not in classes:
+                continue
+            if value is None:
+                el.attrib.pop(attr, None)
+            else:
+                el.set(attr, value)
+
+        # The editor sets pointer-events in the style of trace groups when
+        # traces are shown or hidden.
+        if tag == "g" and el.get("data-harnice-trace-label") is not None:
+            style = el.get("style")
+            if style is not None:
+                decls = []
+                for decl in style.split(";"):
+                    decl = decl.strip()
+                    if decl and decl.split(":", 1)[0].strip().lower() != "pointer-events":
+                        decls.append(decl)
+                if decls:
+                    el.set("style", "; ".join(decls) + ";")
+                else:
+                    del el.attrib["style"]
+
+        for key in list(el.attrib):
+            if _svg_local_tag(key) in rounded_attrs and el.attrib[key]:
+                el.set(key, number_re.sub(round_number, el.attrib[key]))
+    return root
+
+
+def canonical_svg_text(svg_text):
+    """The one on-disk form of a block diagram SVG.
+
+    The editor (``outerHTML``) and Python (ElementTree) used to write the file
+    in different shapes, so every save after a build rewrote most lines.
+    Every writer of ``blockdiagram.svg`` goes through this function instead.
+    It strips editor runtime state, rounds numbers (``canonicalize_svg_tree``),
+    and pretty-prints with ElementTree. Running it on its own output returns
+    the same text.
+
+    Raises ``ET.ParseError`` when the text is not XML.
+    """
+
+    def indent(el, level):
+        # Pretty-print in place. Text content and <text> lines stay as they are.
+        if not isinstance(el.tag, str):
+            return
+        tag = _svg_local_tag(el.tag)
+        kids = list(el)
+
+        if tag == "text":
+            # Whitespace between tspans is a rendered space (and a line break
+            # under xml:space="preserve"), so the element stays on one line.
+            for sub in el.iter():
+                if sub is not el and sub.tail is not None and not sub.tail.strip():
+                    sub.tail = None
+                if list(sub):
+                    if sub.text is not None and not sub.text.strip():
+                        sub.text = None
+                elif (
+                    isinstance(sub.tag, str)
+                    and _svg_local_tag(sub.tag) == "tspan"
+                    and not (sub.text or "").strip(" \t\r\n")
+                ):
+                    # A blank wrapped line is U+00A0 (svg_text.js). The
+                    # editor's line breaker treats U+00A0 as whitespace and
+                    # swaps it for a newline, so put it back.
+                    sub.text = " "
+            return
+
+        if tag == "configuration" and not kids:
+            # JSON body. Re-indent it one level in, so it does not depend on
+            # where the writer happened to nest it.
+            lines = [ln.rstrip() for ln in (el.text or "").split("\n")]
+            while lines and not lines[0]:
+                lines.pop(0)
+            while lines and not lines[-1]:
+                lines.pop()
+            if not lines:
+                el.text = None
+                return
+            lead = min(len(ln) - len(ln.lstrip(" \t")) for ln in lines if ln)
+            inner = "  " * (level + 1)
+            body = "\n".join((inner + ln[lead:]) if ln else "" for ln in lines)
+            el.text = "\n" + body + "\n" + "  " * level
+            return
+
+        if not kids:
+            if el.text is not None and not el.text.strip():
+                el.text = None
+            return
+        if el.text is not None and el.text.strip():
+            # Mixed content: leave it as written.
+            return
+
+        child_indent = "\n" + "  " * (level + 1)
+        el.text = child_indent
+        for i, kid in enumerate(kids):
+            indent(kid, level + 1)
+            if kid.tail is None or not kid.tail.strip():
+                kid.tail = child_indent if i < len(kids) - 1 else "\n" + "  " * level
+
+    prepared = prepare_block_diagram_svg_text(svg_text)
+
+    # Keep the file's own prefixes so ElementTree does not write ``ns0:``.
+    root_tag = re.search(r"<svg\b[^>]*>", prepared, flags=re.IGNORECASE | re.DOTALL)
+    if root_tag:
+        declared = re.findall(r'\sxmlns:([A-Za-z_][\w.-]*)="([^"]*)"', root_tag.group(0))
+        for prefix, uri in declared:
+            if re.match(r"ns\d+$", prefix) or prefix in ("xml", "xmlns"):
+                continue
+            try:
+                ET.register_namespace(prefix, uri)
+            except ValueError:
+                continue
+
+    root = _parse_block_diagram_svg_string(prepared, keep_comments=True).getroot()
+    canonicalize_svg_tree(root)
+    indent(root, 0)
+    root.tail = None
+    body = ET.tostring(root, encoding="unicode")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + body + "\n"
+
+
+def write_block_diagram_svg(path, svg_text):
+    """Write ``svg_text`` to ``path`` in canonical form. Returns the text written.
+
+    Text that does not parse is written as given, so a save never loses work.
+    """
+    from harnice import fileio
+
+    try:
+        text = canonical_svg_text(svg_text)
+    except ET.ParseError:
+        text = svg_text
+    fileio.atomic_write_text(path, text)
+    return text
 
 
 def svg_id_for_refdes(refdes):

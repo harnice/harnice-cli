@@ -612,12 +612,28 @@ formboard list. It does not write `instances.tsv`.
 
 `build_utils.run_macro` takes the macro MPN, the library subpath, and
 the library repo, then keyword arguments. Harness macros use
-`"macros/harness_artifacts"` and
+`"macros/harness_artifacts"`. Sheet and table macros shared with other
+project types (`bom_table_bottom_up`, `tooling_list_exporter`,
+`revision_history_table`, `build_notes_table`, `pdf_generator`) use
+`"macros/drawing_artifacts"`. Both are in
 `https://github.com/harnice/harnice-general-library`. The stock script
 calls these so the drawings exist. Remove a call the project does not
 need:
 
-- `bom_exporter_bottom_up`, artifact `bom-1`
+- `bom_table_bottom_up`, artifact `bom-1`. It reads the `bom_line_number`
+  values the script assigns earlier. `per_instance_disclosure` is a
+  dict of `{instance_name: {column header: value}}` that the script
+  builds with a loop just before the call. The stock loop gives each
+  cable a "Length with margin" row (length plus 12 in).
+  - A value can be any instances-list column (`instance.get("mpn")`),
+    a value read from a file in `instance_data/`, or a number worked
+    out in Python. Cells are text: convert with `float()` first, and
+    skip instances whose value is blank.
+  - Put numbers, not text like `"30 in"`, in the dict. The total row
+    sums a column only when every value on that BOM line is a number.
+    It only sums; put an average or maximum in its own column.
+  - Each key is one column. Recipes, with examples:
+    "Disclosure recipes" in `docs/project_types/_macro.md`.
 - `tooling_list_exporter`, artifact `tool_list-1`
 - `standard_harnice_formboard`, artifact `formboard-overview`,
   `dimension=0`, `scale` of sheet A (stock `0.25`), and the overview

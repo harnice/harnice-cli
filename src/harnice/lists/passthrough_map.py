@@ -921,8 +921,8 @@ def route(
         # context availables unchanged (already 0; do not go negative)
         _write_routing_context(list(system.passthrough_routing_context))
         if not satisfaction:
-            print(
-                f"Harnice: routed channel {to_from_channel_device_refdes}."
+            cli.warn(
+                f"routed channel {to_from_channel_device_refdes}."
                 f"{to_from_channel_id} through passthrough {intended_device_refdes}, "
                 "which has no free channel left (added an imaginary channel)"
             )

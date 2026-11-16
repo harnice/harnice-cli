@@ -250,6 +250,19 @@ def hide_from_dock():
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
 
 
+def os_app_data_dir():
+    """The OS app-data folder for Harnice, whether or not this is the standalone app.
+
+    ``~/Library/Application Support/Harnice`` on macOS, ``%APPDATA%/Harnice`` on
+    Windows, ``~/.harnice`` elsewhere. Not created here.
+    """
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Harnice"
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA", str(Path.home()))) / "Harnice"
+    return Path.home() / ".harnice"
+
+
 def user_data_dir():
     """Writable Harnice data (console state, repository_locations.csv, setup progress).
 
@@ -258,12 +271,7 @@ def user_data_dir():
     standalone app always uses the OS app-data folder.
     """
     if is_standalone_app():
-        if sys.platform == "darwin":
-            path = Path.home() / "Library" / "Application Support" / "Harnice"
-        elif sys.platform == "win32":
-            path = Path(os.environ.get("APPDATA", str(Path.home()))) / "Harnice"
-        else:
-            path = Path.home() / ".harnice"
+        path = os_app_data_dir()
         path.mkdir(parents=True, exist_ok=True)
         return path
     override = (os.environ.get("HARNICE_ROOT") or "").strip()

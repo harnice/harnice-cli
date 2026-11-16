@@ -82,7 +82,7 @@ Raising stops the build.
 - `system_utils` — `docs/commands/_system_utils.md`
 - `fileio`, `state`, and `cli` — `docs/commands/_manipulating_files.md`
 - `chtype` — `docs/project_types/_channel_type.md`. A channel type is electrical information only. It must not specify a connector type. The connector is on the device signals list.
-- Shipped macros `subsystem_symbol` and `pdf_generator` — `docs/project_types/_macro.md`
+- Shipped macros `subsystem_symbol`, `bom_table_bottom_up`, and `pdf_generator` — `docs/project_types/_macro.md`
 
 Do not call bundle networks, cables, build notes, part libraries, or
 post-harness instances. Those are the harness script.
@@ -108,10 +108,28 @@ runs. One row per channel endpoint. Do not call `channel_map.new()` again.
 7. The design checks, channel-type colors, and cable recommendations
    already in the stock script. Change them from what I said. Do not
    invent a cable MPN.
-8. `subsystem_symbol`, then `pdf_generator`. The ICD is written after
+8. The stock BOM step: mark `device`, `harness`, and `system` instances
+   with `bom_line_number` `True`, then
+   `instances_list.assign_bom_line_numbers()`. Do not mark circuits.
+   Their MPN is a cable recommendation for the harness BOM.
+9. `subsystem_symbol`, then `bom_table_bottom_up` (from
+   `"macros/drawing_artifacts"`), then `pdf_generator` (also from
+   `"macros/drawing_artifacts"`). The ICD is written after
    build instructions, so a subsystem symbol needs a second build after
    an ICD change.
-9. `connector_chooser` and `m85049_chooser` at the end of the file, as
+   `bom_table_bottom_up` takes `per_instance_disclosure`, a dict of
+   `{refdes: {column header: value}}` built with a loop just before
+   the call. The stock loop shows each device's `ip_address` answer
+   (`instances_list.configuration_value(instance, "ip_address")`).
+   - A value can be any instances-list column, a value read from a
+     file in `instance_data/device/{refdes}/` (needs `import os`), or a
+     number worked out in Python.
+   - Only devices, harnesses, and subsystems are on the BOM. Entries
+     for other instances are ignored.
+   - The total row sums a column only when every value on that BOM
+     line is a number. Recipes, with examples: "Disclosure recipes" in
+     `docs/project_types/_macro.md`.
+10. `connector_chooser` and `m85049_chooser` at the end of the file, as
    module-level functions. A harness calls them by those names. Write
    the mating part here.
 

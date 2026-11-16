@@ -210,7 +210,9 @@ def regenerate_trace_overlays(style=None):
         original = f.read()
     updated = system_utils.apply_block_diagram_trace_overlays(original)
     if updated != original:
-        fileio.atomic_write_text(bd_path, updated)
+        from harnice.utils import block_diagram_utils
+
+        block_diagram_utils.write_block_diagram_svg(bd_path, updated)
     return {"block diagram": bd_path}
 
 
@@ -1201,6 +1203,11 @@ def table(
         current_x += col["width"]
         col_x_starts.append(current_x)
 
+    # reverse content list if building upwards so the first row stays on top but is now printed last.
+    # Reverse before measuring so each row keeps its own row_height.
+    if layout["build_direction"] == "up":
+        content_list = list(reversed(content_list))
+
     row_heights = [
         _resolve_style(row.get("format_key"), {}, format_dict, columns).get(
             "row_height", DEFAULTS["row_height"]
@@ -1214,11 +1221,6 @@ def table(
     instances_to_copy_in = []
 
     # 3. BUILD ROW BY ROW
-
-    # reverse content list if building upwards so the first row stays on top but is now printed last
-    if layout["build_direction"] == "up":
-        content_list = list(reversed(content_list))
-
     for row_index, row_data in enumerate(content_list):
         row_key = row_data.get("format_key")
         row_height = row_heights[row_index]

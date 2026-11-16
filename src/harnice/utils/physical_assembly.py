@@ -823,6 +823,25 @@ def sync_assembly():
     return _public(discovered, model, step_path, step_error)
 
 
+def device_poses():
+    """Pose of each device that has a body, as ``assembly.step`` places it.
+
+    New bodies get their open spot and fasten mates are solved, the same as
+    ``sync_assembly``. Nothing is saved. Returns ``{refdes: pose}``.
+    """
+    from harnice import fileio
+
+    discovered = discover()
+    model, _changed = reconcile(
+        discovered, load_assembly(fileio.path("physical assembly"))
+    )
+    return {
+        device["refdes"]: dict(model["placements"][device["refdes"]])
+        for device in discovered
+        if device["has_body"] and device["refdes"] in model["placements"]
+    }
+
+
 def open_model():
     """Load the assembly, add every device that now has a body, and refresh the STEP file."""
     return sync_assembly()
