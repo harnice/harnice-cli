@@ -429,6 +429,11 @@ def new(ignore_project_type=False, path=None):
     if not ignore_project_type:
         from harnice.cli import select_project_type
 
+        print(
+            f"harnice: no revision history at {path} "
+            f"(cwd {os.getcwd()}); asking for a project type to start one.",
+            flush=True,
+        )
         state.set_project_type(select_project_type())
 
     if ignore_project_type and not state.project_type:
@@ -566,6 +571,11 @@ def append(next_rev=None):
                 state.set_project_type(candidate)
                 break
     if not state.project_type:
+        print(
+            f"harnice: {len(rows)} row(s) in {fileio.path('revision history')} "
+            "but none has a project_type; asking for one.",
+            flush=True,
+        )
         state.set_project_type(cli.select_project_type())
 
     default_desc = ""

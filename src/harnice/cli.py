@@ -568,20 +568,30 @@ def newpn():
 
 
 def select_project_type():
-    import sys
-
     from harnice.project_types import available_names
+    from harnice.runtime import has_interactive_terminal
 
     available_types = available_names()
     if not available_types:
         fatal("No project types are available")
     type_map = {p.lower(): p for p in available_types}
 
-    # prompt_toolkit needs a real TTY; console Build uses pipes — use plain prompts.
-    if not sys.stdin.isatty():
+    # prompt_toolkit needs a real terminal; console Build uses pipes — use plain prompts.
+    if not has_interactive_terminal():
         print(f"Valid project types: {', '.join(available_types)}")
         while True:
-            value = (prompt("Select project type") or "").strip()
+            print("Select project type:", flush=True)
+            try:
+                value = input().strip()
+            except EOFError:
+                # Nobody can answer (e.g. the console opening a project).
+                fatal(
+                    "Harnice needs a project type for this revision but cannot ask "
+                    "here (see the line above for why). Check that the revision "
+                    "history file is where that line says, with a project_type "
+                    f"({', '.join(available_types)}), or create the project from "
+                    "the Harnice console (New project…)."
+                )
             if not value:
                 continue
             key = value.lower()

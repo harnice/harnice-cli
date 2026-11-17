@@ -40,7 +40,9 @@ def revision_folder_parts(path=None):
 
     Part number is the parent folder name.
     """
-    folder = os.path.normpath(os.path.abspath(path or os.getcwd()))
+    from harnice.runtime import long_path
+
+    folder = os.path.normpath(long_path(os.path.abspath(path or os.getcwd())))
     name = os.path.basename(folder)
     parent = os.path.basename(os.path.dirname(folder))
     match = _SHORT_REV_FOLDER_RE.fullmatch(name)
@@ -188,10 +190,9 @@ def is_revision_folder(path=None):
 
 
 def _stdin_can_prompt():
-    try:
-        return sys.stdin.isatty()
-    except Exception:
-        return False
+    from harnice.runtime import has_interactive_terminal
+
+    return has_interactive_terminal()
 
 
 def _should_prompt_for_identity_files():

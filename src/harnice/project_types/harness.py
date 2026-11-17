@@ -92,11 +92,11 @@ def _revision_for_system_name(history, system_name):
 
 def _prompt_system_pn_rev():
     """Prompt for system name (Tab cycles history) then revision (auto-filled from selection). Returns (system_pn, system_rev)."""
-    import sys
+    from harnice.runtime import has_interactive_terminal
 
     history = _load_system_ref_history()
-    # prompt_toolkit needs a real TTY; console Build uses pipes — fall back to plain prompts.
-    use_plain = (not history) or (not sys.stdin.isatty())
+    # prompt_toolkit needs a real terminal; console Build uses pipes — fall back to plain prompts.
+    use_plain = (not history) or (not has_interactive_terminal())
     if use_plain:
         default_pn = history[0][0] if history else None
         default_rev = history[0][1] if history else None

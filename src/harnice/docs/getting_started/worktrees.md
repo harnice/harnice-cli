@@ -23,6 +23,13 @@ If a build needs a referenced project's branch, check that branch out in the mai
 harnice: S100 rev1 is also in worktree fix-connectors; this build used the main folder's copy (branch main). Delete the fix-connectors worktree and check out fix-connectors in the main folder to build against it.
 ```
 
+## Opening or starting a project in a worktree
+
+Right-click **Open project…** or **New project…** in the Projects panel:
+
+- **Open project in a new worktree…** opens the project you pick, then shows the same branch menu as the Worktree slider: pick a branch, or make a new one, and the project moves into that branch's worktree.
+- **New project in a new worktree…** opens the New project form with a branch name (it starts as the part number). Harnice makes that branch from the main folder's branch, puts a worktree for it in app data, and creates the project there. The main folder is not changed. If the project cannot be created, the new worktree and branch are removed again.
+
 ## Deleting a worktree
 
 **Delete worktree** first checks for uncommitted changes. If there are any, it lists them and offers **Commit…**, which opens the commit box for this project. Nothing is deleted.
@@ -42,7 +49,7 @@ Git checks a branch out in one place at a time, and harnice keeps your work safe
 | You tried | What happens |
 | --- | --- |
 | Check out, in the main folder, a branch a worktree is using | Refused. A popup names the projects in that worktree and offers to delete that worktree and check the branch out here, or to move this project into it. |
-| Move a project to the branch the main folder has | Refused. A popup offers Switch to Main folder. |
+| Move a project to the branch the main folder has | Refused. A popup offers **Switch to Main folder**, or to check out the repository's default branch (e.g. `main`) in the main folder and put this project in a worktree for its branch. The second needs the project committed; if the worktree cannot be made, the main folder goes back to the branch it had. Other projects in the main folder move to the default branch. |
 | Move a project out of a worktree with uncommitted changes | Refused, listing the files. Commit or stash first. |
 | Delete a worktree with uncommitted changes | Refused, listing the files, with an offer to commit. |
 | Check a branch out in the main folder while the main folder has changes it would overwrite | Git refuses, and the worktree is left exactly as it was. |

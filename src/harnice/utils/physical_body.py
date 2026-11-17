@@ -6,6 +6,13 @@ The solid is ``fileio.path("body")`` (body.step), written by a macro through
 (R = Rx(alpha) · Ry(beta) · Rz(gamma)), and ``source`` ``build`` or ``gui``.
 A build mate is placed again on the next build. A gui mate keeps its pose.
 Other attributes in that file are kept.
+
+A part has no ``mate_connectors``. Its mates are the ``csys_children`` in
+attributes.json that give all six degrees of freedom: ``x``, ``y``, ``z``
+inches and ``rx``, ``ry``, ``rz`` degrees (or ``alpha``, ``beta``, ``gamma``),
+the same pose ``bundle_network_utils`` reads. Children without a full pose,
+such as flagnote positions, are drawing-only. The console shows a part's
+mates read only.
 """
 
 import json
@@ -198,20 +205,21 @@ def load_body(path=None):
     return normalize_body(data)
 
 
-def save_mates(mates, path=None):
-    """Store mate connectors on attributes.json. Other keys in the file stay."""
-    path = path or fileio.path("attributes")
-    body = normalize_body({"mate_connectors": mates})
-    data = {}
-    if os.path.isfile(path):
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"attributes.json could not be read: {exc}") from exc
-        if not isinstance(data, dict):
-            raise ValueError("attributes.json must be a JSON object")
-    data["mate_connectors"] = body["mate_connectors"]
+def _read_attributes(path):
+    """attributes.json as a dict. A missing file is an empty dict."""
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"attributes.json could not be read: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("attributes.json must be a JSON object")
+    return data
+
+
+def _write_attributes(path, data):
     folder = os.path.dirname(path)
     if folder:
         os.makedirs(folder, exist_ok=True)
@@ -220,6 +228,63 @@ def save_mates(mates, path=None):
         json.dump(data, handle, indent=4)
         handle.write("\n")
     os.replace(temporary, path)
+
+
+def save_mates(mates, path=None):
+    """Store mate connectors on attributes.json. Other keys in the file stay."""
+    path = path or fileio.path("attributes")
+    body = normalize_body({"mate_connectors": mates})
+    data = _read_attributes(path)
+    data["mate_connectors"] = body["mate_connectors"]
+    _write_attributes(path, data)
+
+
+_CSYS_ROTATION_KEYS = (("rx", "ry", "rz"), ("alpha", "beta", "gamma"))
+
+
+def _csys_rotation_keys(child):
+    """The rotation keys a csys child spells out in full, or None."""
+    for keys in _CSYS_ROTATION_KEYS:
+        if all(child.get(key) not in (None, "") for key in keys):
+            return keys
+    return None
+
+
+def csys_child_is_3d(child):
+    """True when a csys child gives x, y, z and all three rotations."""
+    if not isinstance(child, dict):
+        return False
+    if any(child.get(key) in (None, "") for key in ("x", "y", "z")):
+        return False
+    return _csys_rotation_keys(child) is not None
+
+
+def _csys_children(data):
+    children = data.get("csys_children")
+    if children is None:
+        return {}
+    if not isinstance(children, dict):
+        raise ValueError("csys_children must be a JSON object")
+    return children
+
+
+def load_csys_mates(path=None):
+    """A part's 6-DOF csys children as mate connectors, in file order."""
+    path = path or fileio.path("attributes")
+    mates = []
+    for name, child in _csys_children(_read_attributes(path)).items():
+        if not csys_child_is_3d(child):
+            continue
+        rotation = _csys_rotation_keys(child)
+        mates.append({
+            "id": name,
+            "location": [child["x"], child["y"], child["z"]],
+            "alpha": child[rotation[0]],
+            "beta": child[rotation[1]],
+            "gamma": child[rotation[2]],
+            "source": "gui",
+        })
+    return normalize_body({"mate_connectors": mates})["mate_connectors"]
 
 
 def drop_build_mates():

@@ -2,9 +2,10 @@
 name: system-build
 description: >-
   Write or edit Harnice system build.py: channel maps, passthroughs, circuits,
-  cable recommendations, and connector choosers that a harness will call. Use
-  when the user asks for system build instructions, a channel map, or a
-  passthrough route. A harness revision uses the harness-build skill. A device
+  cable recommendations, connector choosers that a harness will call, and the
+  company file of connector and cable selection standards. Use when the user
+  asks for system build instructions, a channel map, a passthrough route, or
+  connector or cable selection rules. A harness revision uses the harness-build skill. A device
   pinout uses the device-signals-list skill. A catalog of library SKUs,
   including a catalog of devices, uses the part-family skill. Follow this
   skill when it is the best match. Do not
@@ -46,9 +47,11 @@ The script is `fileio.path("build instructions")` in the system revision.
 Do not run `build.py`. From that revision folder, `harnice -b` runs the
 project. If this revision is a harness, stop and follow the harness skill.
 
-Do not import anything. The names you need are already bound. The one
-exception is `import json` when this script reads a placed device's
-configuration from the BOM.
+Do not import anything. The names you need are already bound. The
+exceptions are `import json` when this script reads a placed device's
+configuration from the BOM, and `import importlib.util` and `import os`
+when this script loads the company standards file. See "Connector and
+cable selection".
 
 Read the `build.py` already in the revision before you replace it. The
 stock script is in the clone at:
@@ -69,6 +72,130 @@ Which endpoints are one patch, which connector mates, and which cable a
 circuit uses are my decisions. Ask, and put the choice in front of me.
 Record it in a comment. `cli.warn` prints a warning and continues.
 Raising stops the build.
+
+
+## Connector and cable selection
+
+`connector_chooser` picks the mating connectors. The stock "RECOMMEND
+CABLES ON CIRCUITS" section picks the recommended cables. In a company
+file that section is `cable_chooser`. Before you write or change either
+one, find out where the rules live.
+
+### 1. Look for a company standards file
+
+Search each local checkout in `repository_locations.csv`:
+
+- A `.py` that is not a `build.py` and defines `def connector_chooser`
+  or `def cable_chooser`.
+- A system `build.py` with `def company_standards()`. Its
+  `COMPANY_STANDARDS_REPO` and `COMPANY_STANDARDS_FILE` name the file.
+
+If you find one, use it. Do not ask the question in step 2. Tell me the
+path. A new rule I ask for goes in that file, not in this `build.py`,
+unless I say it is for this project only. A change to that file changes
+every system that calls it on its next build. Say so before you edit an
+existing rule.
+
+### 2. If there is none, ask me once
+
+Ask this, with both choices:
+
+> Do you want to define connector and cable selection for your whole
+> company, or only for this project?
+>
+> - **Company (recommended):** I'll write one Python file in your
+>   company library that holds `connector_chooser`, `cable_chooser`,
+>   and any other selection rules. Every system calls that file, so
+>   every project follows the same standards.
+> - **This project only:** The rules go in this system's `build.py`.
+>   You may have to define them all again in every new project, and
+>   projects drift apart. One set of standards across the company is
+>   better.
+
+For company, ask which library in `repository_locations.csv` is the
+company library. Do not write to `harnice-general-library` or another
+public `github.com/harnice` library. If no company library is listed,
+tell me to add one (`docs/getting_started/libraries.md`), or offer the
+project choice.
+
+For this project, give the warning above even when I already said
+"project", then write the `def`s in this `build.py`.
+
+### 3. The company file
+
+- One file: `harnice_standards.py` at the library root unless I name
+  another. Every selection rule goes in it as a module-level function:
+  `connector_chooser`, `cable_chooser`, `m85049_chooser`, and any
+  other. More files in more folders work but are harder to keep track
+  of. Keep one file unless I ask.
+- It is an ordinary Python module, not a build script, so no Harnice
+  names are bound in it. Import what it uses at the top, from the same
+  modules a build script sees, for example
+  `from harnice.lists import instances_list`,
+  `from harnice.project_types import chtype`, and `from harnice import cli`.
+  Other `harnice` internals are blocked.
+- Start from the stock `def connector_chooser` (end of the stock
+  script). Then wrap the stock "RECOMMEND CABLES ON CIRCUITS" section in
+  `def cable_chooser():`. Then apply what I said.
+- The whole file runs each time it is loaded. Keep module-level code to
+  imports, `def`s, and data.
+- A rule reads the instances list. Do not write one system's refdes or
+  harness name into a company rule unless I asked.
+- Open the file with a comment that it is the company's Harnice
+  selection standard. Comment each rule with the decision I made.
+
+### 4. Load it from this system's `build.py`
+
+Look up the library's local checkout with
+`library_utils.get_local_path(repo_url)`. It reads
+`repository_locations.csv`. Join the file name onto it with `os.path`,
+then import the file with `importlib.util`. Put the imports at the top
+of `build.py`, and put the rest above the first step that uses it:
+
+```python
+import importlib.util
+import os
+
+# Company Harnice selection standards. Every system uses this one file.
+COMPANY_STANDARDS_REPO = "https://github.com/your-company/your-library"
+COMPANY_STANDARDS_FILE = "harnice_standards.py"
+
+
+def company_standards():
+    path = os.path.join(
+        library_utils.get_local_path(COMPANY_STANDARDS_REPO),
+        COMPANY_STANDARDS_FILE,
+    )
+    spec = importlib.util.spec_from_file_location("company_standards", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+```
+
+The load happens inside a `def`. A harness loads only this script's
+imports, `def`s, and literal data, so a load at module level would not
+run there. `COMPANY_STANDARDS_REPO` and `COMPANY_STANDARDS_FILE` stay
+plain string literals for the same reason.
+
+Replace the stock "RECOMMEND CABLES ON CIRCUITS" section with:
+
+```python
+company_standards().cable_chooser()
+```
+
+Replace the body of `connector_chooser` at the end of the file. It
+stays a `def` because a harness calls it by that name:
+
+```python
+def connector_chooser():
+    company_standards().connector_chooser()
+```
+
+Do the same for `m85049_chooser` and any other chooser in the file.
+
+The file is read from the local checkout as it is now. After you
+change it, tell me to commit and push the company library, so that
+other people and machines build with the same rules.
 
 
 ## Call these pages only
@@ -106,8 +233,9 @@ runs. One row per channel endpoint. Do not call `channel_map.new()` again.
 5. `circuits_list.new()`
 6. `system_utils.create_instances_from_circuits_list()`
 7. The design checks, channel-type colors, and cable recommendations
-   already in the stock script. Change them from what I said. Do not
-   invent a cable MPN.
+   already in the stock script. Change them from what I said. Cable
+   rules follow "Connector and cable selection". Do not invent a cable
+   MPN.
 8. The stock BOM step: mark `device`, `harness`, and `system` instances
    with `bom_line_number` `True`, then
    `instances_list.assign_bom_line_numbers()`. Do not mark circuits.
@@ -131,7 +259,8 @@ runs. One row per channel endpoint. Do not call `channel_map.new()` again.
      `docs/project_types/_macro.md`.
 10. `connector_chooser` and `m85049_chooser` at the end of the file, as
    module-level functions. A harness calls them by those names. Write
-   the mating part here.
+   the mating part here, or forward to the company file. See
+   "Connector and cable selection".
 
 
 ## Run the build
@@ -174,5 +303,6 @@ This script does not receive a `configuration` dict. Harnice has already rebuilt
 - [ ] You did not write harness network code, a device signals list, or a part family
 - [ ] A stock section you removed is one the project does not need, and `harnice -b` still succeeds
 - [ ] Every Harnice call is on a page this skill lists, with arguments from that page
+- [ ] Connector and cable rules are in the company standards file I chose, or in this `build.py` after the warning about project-level rules
 - [ ] Decisions I made are comments in the file
 - [ ] An agent build exited 0. A chatbot told me to click Build and paste the errors back

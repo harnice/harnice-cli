@@ -123,6 +123,63 @@ def source_checkout_root():
     return Path(__file__).resolve().parents[2]
 
 
+def long_path(path):
+    """Return *path* with Windows 8.3 short names (``DOCUME~1``) expanded.
+
+    Harnice reads the part number from the part folder's name, so a short
+    name would look for ``HARNES~1-revision_history.tsv`` and miss the real
+    file. Unchanged on other platforms, or when Windows can't expand it.
+    """
+    if sys.platform != "win32" or not path or "~" not in str(path):
+        return path
+    try:
+        import ctypes
+
+        get_long = ctypes.windll.kernel32.GetLongPathNameW
+        size = get_long(str(path), None, 0)
+        if not size:
+            return path
+        buf = ctypes.create_unicode_buffer(size)
+        if not get_long(str(path), buf, size):
+            return path
+        return buf.value
+    except Exception:
+        return path
+
+
+def has_interactive_terminal():
+    """True when stdin and stdout are both a real terminal a person can type in.
+
+    ``isatty()`` alone is not enough on Windows: the ``NUL`` device (what
+    ``subprocess.DEVNULL`` opens) reports itself as a tty. Interactive
+    prompt_toolkit prompts then crash with ``NoConsoleScreenBufferError``.
+    On Windows this also asks the console for its mode, which ``NUL`` and
+    pipes refuse.
+    """
+    try:
+        if not (sys.stdin and sys.stdout):
+            return False
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return False
+    except Exception:
+        return False
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        import msvcrt
+
+        kernel32 = ctypes.windll.kernel32
+        mode = ctypes.c_uint32()
+        for stream in (sys.stdin, sys.stdout):
+            handle = msvcrt.get_osfhandle(stream.fileno())
+            if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def no_console_kwargs():
     """Stop Windows from opening a console for a child process.
 

@@ -68,6 +68,13 @@ Connector and backshell part numbers are `connector_chooser` and
 not define them. Follow `skills/system/SKILL.md` only when I asked you
 to change those functions on the system.
 
+The system's chooser may load a company standards file
+(`company_standards()` in the system `build.py`). Nothing changes in
+this script. When I ask for a connector or cable rule, do not write it here
+first. Follow "Connector and cable selection" in
+`skills/system/SKILL.md`. The rule goes in the company file or the system.
+A rule for this one harness only goes here, before `library_utils.pull`.
+
 
 ## Design intent
 
