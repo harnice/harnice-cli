@@ -97,7 +97,7 @@
         flagnote should be positioned.
     
     **Returns:**
-    - `dict`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``.
+    - `dict` or `None`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``. ``None`` when the part's library attributes set ``"exclude_from_bom": true`` (such as ``flying leads``): it has no BOM line, so it gets no BOM bubble.
 
 ??? info "`note_utils.make_buildnote_flagnote(note_instance, affected_instance, output_csys_name)`"
 

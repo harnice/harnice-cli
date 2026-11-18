@@ -308,6 +308,7 @@
         if instance.get("item_type") not in [
             "harness_connector",
             "backshell",
+            "terminal",
             "segment",
             "node",
             "origin",
@@ -321,12 +322,12 @@
         overview_flag_note_counter = 1
     
         if instance.get("item_type") in ["harness_connector", "backshell"]:
-            formboard_detail_instances.append(
-                note_utils.make_bom_flagnote(
-                    instance, f"flagnote-{detail_flag_note_counter}"
-                )
+            bom_flagnote = note_utils.make_bom_flagnote(
+                instance, f"flagnote-{detail_flag_note_counter}"
             )
-            detail_flag_note_counter += 1
+            if bom_flagnote is not None:  # None for parts kept off the BOM
+                formboard_detail_instances.append(bom_flagnote)
+                detail_flag_note_counter += 1
     
             formboard_detail_instances.append(
                 note_utils.make_part_name_flagnote(

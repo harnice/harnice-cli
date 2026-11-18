@@ -226,6 +226,9 @@ Instances lists are the single comprehensive source of truth for the project you
     
     Groups by MPN and assigns the same line number to all instances sharing an MPN. Requires every such instance to have a non-empty `mpn`. Line numbers are assigned in order of first occurrence of each MPN.
     
+    A part whose library `attributes.json` has `"exclude_from_bom": true` (such as the general
+    library's `flying leads`) never gets a line number; its `bom_line_number` is cleared.
+    
     **Raises**
     ValueError if any instance marked for BOM has an empty `mpn`.
 

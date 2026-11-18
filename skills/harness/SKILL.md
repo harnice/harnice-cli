@@ -615,7 +615,9 @@ note's affected instances include the part. Parse note rows with
 `note_utils.parse_note_instance` before that test. The last argument
 of each flagnote maker is the output CSYS name on that part
 (`flagnote-1`, `flagnote-2`, …). The maker returns a dict for the
-formboard list. It does not write `instances.tsv`.
+formboard list. It does not write `instances.tsv`. `make_bom_flagnote`
+returns `None` for a part whose attributes set `"exclude_from_bom": true`
+(such as `flying leads`), so only append it when it isn't `None`.
 
 `build_utils.run_macro` takes the macro MPN, the library subpath, and
 the library repo, then keyword arguments. Harness macros use

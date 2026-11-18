@@ -740,6 +740,78 @@ def conductor_od(conductor, instances=None):
     return 0.2
 
 
+def conductor_gauge(conductor, instances=None):
+    """
+    Use this when a harness build needs the wire gauge of a conductor, such as to choose a terminal.
+
+    AWG of a conductor instance, as text without "AWG" (``"22"``, ``"1/0"``).
+
+    Assigned conductors read the parent cable's conductor list, then its
+    attributes JSON. Unassigned conductors read their own ``gauge`` / ``awg``
+    columns, then their attributes JSON.
+
+    **Returns:**
+    - `str` or `None`: The gauge, or `None` when nothing states one.
+    """
+
+    def gauge_text(row):
+        # "22AWG", "22 awg", or "22" -> "22"
+        raw = row.get("gauge") or row.get("awg")
+        if raw in [None, ""]:
+            return None
+        return re.sub(r"(?i)\s*awg\s*", "", str(raw)).strip() or None
+
+    def properties_gauge(node):
+        if not isinstance(node, dict) or not isinstance(node.get("properties"), dict):
+            return None
+        return gauge_text(node["properties"])
+
+    def find_conductor(node, key=None):
+        # the attributes entry keyed by this conductor's identifier
+        if not isinstance(node, dict):
+            return None
+        if key == identifier and node.get("conductor") is True:
+            return node
+        for child_key, value in node.items():
+            if child_key in _ATTRIBUTES_METADATA_KEYS:
+                continue
+            if isinstance(value, dict):
+                found = find_conductor(value, child_key)
+                if found:
+                    return found
+            elif isinstance(value, list):
+                for item in value:
+                    found = find_conductor(item)
+                    if found:
+                        return found
+        return None
+
+    cable_name = conductor.get("cable_group")
+    identifier = conductor.get("cable_identifier")
+    if cable_name in ["", None] or identifier in ["", None]:
+        return gauge_text(conductor) or properties_gauge(
+            _parse_jsonish(conductor.get("attributes_json"))
+        )
+
+    list_path = _conductor_list_path(cable_name)
+    if os.path.isfile(list_path):
+        row = _conductor_row_for_identifier(
+            fileio.read_tsv(list_path), identifier, cable_name
+        )
+        if gauge_text(row):
+            return gauge_text(row)
+    if instances is None:
+        instances = instances_list.read()
+    cable_row = next(
+        (row for row in instances if row.get("instance_name") == cable_name), None
+    )
+    try:
+        attributes = _load_cable_attributes(cable_name, cable_row)
+    except ValueError:
+        return None
+    return properties_gauge(find_conductor(attributes))
+
+
 def calculate_bundle_diameter(segment_instance_name):
     """
     Use this when a harness build needs the outer diameter of one segment from the cables on that segment.

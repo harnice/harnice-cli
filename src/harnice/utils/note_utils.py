@@ -188,8 +188,10 @@ def make_bom_flagnote(affected_instance, output_csys_name):
         flagnote should be positioned.
 
     **Returns:**
-    - `dict`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``.
+    - `dict` or `None`: A flagnote dict to append to a formboard macro's ``input_instances``. This function does not write the instances list. ``output_csys_name`` is a named output on that part, such as ``flagnote-1``. ``None`` when the part's library attributes set ``"exclude_from_bom": true`` (such as ``flying leads``): it has no BOM line, so it gets no BOM bubble.
     """
+    if instances_list._excluded_from_bom(affected_instance):
+        return None
     return {
         "harness": state.harness,
         "instance_name": f"note-bom_item-{affected_instance.get('instance_name')}",

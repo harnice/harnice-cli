@@ -241,6 +241,24 @@ def new():
     cached_tsv.write(fileio.path("instances list"), COLUMNS, [])
 
 
+def _excluded_from_bom(instance):
+    """True when the instance's library attributes say ``exclude_from_bom``."""
+    raw = instance.get("attributes_json")
+    if isinstance(raw, dict):
+        attributes = raw
+    elif raw in (None, ""):
+        return False
+    else:
+        try:
+            attributes = json.loads(raw)
+        except (TypeError, ValueError):
+            try:
+                attributes = ast.literal_eval(raw)
+            except (ValueError, SyntaxError):
+                return False
+    return isinstance(attributes, dict) and attributes.get("exclude_from_bom") is True
+
+
 def assign_bom_line_numbers():
     """
     Use this when a harness or system build needs sequential BOM line numbers on instances whose bom_line_number cell is "True".
@@ -249,6 +267,9 @@ def assign_bom_line_numbers():
 
     Groups by MPN and assigns the same line number to all instances sharing an MPN. Requires every such instance to have a non-empty `mpn`. Line numbers are assigned in order of first occurrence of each MPN.
 
+    A part whose library `attributes.json` has `"exclude_from_bom": true` (such as the general
+    library's `flying leads`) never gets a line number; its `bom_line_number` is cleared.
+
     ## Raises
     ValueError if any instance marked for BOM has an empty `mpn`.
     """
@@ -256,6 +277,9 @@ def assign_bom_line_numbers():
     def apply(rows):
         bom = []
         for instance in rows:
+            if _excluded_from_bom(instance):
+                instance["bom_line_number"] = ""
+                continue
             if instance.get("bom_line_number") == "True":
                 if instance.get("mpn") == "":
                     raise ValueError(

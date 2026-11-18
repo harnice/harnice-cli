@@ -126,3 +126,16 @@
         segment, a cable on the segment has no usable OD, or an assigned
         conductor has no ``od`` / gauge.
 
+??? info "`cable_utils.conductor_gauge(conductor, instances=None)`"
+
+    Use this when a harness build needs the wire gauge of a conductor, such as to choose a terminal.
+    
+    AWG of a conductor instance, as text without "AWG" (``"22"``, ``"1/0"``).
+    
+    Assigned conductors read the parent cable's conductor list, then its
+    attributes JSON. Unassigned conductors read their own ``gauge`` / ``awg``
+    columns, then their attributes JSON.
+    
+    **Returns:**
+    - `str` or `None`: The gauge, or `None` when nothing states one.
+

@@ -477,7 +477,7 @@
     Returns:
         str: SVG markup string, or empty string if coordinates are identical.
 
-??? info "`svg_utils.draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_group)`"
+??? info "`svg_utils.draw_styled_path(spline_points, stroke_width_inches, appearance_dict, local_group, linecap='round')`"
 
     Use this when a build that is writing an SVG needs a styled spline added to the current group.
     
@@ -497,4 +497,7 @@
     
     If ``appearance_dict`` is missing/empty, or if it does not define ``base_color``,
     a rainbow placeholder spline is drawn.
+    
+    ``linecap`` is the SVG ``stroke-linecap`` for the path ends: ``"round"`` (default),
+    ``"butt"`` for square ends that stop at the end points, or ``"square"``.
 

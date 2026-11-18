@@ -230,6 +230,7 @@ These are the macros that ship in the general library. Unless noted, `lib_repo` 
 | `tooling_list_exporter` | `macros/drawing_artifacts` | default harness build (`artifact_id="tool_list-1"`) |
 | `standard_harnice_formboard` | `macros/harness_artifacts` | default harness build, twice (overview + detail) |
 | `basic_segment_generator` | `macros/harness_artifacts` | `standard_harnice_formboard`, once per segment |
+| `flying_lead_generator` | `macros/harness_artifacts` | `standard_harnice_formboard`, for each segment that ends at a `flying leads` connector |
 | `trace_layout_visualizer` | `macros/harness_artifacts` | default harness build, twice (conductors + cables) |
 | `circuit_visualizer` | `macros/harness_artifacts` | default harness build (`artifact_id="circuitviz-1"`) |
 | `revision_history_table` | `macros/drawing_artifacts` | default harness build (`artifact_id="revhistory-1"`) |
@@ -387,7 +388,7 @@ Default call: `artifact_id="tool_list-1"`.
 
 Lays harness geometry into a formboard SVG in flattened-network space. Places printable instances (connectors, backshells, segments, flagnotes, …) by coordinate system, draws leader lines for flagnotes, and can draw cable/conductor paths plus a filleted bundle border instead of plotting those item types as symbols.
 
-For each **segment** it calls `basic_segment_generator` as a **child macro** (`artifact_id="{this_artifact_id}-{segment_name}"`, `base_directory` inside this instance). Flagnotes are pulled from the library (without recording them again in the parent library history, because the same bubble can appear on overview and detail). Other drawings are copied from the parent project's `instance_data/`.
+For each **segment** it calls `basic_segment_generator` as a **child macro**, or `flying_lead_generator` if and only if one of the segment's end nodes has a `harness_connector` whose `mpn` is `flying leads` (that connector has no drawing of its own and is not plotted) (`artifact_id="{this_artifact_id}-{segment_name}"`, `base_directory` inside this instance). Flagnotes are pulled from the library (without recording them again in the parent library history, because the same bubble can appear on overview and detail). Other drawings are copied from the parent project's `instance_data/`.
 
 **Args:**
 
@@ -397,6 +398,7 @@ For each **segment** it calls `basic_segment_generator` as a **child macro** (`a
 - `rotation` — optional, degrees (documented on the macro; placement uses flattened-network angles).
 - `dimension` — 0–100, opacity of segment length dimensions. Default harness overview passes `0` (hidden); omit for fully opaque (100).
 - `trace_path_item_types` — optional list of `item_type`s to draw as paths along the bundle instead of as symbols.
+- `flying_lead_splay_angle` — optional, degrees between neighboring conductors on every flying-lead segment (default 10), passed to `flying_lead_generator` as `splay_angle`. Flying-lead segments are drawn before anything is placed, so terminals find their `flying_lead_end` csys. Placement chains are resolved against the full instances list.
 
 **Writes:** `{pn-rev}-{artifact_id}-master.svg` (`output svg`).
 
@@ -415,6 +417,42 @@ Draws one segment: a stroked line whose width is the bundle diameter, plus an op
 - `scale` — formboard scale, used so dimension text stays a readable size on the sheet.
 
 **Writes:** `{artifact_id}-drawing.svg`.
+
+
+### `flying_lead_generator`
+
+Draws a segment that ends at a `harness_connector` whose `mpn` is `flying leads`; `standard_harnice_formboard` uses it for exactly those segments, instead of `basic_segment_generator`. Every conductor on the segment, including each conductor inside every cable on it, is drawn at its own outer diameter and color. All conductors meet at one point at the other end of the segment and splay apart over the whole segment toward the `flying leads` end, where each one ends on its own. Exactly one end of the segment must have a `flying leads` connector. Run `map_cables_and_conductors_to_segments` first. Conductors are ordered by their cavity at the connector, so neighbors in the fan are neighbors in the connector. A subdivided segment is splayed in a straight line from end to end.
+
+Each splayed conductor gets a 2D output csys named `flying_lead_end` at its tip, pointing outward. It is written to `csys_children` on that conductor's conductor-segment row (`{conductor}.{segment}`, parented to the segment) and on the cavity the conductor ends in at the `flying leads` connector (e.g. `P4.3`, which the macro parents to the segment origin). A terminal or flagnote attaches with `parent_csys_instance_name="P4.3"` and `parent_csys_outputcsys_name="flying_lead_end"`.
+
+To use it, assign the connector at the loose end of the segment the general library part `flying leads` (`mpn="flying leads"`, `lib_repo="https://github.com/harnice/harnice-general-library"`, `lib_subpath="parts/flying_leads/"`). That part has no manufacturer and no drawing, has a `3d-mate` at its origin, and sets `"exclude_from_bom": true`, so `instances_list.assign_bom_line_numbers` leaves it off the BOM.
+
+Terminals are not part of this drawing. Make them in the build instructions as ordinary instances, then add `terminal` to the item types in the formboard's `input_instances` to draw them (`tests/test-harness-4` does this):
+
+```python
+for conductor in instances_list.read():
+    for cavity in (conductor.get("node_at_end_a"), conductor.get("node_at_end_b")):
+        if conductor.get("item_type") == "conductor" and str(cavity).startswith("P4."):
+            terminal = {
+                "instance_name": f"{cavity}.terminal",
+                "item_type": "terminal",
+                "mpn": "RING_TERMINAL-22-8-FF0000",
+                "lib_repo": "https://github.com/harnice/harnice-general-library",
+                "lib_subpath": "parts/generic_ring_terminals/",
+                "parent_csys_instance_name": cavity,
+                "parent_csys_outputcsys_name": "flying_lead_end",
+                "bom_line_number": True,
+            }
+            instances_list.new_instance(terminal["instance_name"], terminal)
+            library_utils.pull(terminal)
+```
+
+**Args:**
+
+- `instance`, `dimension`, `dimension_units`, `scale` — same as `basic_segment_generator`.
+- `splay_angle` — optional, degrees between neighboring conductors (default 10). `standard_harnice_formboard` passes its `flying_lead_splay_angle`.
+
+**Writes:** `{artifact_id}-drawing.svg`; `csys_children` / `parent_csys_outputcsys_name` on each conductor-segment row of the segment; and `csys_children` plus `parent_csys_instance_name` / `parent_csys_outputcsys_name` (the segment, `origin`) on each cavity at the `flying leads` connector.
 
 
 ### `trace_layout_visualizer`
