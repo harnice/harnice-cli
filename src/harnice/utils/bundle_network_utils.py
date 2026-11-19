@@ -712,11 +712,18 @@ def move_node(
         return list(point)
 
     for seg in segments:
+        old_a = _point3(seg.get("location_at_end_a"))
         seg["location_at_end_a"] = _follow(seg.get("location_at_end_a"))
         seg["location_at_end_b"] = _follow(seg.get("location_at_end_b"))
+        # Control points are offsets from end A. Keep them where they are in
+        # the world when end A moves, so the routed curve does not shift.
         controls = seg.get("spline_control_points") or []
-        if controls:
-            seg["spline_control_points"] = [_follow(point) for point in controls]
+        new_a = _point3(seg["location_at_end_a"])
+        if controls and new_a != old_a:
+            shift = [old_a[i] - new_a[i] for i in range(3)]
+            seg["spline_control_points"] = [
+                [_point3(point)[i] + shift[i] for i in range(3)] for point in controls
+            ]
 
     return network
 
@@ -1187,6 +1194,304 @@ def rename_node(input_network, new_id, existing_id=None, coordinates=[]):
     target["node_id"] = new_id
     return network
 
+
+def adopt_mating_connector_nodes(input_network, flip=True, instances=None):
+    """
+    Use this when a harness build's available network has a node at each device mating connector its harness connectors plug into, such as the nodes a system build writes from its physical model.
+
+    Turns the node at each device mating connector into the node of the harness connector that plugs into it.
+
+    In the physical model, a device has mating connectors. A system build
+    writes one available-network node at each placed mating connector, named
+    ``<device_refdes>.<mating_connector_id>``. For each ``harness_connector``
+    instance, the node named
+    ``<device_side_refdes>.<device_side_connector_id>`` is renamed to
+    ``<connector_group>.node``. A node at a point shared by several mating
+    connectors (``{A.J1+B.J2}``) is matched by any of them. Location and
+    segments stay where they are.
+
+    A mating connector's +X points out of the device face. A harness connector's
+    +X points from its cable side toward its mating face, into the device.
+    With ``flip``, the node is turned 180° about its Z axis so a later
+    ``move_node`` by ``output_offset(connector, "3d-mate")`` moves the node
+    away from the device, not into it.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **flip** — Turn each adopted node 180° about its own Z axis. Optional; defaults to ``True``.
+    - **instances** — Instance rows to read. Optional; defaults to ``instances_list.read()``.
+
+    ## Returns
+
+    A deep copy of ``input_network`` with the adopted nodes renamed and turned.
+
+    A connector with no node at its mating connector is skipped. When
+    ``<connector_group>.node`` is already a different node, the mating
+    connector wins, with a warning: segment ends on that node move to the
+    mating connector's location, and that node is dropped.
+    """
+    from harnice import cli
+    from harnice.lists.chosen_network import _connector_ids
+
+    if instances is None:
+        from harnice.lists import instances_list
+
+        instances = instances_list.read()
+
+    network = copy.deepcopy(input_network)
+    network["nodes"] = network.get("nodes") or []
+    for instance in instances:
+        if instance.get("item_type") != "harness_connector":
+            continue
+        device_refdes = instance.get("device_side_refdes")
+        connector_id = instance.get("device_side_connector_id")
+        group = instance.get("connector_group")
+        if not device_refdes or not connector_id or not group:
+            continue
+        mate_id = f"{device_refdes}.{connector_id}"
+        connector_node_id = f"{group}.node"
+
+        target = next(
+            (n for n in network["nodes"] if n.get("node_id") == mate_id), None
+        )
+        if target is None:
+            target = next(
+                (n for n in network["nodes"] if mate_id in _connector_ids(n)), None
+            )
+        if target is None:
+            continue
+        target_id = target.get("node_id")
+        if target_id != connector_node_id and any(
+            n.get("node_id") == connector_node_id for n in network["nodes"]
+        ):
+            # The mating connector wins. Segment ends on the old node move to
+            # the mating connector, and the old node is dropped.
+            cli.warn(
+                f"Available network has both {target_id} and {connector_node_id}; "
+                f"{connector_node_id} was replaced by {target_id}"
+            )
+            network = move_node(
+                network, connector_node_id, new_location=list(target["location"])
+            )
+            network["nodes"] = [
+                n for n in network["nodes"] if n.get("node_id") != connector_node_id
+            ]
+            target = next(n for n in network["nodes"] if n.get("node_id") == target_id)
+
+        target["node_id"] = connector_node_id
+        if flip:
+            turned = _matmul3(_rotation_of(target), _zyx_rotation_matrix(0.0, 0.0, 180.0))
+            target["alpha"], target["beta"], target["gamma"] = [
+                round(angle, 6) for angle in _euler_zyx_from_matrix(turned)
+            ]
+    return network
+
+
+
+def connect_required_nodes(input_network, required_node_ids, rng=None):
+    """
+    Use this when a harness build needs every required node in the chosen network, connected, after the available network and any adopted mating connector nodes are in.
+
+    Adds geometry for required nodes the network does not route to yet.
+
+    - A required node that is missing gets a node on a random spoke, 6 to 18
+      inches from the anchor in the XY plane, and a ``<node_id>_leg`` segment
+      to the anchor.
+    - A required node with no segment gets a straight ``<node_id>_leg``
+      segment to the anchor. Its location does not change.
+
+    The anchor is the first node joined by segments to a required node.
+    Without one, it is the node ``hub`` if the network has it. Otherwise a new node is
+    added: ``far``, 4 inches in -X of the only required node, when exactly
+    one node is required, or ``hub`` at the origin. Nodes and segments that
+    are already connected are not changed.
+
+    Use it on the network the build turns into the chosen network. It does
+    not write ``available.json``, so generated geometry shows up only in the
+    chosen network.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **required_node_ids** — ``node_id`` values the chosen network must contain.
+    - **rng** — ``random.Random`` used for spoke placement. Optional; defaults to the ``random`` module.
+
+    ## Returns
+
+    A deep copy of ``input_network`` with the generated nodes and segments added.
+    """
+    import random as _random
+
+    rng = rng or _random
+    network = copy.deepcopy(input_network)
+    nodes = network.setdefault("nodes", [])
+    segments = network.setdefault("segments", [])
+
+    def node_named(node_id):
+        return next((n for n in nodes if n.get("node_id") == node_id), None)
+
+    def has_segment(node):
+        loc = _point3(node.get("location"))
+        return any(
+            _near(_point3(seg.get("location_at_end_a")), loc)
+            or _near(_point3(seg.get("location_at_end_b")), loc)
+            for seg in segments
+        )
+
+    def unique(existing, base):
+        name = base
+        index = 2
+        while name in existing:
+            name = f"{base}-{index}"
+            index += 1
+        return name
+
+    required = []
+    for node_id in required_node_ids:
+        if node_id not in required:
+            required.append(node_id)
+    missing = [node_id for node_id in required if node_named(node_id) is None]
+    unconnected = [
+        node_id
+        for node_id in required
+        if node_named(node_id) is not None and not has_segment(node_named(node_id))
+    ]
+    if not missing and not unconnected:
+        return network
+
+    # Nodes joined by segments to a required node. A segment that touches no
+    # required node, such as one routed elsewhere in the source system, is
+    # not an anchor.
+    def routed_to_required():
+        points = []
+        for node_id in required:
+            node = node_named(node_id)
+            if node is not None and has_segment(node):
+                points.append(_point3(node.get("location")))
+        reached = list(points)
+        while points:
+            point = points.pop()
+            for seg in segments:
+                ends = (
+                    _point3(seg.get("location_at_end_a")),
+                    _point3(seg.get("location_at_end_b")),
+                )
+                for end, other in (ends, ends[::-1]):
+                    if _near(end, point) and not any(_near(other, r) for r in reached):
+                        reached.append(other)
+                        points.append(other)
+        return reached
+
+    reached = routed_to_required()
+    anchor = next(
+        (
+            n
+            for n in nodes
+            if has_segment(n)
+            and any(_near(_point3(n.get("location")), r) for r in reached)
+        ),
+        None,
+    )
+    if anchor is None:
+        anchor = node_named("hub")
+    if anchor is None:
+        node_ids = {n.get("node_id") for n in nodes}
+        if len(required) == 1:
+            only = node_named(required[0])
+            base = list(_point3(only.get("location"))) if only else [0.0, 0.0, 0.0]
+            anchor_id = unique(node_ids | set(required), "far")
+            anchor_loc = [base[0] - 4.0, base[1], base[2]]
+        else:
+            anchor_id = unique(node_ids | set(required), "hub")
+            anchor_loc = [0.0, 0.0, 0.0]
+        anchor = {
+            "node_id": anchor_id,
+            "location": anchor_loc,
+            "alpha": None,
+            "beta": None,
+            "gamma": None,
+        }
+        nodes.append(anchor)
+    anchor_loc = list(_point3(anchor.get("location")))
+    segment_ids = {seg.get("segment_id") for seg in segments}
+
+    def add_leg(node_id, location):
+        segment_id = unique(segment_ids, f"{node_id}_leg")
+        segment_ids.add(segment_id)
+        segments.append(
+            {
+                "segment_id": segment_id,
+                "location_at_end_a": list(anchor_loc),
+                "location_at_end_b": list(location),
+                "spline_control_points": [],
+            }
+        )
+
+    for node_id in missing:
+        if node_id == anchor.get("node_id"):
+            continue
+        distance = rng.randint(6, 18)
+        angle = math.radians(rng.randint(0, 359))
+        location = [
+            anchor_loc[0] + distance * math.cos(angle),
+            anchor_loc[1] + distance * math.sin(angle),
+            anchor_loc[2],
+        ]
+        nodes.append(
+            {
+                "node_id": node_id,
+                "location": location,
+                "alpha": None,
+                "beta": None,
+                "gamma": None,
+            }
+        )
+        add_leg(node_id, location)
+    for node_id in unconnected:
+        if node_id == anchor.get("node_id"):
+            continue
+        add_leg(node_id, _point3(node_named(node_id).get("location")))
+    return network
+
+
+def delete_node(input_network, node_id):
+    """
+    Use this when a harness build needs a node removed from a network, such as before adding a fresh copy of it.
+
+    Removes every node with that ``node_id``. Segments are not changed, so a
+    segment end that sat on the node keeps its location.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **node_id** — ``node_id`` to remove. A missing node is not an error.
+    """
+    network = copy.deepcopy(input_network)
+    network["nodes"] = [
+        n for n in network.get("nodes") or [] if n.get("node_id") != node_id
+    ]
+    return network
+
+
+def delete_segment(input_network, segment_id):
+    """
+    Use this when a harness build needs a segment removed from a network, such as before adding a fresh copy of it.
+
+    Removes every segment with that ``segment_id``. Nodes are not changed.
+
+    ## Args
+
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **segment_id** — ``segment_id`` to remove. A missing segment is not an error.
+    """
+    network = copy.deepcopy(input_network)
+    network["segments"] = [
+        seg
+        for seg in network.get("segments") or []
+        if seg.get("segment_id") != segment_id
+    ]
+    return network
 
 def new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None):
     """

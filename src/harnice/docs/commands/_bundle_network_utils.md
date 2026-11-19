@@ -8,7 +8,7 @@ The build script is that transformation. Each call changes a small piece and ret
 
 Load the available network, give every free segment end a node, add any connector node the available network does not yet contain, and keep the one route that touches every required node. Layout moves belong after that one route exists and before ``chosen_network.save``. ``flattened_network.derive`` then builds the flat drawing from the chosen network.
 
-``chosen_network.end_all_segments_in_nodes``, ``ensure_nodes_exist``, ``calculate_possible_sub_networks``, and ``find_network_with`` do the first part of that. ``new_node`` adds a node and does not add a segment. ``move_node``, ``rename_node``, ``reroute_segment``, and ``clock_backshell`` edit the chosen route. A connector group with a backshell is clocked toward its hop with ``clock_backshell``, which already shifts the node by the connector mate. A group with no backshell keeps that mate on the available-network point with ``move_node`` and ``output_offset(..., "3d-mate")``.
+``adopt_mating_connector_nodes`` renames the node a system build wrote at each device mating connector (``<device_refdes>.<mating_connector_id>``) to the ``<connector_group>.node`` of the harness connector that plugs into it, turned 180° to face the device. ``connect_required_nodes`` then adds a spoke for each missing required node and a leg for each one with no segment, in memory, so generated geometry shows up only in the chosen network. ``chosen_network.end_all_segments_in_nodes``, ``ensure_nodes_exist``, ``calculate_possible_sub_networks``, and ``find_network_with`` do the first part of that. ``new_node`` adds a node and does not add a segment. ``move_node``, ``rename_node``, ``reroute_segment``, and ``clock_backshell`` edit the chosen route. A connector group with a backshell is clocked toward its hop with ``clock_backshell``, which already shifts the node by the connector mate. A group with no backshell keeps that mate on the available-network point with ``move_node`` and ``output_offset(..., "3d-mate")``.
 
 The chosen network is a dict with ``"nodes"`` and ``"segments"``.
 
@@ -293,6 +293,97 @@ A coordinate system is a different dict, ``{x, y, z, alpha, beta, gamma}``. ``x`
     - **new_id** — ``node_id`` to assign to the found node.
     - **existing_id** — Current ``node_id`` to rename. Use this or ``coordinates``. Optional.
     - **coordinates** — ``[x, y, z, radius]``. Renames the single node inside that sphere. Raises unless the sphere contains exactly one node. Optional. Pass ``existing_id`` or ``coordinates``.
+
+??? info "`bundle_network_utils.delete_node(input_network, node_id)`"
+
+    Use this when a harness build needs a node removed from a network, such as before adding a fresh copy of it.
+    
+    Removes every node with that ``node_id``. Segments are not changed, so a
+    segment end that sat on the node keeps its location.
+    
+    **Args**
+    
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **node_id** — ``node_id`` to remove. A missing node is not an error.
+
+??? info "`bundle_network_utils.delete_segment(input_network, segment_id)`"
+
+    Use this when a harness build needs a segment removed from a network, such as before adding a fresh copy of it.
+    
+    Removes every segment with that ``segment_id``. Nodes are not changed.
+    
+    **Args**
+    
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **segment_id** — ``segment_id`` to remove. A missing segment is not an error.
+
+??? info "`bundle_network_utils.adopt_mating_connector_nodes(input_network, flip=True, instances=None)`"
+
+    Use this when a harness build's available network has a node at each device mating connector its harness connectors plug into, such as the nodes a system build writes from its physical model.
+    
+    Turns the node at each device mating connector into the node of the harness connector that plugs into it.
+    
+    In the physical model, a device has mating connectors. A system build
+    writes one available-network node at each placed mating connector, named
+    ``<device_refdes>.<mating_connector_id>``. For each ``harness_connector``
+    instance, the node named
+    ``<device_side_refdes>.<device_side_connector_id>`` is renamed to
+    ``<connector_group>.node``. A node at a point shared by several mating
+    connectors (``{A.J1+B.J2}``) is matched by any of them. Location and
+    segments stay where they are.
+    
+    A mating connector's +X points out of the device face. A harness connector's
+    +X points from its cable side toward its mating face, into the device.
+    With ``flip``, the node is turned 180° about its Z axis so a later
+    ``move_node`` by ``output_offset(connector, "3d-mate")`` moves the node
+    away from the device, not into it.
+    
+    **Args**
+    
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **flip** — Turn each adopted node 180° about its own Z axis. Optional; defaults to ``True``.
+    - **instances** — Instance rows to read. Optional; defaults to ``instances_list.read()``.
+    
+    **Returns**
+    
+    A deep copy of ``input_network`` with the adopted nodes renamed and turned.
+    
+    A connector with no node at its mating connector is skipped. When
+    ``<connector_group>.node`` is already a different node, the mating
+    connector wins, with a warning: segment ends on that node move to the
+    mating connector's location, and that node is dropped.
+
+??? info "`bundle_network_utils.connect_required_nodes(input_network, required_node_ids, rng=None)`"
+
+    Use this when a harness build needs every required node in the chosen network, connected, after the available network and any adopted mating connector nodes are in.
+    
+    Adds geometry for required nodes the network does not route to yet.
+    
+    - A required node that is missing gets a node on a random spoke, 6 to 18
+      inches from the anchor in the XY plane, and a ``<node_id>_leg`` segment
+      to the anchor.
+    - A required node with no segment gets a straight ``<node_id>_leg``
+      segment to the anchor. Its location does not change.
+    
+    The anchor is the first node joined by segments to a required node.
+    Without one, it is the node ``hub`` if the network has it. Otherwise a new node is
+    added: ``far``, 4 inches in -X of the only required node, when exactly
+    one node is required, or ``hub`` at the origin. Nodes and segments that
+    are already connected are not changed.
+    
+    Use it on the network the build turns into the chosen network. It does
+    not write ``available.json``, so generated geometry shows up only in the
+    chosen network.
+    
+    **Args**
+    
+    - **input_network** — Network dict. A copy is returned; the input is not modified.
+    - **required_node_ids** — ``node_id`` values the chosen network must contain.
+    - **rng** — ``random.Random`` used for spoke placement. Optional; defaults to the ``random`` module.
+    
+    **Returns**
+    
+    A deep copy of ``input_network`` with the generated nodes and segments added.
 
 ??? info "`bundle_network_utils.new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None)`"
 

@@ -27,8 +27,15 @@ harnice: S100 rev1 is also in worktree fix-connectors; this build used the main 
 
 Right-click **Open project…** or **New project…** in the Projects panel:
 
-- **Open project in a new worktree…** opens the project you pick, then shows the same branch menu as the Worktree slider: pick a branch, or make a new one, and the project moves into that branch's worktree.
+- **Open project in a new worktree…** asks for a branch name first. Harnice makes a worktree for that branch: a new branch from the main folder's branch, or the branch itself when it already exists. The folder picker then opens at that worktree's root, with every folder checked out so you can pick any project. Once you pick one, the worktree keeps only that project, and it opens from there. Cancel the picker and the new worktree is removed, along with the branch if Harnice made it. A branch that already has a worktree is used as it is, and the project you pick joins the projects already in it.
 - **New project in a new worktree…** opens the New project form with a branch name (it starts as the part number). Harnice makes that branch from the main folder's branch, puts a worktree for it in app data, and creates the project there. The main folder is not changed. If the project cannot be created, the new worktree and branch are removed again.
+
+Below those, each menu lists the branch worktrees that already exist in the open project's repository:
+
+- **Open project in the `<branch>` worktree…** opens the project you pick and moves it into that worktree, next to the projects already there. A project from a different repository stays open from its folder.
+- **New project in the `<branch>` worktree…** opens the New project form without a branch name. Pick the parent folder in that worktree or in the main folder. Harnice adds the new project's folder to that worktree and creates the project there, on that branch. The main folder is not changed. If the project cannot be created, its folder is taken back out of the worktree, which stays as it was.
+
+The folder picker for **Open project…** and **New project…** starts in the library root of the last project you selected, in the main folder. After an **…in the `<branch>` worktree…** item, it starts in that worktree's root folder instead.
 
 ## Deleting a worktree
 

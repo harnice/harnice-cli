@@ -52,10 +52,40 @@
     
     # available network (cad or manual) -> chosen network (modified subset) -> flattened network (visually arranged in 2D)
     
+    # The network drawn in the available network editor (available.json).
     available_network = available_network.load()
+    
+    # Add a node at each mating connector in the source system's physical model,
+    # named "<device_refdes>.<mating_connector_id>". The physical model is read
+    # fresh on every build, so a node of the same name already in the available
+    # network is replaced. This only changes the network in memory; available.json
+    # is not written.
+    for mating_connector in physical_assembly.list_mating_connectors(rev_history.info()):
+        # To leave one out, skip it here, for example:
+        # if mating_connector["node_id"].startswith("RACK-2."):
+        #     continue
+        if mating_connector["node_id"] in [n["node_id"] for n in available_network["nodes"]]:
+            available_network = bundle_network_utils.delete_node(available_network, mating_connector["node_id"])
+        available_network["nodes"].append(mating_connector)
+    
+    # Add each segment routed in the source system, read fresh on every build, so a
+    # segment of the same name already in the available network is replaced. This
+    # only changes the network in memory; available.json is not written.
+    for segment in physical_assembly.list_segments(rev_history.info()):
+        # To leave one out, skip it here, for example:
+        # if segment["segment_id"] == "S1":
+        #     continue
+        if segment["segment_id"] in [s["segment_id"] for s in available_network["segments"]]:
+            available_network = bundle_network_utils.delete_segment(available_network, segment["segment_id"])
+        available_network["segments"].append(segment)
     
     # Assign nodes to any segments that may not have nodes attached
     available_network = chosen_network.end_all_segments_in_nodes(available_network)
+    
+    # A node at the device mating connector a harness connector plugs into
+    # ("<device_side_refdes>.<device_side_connector_id>") becomes that connector's
+    # "<connector_group>.node", turned 180 degrees to face the device.
+    available_network = bundle_network_utils.adopt_mating_connector_nodes(available_network)
     
     # Gather the collection of all instances with item_type == node
     needed_nodes = []
@@ -65,46 +95,21 @@
             if name not in needed_nodes:
                 needed_nodes.append(name)
     
-    # Ensures that every node in the list is present in the network.
-    missing_nodes = chosen_network.ensure_nodes_exist(
-        input_network=available_network,
-        set_of_required_nodes=needed_nodes,
-    )
-    
-    # Generate geometry for required nodes that the available network did not provide.
+    # Generate geometry for required nodes the chosen network would not have yet:
+    # a missing node gets a random spoke off an anchor node, and a required node
+    # with no segment (such as one adopted from a mating connector) gets a leg to
+    # that anchor. This only changes the network in memory, so the generated
+    # geometry shows up in the chosen network, never in available.json.
     # Set to False to raise an error instead.
     if True:
-        for missing_node in missing_nodes:
-            existing_nodes = available_network.get("nodes") or []
-    
-            # Empty network: park at the origin. Otherwise sprout a short random
-            # leg off the first existing node.
-            new_node_location = [0, 0, 0]
-            if existing_nodes:
-                hub = existing_nodes[0]
-                new_node_distance_from_hub = random.randint(6, 18)
-                new_node_angle_from_x_axis = math.radians(random.randint(0, 359))
-                new_node_location = [
-                    hub.get("location")[0] + new_node_distance_from_hub * math.cos(new_node_angle_from_x_axis),
-                    hub.get("location")[1] + new_node_distance_from_hub * math.sin(new_node_angle_from_x_axis),
-                    hub.get("location")[2],
-                ]
-    
-            available_network = bundle_network_utils.new_node(
-                available_network,
-                new_id=missing_node,
-                new_location=new_node_location,
-            )
-    
-            # Connect back to the hub so the new node is not floating.
-            if existing_nodes:
-                available_network.setdefault("segments", []).append({
-                    "segment_id": f"{missing_node}_leg",
-                    "location_at_end_a": list(hub.get("location") or [0, 0, 0]),
-                    "location_at_end_b": new_node_location,
-                    "spline_control_points": [],
-                })
+        available_network = bundle_network_utils.connect_required_nodes(
+            available_network, needed_nodes
+        )
     else:
+        missing_nodes = chosen_network.ensure_nodes_exist(
+            input_network=available_network,
+            set_of_required_nodes=needed_nodes,
+        )
         if len(missing_nodes) > 0:
             raise ValueError(f"Missing node(s) {missing_nodes}")
     

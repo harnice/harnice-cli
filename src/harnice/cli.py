@@ -109,6 +109,12 @@ def main():
         fileio_mod.verify_revision_structure()
         return
 
+    if len(sys.argv) >= 2 and sys.argv[1] == "--check-drawing":
+        from harnice.project_types import part
+
+        part.check_drawings(sys.argv[2:])
+        return
+
     if len(sys.argv) >= 2 and sys.argv[1] == "--gui-server":
         _run_console_server_only()
         return

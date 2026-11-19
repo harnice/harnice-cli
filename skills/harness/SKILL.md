@@ -295,17 +295,17 @@ end that sits on the old node location, and moves a stored control
 triple only when that triple itself sits on the old location.
 
 `new_node` appends a node and does not add a segment. A segment the
-script appends is the four fields above. The stock sprout uses
-`segment_id` `{missing_node}_leg`.
+script appends is the four fields above.
 
-`load()` writes a starter file when `available.json` is missing. Zero
-node instances raises. One node is parked at the origin and a partner
-named `far` (or `far-2`) is added at `(-4, 0, 0)` with one segment.
-Two nodes sit at the origin and at `(x, 0, 0)` with `x` random in
-`[6, 18]`. Three or more get a `hub` at the origin and a spoke per
-node, length 6 to 18, at a random angle. The stock sprout for a node
-the file does not already contain is the same 6-to-18 leg off the
-first existing node, or the origin when the file has no nodes.
+`load()` returns an empty network when `available.json` is missing and
+writes nothing. The build never writes `available.json`. Generated
+geometry comes from `bundle_network_utils.connect_required_nodes`, in
+memory, so it shows up only in the chosen network. Its anchor is the
+first node joined by segments to a required node, else `hub`, else a new `far` 4 inches in
+-X of the only required node, or a new `hub` at the origin. A missing
+required node gets a `{node_id}_leg` spoke off the anchor, length 6 to
+18 at a random angle in XY. A required node with no segment keeps its
+location and gets a straight `{node_id}_leg` to the anchor.
 
 ### Flattened network
 
@@ -486,18 +486,29 @@ returned network back to `bundle_network`.
 
 The stock script does this:
 
-1. `available_network.load()`.
+1. `available_network.load()` reads the drawn network. Then a loop over
+   `physical_assembly.list_mating_connectors(rev_history.info())` adds a node
+   at each mating connector in the source system's physical model, read
+   fresh on every build, in memory only. A node of the same name is
+   removed first with `bundle_network_utils.delete_node`. Skip one in the
+   loop to leave it out.
+   A second loop over `physical_assembly.list_segments(rev_history.info())`
+   adds the segments routed in the source system the same way, removing
+   a segment of the same name first with
+   `bundle_network_utils.delete_segment`.
 2. `chosen_network.end_all_segments_in_nodes` gives a free end a node.
+   Then `bundle_network_utils.adopt_mating_connector_nodes` renames the
+   node at each harness connector's device mating connector, named
+   `<device_side_refdes>.<device_side_connector_id>`, to
+   `<connector_group>.node`, and turns it 180° about its Z axis to face
+   the device. When `<connector_group>.node` is already a different
+   node, the mating connector wins: segment ends on the old node move to
+   it, the old node is dropped, and the script warns.
 3. Collect `instance_name` for every instance with `item_type` `"node"`.
-   `chosen_network.ensure_nodes_exist` returns the names the available
-   network does not contain.
-4. The stock script sprouts each missing node. An empty network parks
-   it at the origin. Otherwise it is a straight segment, 6 to 18 units
-   long, at a random angle, off the first existing node.
-   `bundle_network_utils.new_node` appends the node and does not add
-   the segment. The script appends `{segment_id, location_at_end_a,
-   location_at_end_b, spline_control_points: []}`. Ask before you
-   replace that sprout with a raise.
+4. `bundle_network_utils.connect_required_nodes` gives each missing
+   required node a spoke and each required node with no segment a leg,
+   in memory only (see above). The `else` branch raises on missing
+   nodes instead. Ask before you switch to it.
 5. `chosen_network.calculate_possible_sub_networks` finds routes that
    touch every required node. When more than one route comes back and
    I named a stable id, `chosen_network.find_network_with` keeps the

@@ -280,7 +280,8 @@ def map_cables_and_conductors_to_segments():
 
     Conductors are mapped from `node_at_end_a` to `node_at_end_b`. A conductor
     whose ends resolve to the same connector node is a loopback and is mapped
-    out and back along that connector's free stub. Cables have no
+    out and back on the shortest segment from that connector to a free
+    (non-connector) node, so that segment counts twice. Cables have no
     ends of their own: each cable is mapped onto the segments shared by every
     conductor assigned to it (the jacketed run before conductors break out to
     different nodes). Those shared-path ends are written onto the cable as
@@ -291,8 +292,9 @@ def map_cables_and_conductors_to_segments():
     **Raises:**
     - `ValueError`: If a conductor cannot be mapped. Each end must name a
         node, or a cavity whose connector group has one node. Both ends
-        resolving to the same node travel out and back on that connector's
-        free stub. No path between the ends raises.
+        resolving to the same node travel out and back on one free segment
+        (a connector with none is left unmapped). No path between the ends
+        raises.
     """
     for instance in instances_list.read():
         if instance.get("item_type") == "conductor":

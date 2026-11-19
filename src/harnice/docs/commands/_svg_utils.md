@@ -442,8 +442,8 @@
             connector take separate lanes. With the set omitted, only
             ``wirejunction-`` nodes are free ends.
             A trace whose ends are the same node is drawn out one segment to the
-            nearest free end — fewest hops from that connector, then the closest
-            node — and back on the next lane (a short local U when that connector
+            nearest free end — the adjacent free node on the shortest segment
+            (model ``length``, else 2D distance) — and back on the next lane (a short local U when that connector
             has no stub). Both contacts are kept: the node entry is the outbound
             contact, and ``__self_hop__`` holds ``start`` (from-channel) and
             ``end`` (to-channel).

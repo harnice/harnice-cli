@@ -1,8 +1,6 @@
 from __future__ import annotations
 import json
-import math
 import os
-import random
 import shutil
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -54,150 +52,18 @@ def load():
 
     Load the available network from disk.
 
-    If the file does not exist yet, generates a starter network from harness node
-    instances, writes it, and returns it:
-
-    - **0 node instances:** raises ``ValueError``.
-    - **1:** places that node at ``(0, 0, 0)`` and adds a node instance named
-      ``far`` (``far-2`` if that name is taken) four inches in −X, at
-      ``(-4, 0, 0)``, connected by one segment.
-    - **2:** places them at ``(0, 0, 0)`` and ``(x, 0, 0)`` with ``x`` a random
-      integer in ``[6, 18]``, connected by one segment.
-    - **3 or more:** places a hub at ``(0, 0, 0)`` and each instance node at
-      ``(r cos θ, r sin θ, 0)`` with ``r`` in ``[6, 18]`` and ``θ`` in ``[0, 359]``
-      degrees, each connected to the hub by a spoke segment.
+    If the file does not exist yet, returns an empty network
+    (``{"segments": [], "nodes": []}``) and writes nothing. The default
+    harness build then adds the nodes the chosen network needs with
+    ``bundle_network_utils.connect_required_nodes``, in memory only, so the
+    available network keeps only what was drawn, imported, or synced.
     """
     path = Path(fileio.path("available network"))
     if not path.exists():
-        return _generate_from_instances(path)
+        return {"segments": [], "nodes": []}
     with open(path) as f:
         return json.load(f)
 
-
-def _generate_from_instances(path: Path):
-    node_instances = [
-        instance
-        for instance in instances_list.read()
-        if instance.get("item_type") == "node"
-    ]
-    node_names = [instance.get("instance_name") for instance in node_instances]
-
-    if len(node_names) < 1:
-        raise ValueError(
-            "Not enough node instances in the harness to generate an available "
-            "network (found 0; need at least 1)."
-        )
-
-    nodes = []
-    segments = []
-
-    if len(node_names) == 1:
-        # One real node cannot form a segment. Add a partner four inches
-        # in −X from it so the starter network has a length.
-        loc_a = [0.0, 0.0, 0.0]
-        loc_b = [-4.0, 0.0, 0.0]
-        existing = node_instances[0]
-        partner_id = "far" if node_names[0] != "far" else "far-2"
-        instances_list.new_instance(
-            partner_id,
-            {
-                "harness": existing.get("harness") or "",
-                "item_type": "node",
-                "location_type": "node",
-                "print_name": partner_id,
-            },
-            ignore_duplicates=True,
-        )
-        nodes = [
-            {
-                "node_id": node_names[0],
-                "location": loc_a,
-                "alpha": None,
-                "beta": None,
-                "gamma": None,
-            },
-            {
-                "node_id": partner_id,
-                "location": loc_b,
-                "alpha": None,
-                "beta": None,
-                "gamma": None,
-            },
-        ]
-        segments = [
-            {
-                "segment_id": "segment",
-                "location_at_end_a": loc_a,
-                "location_at_end_b": loc_b,
-                "spline_control_points": [],
-            }
-        ]
-    elif len(node_names) == 2:
-        x = float(random.randint(6, 18))
-        loc_a = [0.0, 0.0, 0.0]
-        loc_b = [x, 0.0, 0.0]
-        nodes = [
-            {
-                "node_id": node_names[0],
-                "location": loc_a,
-                "alpha": None,
-                "beta": None,
-                "gamma": None,
-            },
-            {
-                "node_id": node_names[1],
-                "location": loc_b,
-                "alpha": None,
-                "beta": None,
-                "gamma": None,
-            },
-        ]
-        segments = [
-            {
-                "segment_id": "segment",
-                "location_at_end_a": loc_a,
-                "location_at_end_b": loc_b,
-                "spline_control_points": [],
-            }
-        ]
-    else:
-        hub_loc = [0.0, 0.0, 0.0]
-        nodes.append(
-            {
-                "node_id": "hub",
-                "location": hub_loc,
-                "alpha": None,
-                "beta": None,
-                "gamma": None,
-            }
-        )
-        for name in node_names:
-            r = random.randint(6, 18)
-            theta = math.radians(random.randint(0, 359))
-            loc = [r * math.cos(theta), r * math.sin(theta), 0.0]
-            nodes.append(
-                {
-                    "node_id": name,
-                    "location": loc,
-                    "alpha": None,
-                    "beta": None,
-                    "gamma": None,
-                }
-            )
-            segments.append(
-                {
-                    "segment_id": f"{name}_leg",
-                    "location_at_end_a": list(hub_loc),
-                    "location_at_end_b": loc,
-                    "spline_control_points": [],
-                }
-            )
-
-    network = {"segments": segments, "nodes": nodes}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(network, f, indent=4)
-    return network
 
 
 def source_context_from_path(local_path=None, lib_repo=None, relative_path=None):

@@ -127,21 +127,16 @@ those rows. It does not invent a 17-pin D-sub because the math would allow it.
 M27500 is the extreme case: the full spec space is huge, so PERMUTATIONS is a
 curated subset, then is_legal_configuration() still filters against Table II.
 
-### 2. Parse, format, choose
+### 2. One chooser function
 
-Connectors that a harness will pick at build time expose a small API:
+A harness picks a part at build time by calling the family's chooser:
 
-- parse_* — accept spaces, dashes, slashes, aliases (MS38999 -> D38999, male -> P)
-- make_part_number / _format_pn — emit the library PN (filesystem-safe:
-  D38999_26FG16SN, M24308_2-3T, OST-RS-M)
-- return_divider — same fields, official punctuation when someone wants
-  D38999/26FG16SN
 - choose_part(...) — "I know the application, give me an MPN that exists"
-- find_mating_connector(...) — flip gender / shell style, keep insert, finish,
-  key. Overrides for the exceptions.
-- find_backshell(...) / accessory helpers — when the family has a paired
-  accessory series
-- compatible_mates(...) — when mating is not 1:1 (NEMA T-slot 15 A into 20 A)
+- find_mating_connector(...) — only when the family has a catalog mate
+- find_backshell(...) — only when the family has a paired accessory series
+- compatible_mates(...) — only when mating is not 1:1 (NEMA T-slot 15 A into 20 A)
+
+Library PNs are filesystem-safe: D38999_26FG16SN, M24308_2-3T, OST-RS-M.
 
 If a family has no chooser, harness rules fall back to a handwritten lookup
 table. That is the Neutrik gap.
@@ -162,8 +157,8 @@ for one, is a body in `build.py` (`skills/cad/SKILL.md`).
 
 Circular parts revolve (x, radius) stations about +X. Rectangular parts extrude
 YZ polygons along +X. The SVG silhouette and the STEP solid come from that
-same envelope, and they share a cable-side origin (x=0 at the rear /
-cable-entry face, +X toward the mate). If they disagree, the family is wrong.
+same envelope, in the frame of the drawing contract (phase 4). If they
+disagree, the family is wrong.
 
 Iconic extras (Neutrik latch tongue, D38999 key, NEMA blades) are features on
 the envelope, not a second model.
@@ -217,16 +212,17 @@ It does not grow --step-only or --svg-only.
 ## What is still messy (do not repeat)
 
 - Chooser and generator are not always split. Neutrik is one file. Always split.
+- Older families keep catalog tables in the chooser and again in the
+  generator, and grow parse_*, list_*, and return_divider helpers that no
+  harness calls. Do not. One source of truth (phase 1), one chooser
+  function (phase 2).
 - Harness imports are sys.path.append. There is no installable package layout
   yet. Do not invent a different import story until Harnice grows one.
 - SVG primitives, ray-cast flagnotes, and the step_utils loader are copy-pasted
   into every generator.
-- Older families picked a unique origin. Do not. Origin is always the cable
-  side: x=0 at the rear / cable-entry face (or slightly inboard so accessory
-  threads or knurl overlap −X), +X toward the mating or connector face.
-  Drawing and STEP share that origin. Mating-face cups do not move it.
-  Neutrik still balloons in Cartesian space about the mating face — that is
-  a leftover, not a second origin. Name the origin in a comment.
+- Older families picked a unique origin. Do not. The origin is the drawing
+  contract in phase 4. Neutrik still balloons in Cartesian space about the
+  mating face — that is a leftover, not a second origin.
 - csys_children polar vs Cartesian. part.py currently ADDS x/y to
   angle/distance. Emit one or the other, never both.
 - Some families write a catalog CSV, some do not. Always write one.
@@ -240,20 +236,17 @@ It does not grow --step-only or --svg-only.
    revision-history row, progress bar, `harnice -b` per SKU,
    cache_run_constant_lookups). Until that exists, keep the generator boring
    and local.
-2. Two files, always. {family}.py is the chooser. {family}_generator.py is the
-   emitter. Harness build instructions import only the chooser. A device
-   chooser is what Place device's MPN comes from. Do not import the generator
-   from a harness or a system.
+2. Three files, always. {family}.py is the chooser. {family}_generator.py is
+   the emitter. {family}.csv is the catalog. Harness build instructions
+   import only the chooser. A device chooser is what Place device's MPN
+   comes from. Do not import the generator from a harness or a system.
 3. Import without path hacks (future). Today: sys.path.append to the family dir.
 4. Chooser is mandatory for any family a harness rule or a system placement
    would select. choose_part, and find_mating_connector when the family has a
    mate. Raise on illegal SKUs. Accept human aliases.
-5. Cable-side origin, always, for parts and cables. x=0 at the rear /
-   cable-entry face (knurl end, accessory thread, insulator rear). +X toward
-   the mating or connector face. Cable, knurl, and accessory threads overlap
-   −X. Drawing and STEP share this origin. Pin / mating cups stay at the
-   mating face — they do not move the part origin. Document it in a comment.
-   Emit 3d-mate on connectors; emit 3d-connector and connector on accessories.
+5. Cable-side origin, always, for parts and cables: the drawing contract in
+   phase 4. Emit 3d-mate on connectors; emit 3d-connector and connector on
+   accessories.
    Emit flagnote-N and flagnote-N-leader_dest from the silhouette. A device
    family skips this goal.
 6. Exclusive csys coordinates, for parts and cables. Polar OR Cartesian, not
@@ -268,20 +261,22 @@ It does not grow --step-only or --svg-only.
 8. Only commercially real SKUs. Curate the permutation space. Filter again.
    Prefer "this McMaster / Omega / Neutrik number exists" over a theoretically
    complete matrix.
-9. Family catalog CSV at the family root, same columns the chooser understands.
+9. Family catalog CSV at the family root. It is the only file the chooser reads.
 10. Agent-first authoring. This prompt plus a datasheet should be enough to
     generate a family that a human can review.
 
 
-## OUTPUT FILES (exactly two, plus generated SKUs)
+## OUTPUT FILES (three, plus generated SKUs)
 
 In the family directory of the target library repo:
 
-    {family}.py                 # CHOOSER — no file I/O, importable by harness scripts
-    {family}_generator.py       # EMITTER — run to write SKUs
+    {family}.py                 # CHOOSER — outward-facing. Harness and system scripts import it. Reads only {family}.csv
+    {family}_generator.py       # GENERATOR — library maintenance only. Run by hand to write SKUs. Nothing imports it
+    {family}.csv                # CATALOG — one row per SKU, with a library_pn column
 
-Do not merge them. Do not put harness-time logic in the generator.
-Do not import the generator from a harness.
+Do not merge the chooser and the generator. Do not put harness-time logic
+in the generator. Do not import the generator from a harness, a system, or
+the chooser. The generator may import the chooser's constants.
 
 Each SKU folder for a part or cable:
 
@@ -305,8 +300,8 @@ Each SKU folder for a device:
         symbol.svg                              # the device build writes this; you do not
         body.step                               # only when I asked for a body; build.py writes it via cad
 
-Filesystem-safe PNs: replace / with _. Official punctuation is a
-return_divider option on the chooser, not the folder name.
+Filesystem-safe PNs: replace / with _. When a harness needs the official
+punctuation, it is an `official_pn` column in the CSV, not the folder name.
 
 Constants:
 
@@ -333,15 +328,18 @@ Chooser is imported today via:
    termination (crimp, solder, pigtail, screw), accessory options
    (entry size, orientation, detent). For a device: connector count, insert,
    range, or any other hardware the catalog sells as a different part number.
-3. Write tables of only commercially sold values. If the spec matrix is huge,
-   curate a default PERMUTATIONS subset AND keep a legality filter.
-4. Cite the source in a comment on each table. A file inside a library folder is `(url)/path/file`. A page on the web stays a URL. If a dimension is scaled
-   from a drawing rather than tabulated, write estimate: in the comment.
-5. Implement:
+3. Write tables of only commercially sold values, in the one source of
+   truth below. If the spec matrix is huge, curate a default PERMUTATIONS
+   subset AND keep a legality filter.
+4. Cite the source on each table: a comment in the generator, or a
+   `source` column in the CSV. A file inside a library folder is
+   `(url)/path/file`. A page on the web stays a URL. If a dimension is
+   scaled from a drawing rather than tabulated, say estimate: in that
+   comment, or name the column in that row's `notes` column.
+5. In the generator, implement:
 
     iter_part_configurations() -> yields one dict per legal SKU
-    make_part_number(cfg) -> filesystem-safe PN
-    official_pin(cfg) -> optional official spelling
+    make_part_number(cfg) -> filesystem-safe PN (only when the generator is the source)
     description_from_cfg(cfg) -> ALL CAPS catalog sentence
 
 Example iterator:
@@ -361,31 +359,88 @@ number. If every row would be the same hardware, stop and follow
 Stop and list the configuration count + a few sample PNs before drawing,
 and before writing any device `build.py`.
 
+### One source of truth
+
+Every legal SKU, its fields, its part number, and every datasheet number
+the family uses live in exactly one file. Pick one, and name it in a
+comment at the top of the chooser and the generator:
+
+- `{family}.csv`, when the catalog is a list of rows you could type: eight
+  ferrule sizes, a dozen NEMA configurations. You write the CSV by hand,
+  `library_pn` column included. The generator reads it.
+- `{family}_generator.py`, when the catalog is a product of axes with a
+  legality filter: D38999, M27500. The tables live in the generator. The
+  generator writes `{family}.csv`, `library_pn` column included.
+
+Either way, the chooser reads `{family}.csv` and nothing else. Never copy a
+table, a dimension, or a part-number format into a second file. A catalog
+change is one edit, then a rerun of the generator.
+
+### Ask me before drawing
+
+Ask me in that same message when any of these is not plain from what I
+gave you. Ask them all at once. Do not pick an answer yourself, and do not
+draw until I answer. An answer I give covers every SKU it applies to.
+
+- Where x = 0 is, when the part has no obvious cable-entry face and I did
+  not mark or name one.
+- Which end is the mating end, and whether the part gets a `3d-mate` at all.
+- Whether the part gets `contacts`, when it is not a connector with
+  cavities.
+- A dimension the drawing needs that the datasheet does not give, such as
+  a diameter. Do not measure it off a picture or a scanned drawing unless I
+  say to. When I do, mark it `# estimate` and say which sizes came out out
+  of order.
+- The manufacturer, when the datasheet does not name one.
+- Anything else where you would have to guess about the part itself.
+
+A blatantly plain answer is not a question. Write it in a comment.
+An online chatbot asks the same questions and waits.
+
 
 ## PHASE 2 — CHOOSER (`{family}.py`)
 
-Small module. re + dicts. No disk, no Harnice project build.
+The chooser is the one file in the family that anything outside the
+library imports. Harness and system build scripts call it. Write it for
+them: short, plain, and obviously about one function.
 
-Required as applicable:
+    """{Family} chooser. Harness and system build scripts import this file.
 
-    parse_*(part_number) -> dict of fields
-    choose_part(...) -> library PN from application (pins, voltage, type, ...)
-    find_mating_connector(part_number, **overrides) -> mate PN
-    find_backshell(...) / accessory helper if a paired family exists
-    compatible_mates(part_number) if mating is not 1:1
-    list_*() for docs and tests
+    Call choose_part(...) to get a library part number that exists.
+    {family}_generator.py is for rewriting the library only. Never import it.
+
+    <one harness-build snippet: instances_list.modify with lib_repo + lib_subpath>
+    """
+    import csv
+    import os
+
+    LIBRARY_REPO = "https://github.com/<org>/<repo>"
+    LIBRARY_SUBPATH = "<dir between library root and this family>"
+
+
+    def choose_part(...):
+        ...
 
 Rules:
-- Accept aliases: spaces, dash vs underscore vs slash, male/plug/P,
-  MS vs MIL-DTL prefixes.
-- Default to the library PN (_ instead of /, OST-RS-M instead of OST-R/S-M).
-- return_divider switches punctuation for official PINs that are illegal as
-  folder names.
+- `choose_part(...)` is the main function. It comes first, right after the
+  constants. It takes what a harness author knows (gauge, pins, gender,
+  finish) and returns a `library_pn` from `{family}.csv`.
+- It reads `{family}.csv` from its own folder, keeps the rows that match,
+  and returns one `library_pn`. It never builds a part number from fields
+  and never holds its own copy of the catalog.
+- Inline everything. Alias cleanup (spaces, dash vs underscore vs slash,
+  `#18`, `18AWG`, male/plug/P, MS vs MIL-DTL), the CSV read, and the
+  legality check go inside `choose_part`. A helper stays only when two
+  public functions call it.
+- Raise ValueError naming the legal values when no row matches. Never
+  silently coerce.
+- No other public function, unless the family has a catalog mate
+  (`find_mating_connector(part_number, **overrides)`), a paired accessory
+  (`find_backshell(...)`), or mating that is not 1:1
+  (`compatible_mates(part_number)`). Each one is a row lookup in the same
+  CSV. No parse_*, list_*, official_pin, or make_part_number here.
 - Default mate: reverse gender, keep insert/finish/key, apply the family's
   shell-style map (26 -> 24). Every default must be overridable.
-- Raise ValueError naming the legal set. Never silently coerce.
-- Module docstring: one harness-build snippet showing instances_list.modify
-  with lib_repo + lib_subpath.
 
 How a harness uses it:
 
@@ -517,31 +572,88 @@ Do not write `signals.tsv`, `symbol.svg`, or `body.step` in this phase.
 
 A device family skips phases 4 and 5 and goes to phase 6.
 
-Origin is always the cable side. Name it in a comment: which rear face is
-x=0, +X toward the mating / connector face, what overlaps −X.
+### Drawing contract
 
-Recipe:
-1. Put x=0 on the cable-side face (rear accessory, knurl end, or
-   cable-entry insulator). A small inboard offset is fine so threads or
-   knurl overlap −X. Drawing and STEP use this same origin. Mating-face
-   cups stay at the face — they do not move x=0.
-2. Build the envelope as stations (round) or prisms (rectangular).
+Every part drawing and STEP uses this one frame. A harness places the part
+by its origin and points it along +X. A drawing that breaks the frame puts
+the part in the wrong place, or backwards, on every harness that uses it.
+
+    part frame (mm or in, +Y up)                SVG frame (px, +Y down)
+                     +Y                         x_svg =  96 * x_in
+                      ^                         y_svg = -96 * y_in
+       cable ===[=====|============]> mating face
+                ^     O------> +X               O is (0, 0) in both frames
+                |     origin: cable-entry face, on the axis
+                anything may extend into -X
+
+- x = 0 is where I mark or say it is. When I have not, it is the
+  cable-entry face: the rear accessory face, the knurl end, or the
+  cable-entry insulator. Most of a part is in +X, but threads, knurl,
+  or anything else may extend into -X by any amount. Pin and mating cups
+  stay at the mating face. They do not move x = 0.
+- +X points from the cable toward the mating face. The mating face is the
+  largest x in the drawing. A connector's `3d-mate` x is that same number.
+  A terminal's `3d-mate` is where its stud goes.
+- The axis is y = 0. A round part is symmetric about it. A latch or a tab
+  may stand off one side. The top edge of a body of radius r is SVG y = -r.
+- Side view only. The mating face is not drawn face-on.
+- No `transform` anywhere inside the `{pn}-drawing-contents` group. No
+  translate, rotate, scale, or matrix. Do not center the part on the
+  400x400 canvas. Negative coordinates are expected. Harnice reads the
+  group, not the canvas.
+- Shapes are rect, circle, ellipse, line, polyline, polygon, path, and
+  text. Knurl is lines you clip to the body in Python, not a `<pattern>` or
+  a clip path. Stroke the outer outline last.
+- Fill colors come from a palette dict keyed by role (body, knurl,
+  insulator, rim, seal). Only the finish table holds hex values.
+- The SVG is 400x400 with xmlns and the groups
+  `{pn}-drawing-contents-start` and `{pn}-drawing-contents-end`. The part
+  build draws `csys_children` on top. Do not draw them yourself.
+
+### Reference pictures
+
+I may give you a screenshot, a photo, or a vendor drawing of what the
+family should look like. It shows the look, not the numbers.
+
+- Take from it which features to draw, the colors, and how much detail.
+- Take every dimension from the datasheet. A dimension the datasheet does
+  not give is a question for me (Ask me before drawing, phase 1).
+- Never copy pixel positions from the picture into the drawing.
+- Turn the reference into the drawing frame before you draw. Many vendor
+  drawings put the mating face on the left or draw it face-on. Say in one
+  line how the reference is oriented and how you turned it: "Reference has
+  the mating face on the left; mirrored so the cable is at x = 0."
+- A reference that only shows the mating face, face-on, tells you colors and
+  features. The side view still comes from the datasheet.
+- When I mark the origin on a reference, or say where it is, that is x = 0.
+  It wins over the cable-entry face. Do not ask.
+
+Write the origin in one comment before any geometry: "Cable enters at
+x = 0 on the left. Mating face at x = L on the right. Key at +Y." Then:
+
+1. Name the stations. One block of x positions along the axis, before any
+   shape, each with its datasheet letter or `# estimate`:
+
+       x_rear   = 0.0                          # origin: cable-entry face
+       x_flange = cable_side_mm(v)             # datasheet K
+       x_mate   = x_flange + FLANGE_MM + shroud_mm(v)  # datasheet G
+       assert x_rear <= x_flange < x_mate
+
+   Every shape, every csys child, and the STEP read these names. `3d-mate`
+   x is `x_mate`. Do not work out the same position a second way.
+2. Build the envelope as stations (round) or prisms (rectangular), from
+   those names.
 3. Add the one or two features a human uses to recognize the part
    (latch, blades, key).
-4. Derive the SVG silhouette from that envelope.
+4. Derive the SVG silhouette from that envelope. Convert to pixels and flip
+   Y in one place in the generator, for example `px(mm)` and a function
+   that turns a part-frame box `(x0, x1, y0, y1)` into a `<rect>`. No shape
+   does its own conversion or its own minus sign.
 5. Derive the STEP from that envelope.
 6. Derive flagnote leaders from that silhouette.
 
 Round parts: list of (x_mm, radius_mm) stations, revolve about +X.
 Rect parts: list of (x0_mm, x1_mm, yz_polygon_mm), extrude along +X.
-
-SVG:
-- 400x400, xmlns, groups {pn}-drawing-contents-start / -end
-- 96 px = 1 inch; store +Y up; emit SVG y as -y
-- silhouette from the same envelope; knurl = clipped <line>s, not <pattern>
-- stroke outer outline last
-- you may overlay csys markers for debug; the part build will also draw
-  csys_children
 
 STEP via harnice.utils.step_utils:
 
@@ -582,7 +694,9 @@ Do not move the part origin to the mating face just to place balloons:
 Required 2D children:
     flagnote-1 .. flagnote-13 at 0, ±15, ±30, ±45, ±60, ±75, ±90
     flagnote-N-leader_dest on the silhouette (ray from an interior anchor;
-    take the farthest intersection)
+    take the farthest intersection). A ray between two blades or pins
+    can end in the air. `harnice --check-drawing` fails a leader that is
+    more than 0.05 in off the outline. Move that leader onto the body.
     leader_center when rays are not about the part origin
 
 When the family mates to a connector, accessory, or cable:
@@ -595,6 +709,11 @@ When the family mates to a connector, accessory, or cable:
 
 
 ## PHASE 6 — EMIT LOOP (`{family}_generator.py`)
+
+The generator is for library maintenance only. Start it with a docstring
+that says so: "Rewrites this family's SKUs. Run by hand when the catalog
+changes. Harness and system scripts never import this file; they import
+{family}.py."
 
 Parts and cables:
 
@@ -641,6 +760,55 @@ on a nonzero exit. A traceback is the review. Fix the SKU and rebuild.
 If `harnice` is not on PATH:
 
     python3 /path/to/harnice-cli/src/harnice/__main__.py -b
+
+### Check every drawing (parts)
+
+After the SKUs build, run this from the family folder on every SKU the
+generator wrote:
+
+    harnice --check-drawing */rev{REVISION}
+
+Each argument is a part number folder, a revision folder, or a
+`drawing.svg`. If `harnice` is not on PATH, run
+`python3 /path/to/harnice-cli/src/harnice/__main__.py --check-drawing`
+with the same arguments.
+
+It fails a drawing that breaks the drawing contract in phase 4: a
+transform in the group, an origin that is not on the part along X, the
+axis off y = 0, a shape with zero or negative size, a
+color an SVG reader cannot use, `3d-mate` off the part, a flagnote leader off the
+outline, a balloon on the part, or polar and Cartesian on one csys child.
+It exits 1 when any drawing fails. A failure is a fix in the generator and
+a regenerate, the same as a failed `harnice -b`. Do not edit a
+`drawing.svg` by hand.
+
+Pass `--length` and `--height` (`1.28in` or `32.5mm`) on a SKU whose
+datasheet gives overall length and max diameter. A wrong unit shows up
+there.
+
+Then look. Run it again on three SKUs: the smallest, one in the middle,
+and the largest. A parameter that is fine at one size breaks at another:
+
+    harnice --check-drawing {smallest PN} {middle PN} {largest PN}
+
+It prints the path of one PNG. Open that image. Say, for each part, in one
+line each:
+
+- The ORIGIN cross is on the cable-entry face, or where I told you x = 0 is.
+- It runs along the +X arrow to the mating face.
+- The `3d-mate` dot sits on the mating face, or where the stud goes on a
+  terminal.
+- The gray leader lines end on the outline. The balloons sit clear of it.
+- Nothing sticks out of the body or overlaps where it should not at that
+  size.
+- When I gave a reference picture: it shows the same features and colors,
+  turned into the drawing frame.
+
+Fix what you see, regenerate, and look again. The image shows at most 12
+drawings, failed ones first.
+
+An online chatbot cannot run the check. It tells me to run both commands
+and paste back what they print. It does not claim the check passed.
 
 Cache fileio.harnice_version and fileio.drawnby once per run.
 part_family_append otherwise shells out to git on every SKU.
@@ -717,8 +885,9 @@ device SKU, the build prints `Wrote N signal rows.` N matches the count in
 that `build.py` comment, and N is greater than 0. A mismatch is a fix of
 that file and a rebuild of that SKU.
 
-An online chatbot writes the two Python files and tells me to run the
-generator. It does not claim a build exited 0.
+An online chatbot writes the chooser, the generator, and the CSV when the
+CSV is the source, and tells me to run the generator. It does not claim a
+build exited 0.
 
 Driver flags for a device family: `--no-build`, plus a filter when the
 catalog is large. No `--step-only`. No `--svg-only`.
@@ -730,6 +899,7 @@ catalog is large. No `--step-only`. No `--svg-only`.
 - Chooser PNs must be a subset of generator PNs.
 - Parts and cables: SVG and STEP from the same envelope, same cable-side origin.
 - Parts and cables: origin is always the cable side. Mating-face cups do not move it.
+- Parts: no transform in the drawing group. `harnice --check-drawing` passes on every SKU.
 - A device family does not write drawing.svg, model.step, signals.tsv, symbol.svg, or body.step by hand.
 - A catalog axis is a part number. A setup that keeps the hardware is config.yaml on that one device.
 - Always build each emitted SKU with `harnice -b` from that revision folder.
@@ -741,18 +911,23 @@ catalog is large. No `--step-only`. No `--svg-only`.
   can reach the internet. Use rev_history.part_family_append, state,
   fileio, step_utils, project_types.part / project_types.cable /
   project_types.device as they exist.
-- Keep the chooser free of drawing code and free of signals-list appends.
+- Keep the chooser free of drawing code, signals-list appends, and its own
+  copy of the catalog.
+- One source of truth: every table, dimension, and part-number format lives
+  in `{family}.csv` or in `{family}_generator.py`, never both.
 - Description voice: ALL CAPS, "CONNECTOR, ..." / "CABLE, ..." / "DEVICE, ..."
 
 
 ## DONE CRITERIA
 
-- [ ] Chooser parses official and library PNs, rejects illegal ones
+- [ ] The chooser's first function is choose_part. It reads only {family}.csv, rejects illegal input with the legal values, and has no other public function unless the family has a mate or an accessory
+- [ ] Every table, dimension, and part-number format lives in one file: {family}.csv or {family}_generator.py
 - [ ] choose_part returns PNs that the generator emits. find_mating_connector does too, when this family has one
 - [ ] Every part folder has revision history, attributes, drawing, and model
 - [ ] Every cable folder has revision history, attributes, and a conductor list
 - [ ] Every device folder has revision history, attributes, and build.py. The build wrote signals.tsv and symbol.svg. config.yaml is present only when that SKU has setup. body.step is present only when I asked for a body
 - [ ] Parts and cables: SVG and STEP share an envelope and a cable-side origin
+- [ ] Parts: `harnice --check-drawing */rev{REVISION}` exited 0, and you opened the image for the smallest, middle, and largest SKU and said what you saw
 - [ ] contacts or cable identifiers match the spec names. A device's connector_id and cavity names match the pinout
 - [ ] lib_repo + lib_subpath on the revision row match the library
 - [ ] A part or cable chooser docstring shows instances_list.modify. A device chooser docstring shows MPN, lib_repo, lib_subpath, and rev for Place device
@@ -763,7 +938,7 @@ catalog is large. No `--step-only`. No `--svg-only`.
 
 Reply with:
 1. Configuration count and 5 example library PNs
-2. Parts and cables: origin convention (one sentence: cable side, +X toward mate). Devices: the signal-row count for each of those five PNs
-3. Paths of the two Python files, as `(url)/path/file` when they sit in a library folder
+2. Parts and cables: origin convention (one sentence: cable side, +X toward mate). Parts: the `--check-drawing` result and your one line per SKU from the image. Devices: the signal-row count for each of those five PNs
+3. Paths of the chooser, the generator, and the catalog CSV, as `(url)/path/file` when they sit in a library folder, and which one is the source of truth
 4. How a harness script should import and call the chooser, or, for a device, the Place device fields
 5. Parts and cables: any dimension that is an estimate rather than a callout. Devices: whether a body was written, and any pinout assumption you recorded in a comment

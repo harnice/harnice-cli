@@ -10,18 +10,11 @@ The 3D page writes ``networks/available.json``. Build loads that file. A node is
     
     Load the available network from disk.
     
-    If the file does not exist yet, generates a starter network from harness node
-    instances, writes it, and returns it:
-    
-    - **0 node instances:** raises ``ValueError``.
-    - **1:** places that node at ``(0, 0, 0)`` and adds a node instance named
-      ``far`` (``far-2`` if that name is taken) four inches in −X, at
-      ``(-4, 0, 0)``, connected by one segment.
-    - **2:** places them at ``(0, 0, 0)`` and ``(x, 0, 0)`` with ``x`` a random
-      integer in ``[6, 18]``, connected by one segment.
-    - **3 or more:** places a hub at ``(0, 0, 0)`` and each instance node at
-      ``(r cos θ, r sin θ, 0)`` with ``r`` in ``[6, 18]`` and ``θ`` in ``[0, 359]``
-      degrees, each connected to the hub by a spoke segment.
+    If the file does not exist yet, returns an empty network
+    (``{"segments": [], "nodes": []}``) and writes nothing. The default
+    harness build then adds the nodes the chosen network needs with
+    ``bundle_network_utils.connect_required_nodes``, in memory only, so the
+    available network keeps only what was drawn, imported, or synced.
 
 ??? info "`available_network.source_context_from_path(local_path=None, lib_repo=None, relative_path=None)`"
 

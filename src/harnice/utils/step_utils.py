@@ -1483,7 +1483,7 @@ def _ocp_solid_from_triangles(triangles):
         BRepBuilderAPI_Sewing,
     )
     from OCP.gp import gp_Pnt
-    from OCP.TopAbs import TopAbs_SHELL, TopAbs_SOLID
+    from OCP.TopAbs import TopAbs_COMPOUND, TopAbs_SHELL, TopAbs_SOLID
     from OCP.TopoDS import TopoDS
 
     sewing = BRepBuilderAPI_Sewing()
@@ -1505,6 +1505,28 @@ def _ocp_solid_from_triangles(triangles):
         if not maker.IsDone():
             raise ValueError("OpenCascade could not make a solid from the sewn shell")
         return maker.Solid()
+    if sewn.ShapeType() == TopAbs_COMPOUND:
+        # Several closed bodies, such as two overlapping extrusions: one solid
+        # per shell, kept as separate bodies in one compound (not fused).
+        from OCP.BRep import BRep_Builder
+        from OCP.TopExp import TopExp_Explorer
+        from OCP.TopoDS import TopoDS_Compound
+
+        builder = BRep_Builder()
+        compound = TopoDS_Compound()
+        builder.MakeCompound(compound)
+        count = 0
+        explorer = TopExp_Explorer(sewn, TopAbs_SHELL)
+        while explorer.More():
+            maker = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(explorer.Current()))
+            if not maker.IsDone():
+                raise ValueError("OpenCascade could not make a solid from a sewn shell")
+            builder.Add(compound, maker.Solid())
+            count += 1
+            explorer.Next()
+        if not count:
+            raise ValueError("OpenCascade sewing produced no closed shell")
+        return compound
     raise ValueError(f"unexpected sewn shape type {sewn.ShapeType()}")
 
 

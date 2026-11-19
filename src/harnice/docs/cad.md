@@ -162,6 +162,8 @@ The PNG file stays when the body is rebuilt. The comment in `body.step` does not
 
 `images` on `build_rectangular_physical_model` and `build_rackmount_physical_model` is that attachment. It maps a surface uuid to a file, usually under `fileio.dirpath("body_images")`. A file inside the revision is stored relative to that folder. The path cannot contain a space. Paste on the page fills the file. The next run links every face named in `images`. A face you paste that `images` does not name loses its link. Omit `images`, or omit a face, until that PNG exists. A missing file fails the build.
 
+Both macros name all six faces the page paints: `front`, `back`, `left`, `right`, `top`, and `bottom`. On `build_rackmount_physical_model`, `left` and `right` are the chassis sides, 17 inches apart, not the ear ends.
+
 `build_rackmount_enclosure` and `build_physical_model_from_step` take no `images` argument. Each run replaces `body.step`, so a pasted face link is gone afterward. After the solid is the one you want, comment out that `run_macro`. Later builds leave `body.step` in place, and pastes stay.
 
 A custom script does the same. Call `cad.attach_png` for each face that should survive `cad.save_step`. `cad.keep_gui_mates` keeps mate poses. It does not keep face pictures.
@@ -247,7 +249,7 @@ A new body is placed 24 inches further along +X than the bodies already there.
 
 Click a device or a mate connector to add it to the selection. Shift-click removes it. Drag a device's triad to move it, or type the pose. **Fix** grounds the selected devices: the pose stays put, and dragging the triad does nothing. **Fix** again releases them.
 
-**Mate** fastens two connectors. Pick one mate connector on each of two devices. The card asks which device moves onto the other. The device that moves is `b` in `physical.json`. The device that stays is `a`. **Face to face** turns the fixed connector's target 180° about its X axis, so the two Z axes point opposite ways and the parts sit face to face. Without that, the moving connector occupies the same frame as the one it fastens to.
+**Mate** fastens two connectors. Pick one mate connector on each of two devices. The card asks which device moves onto the other. The device that moves is `b` in `physical.json`. The device that stays is `a`. **Face to face** turns the fixed connector's target 180° about its Z axis, so the two X axes point opposite ways and the parts sit face to face. A mating connector's +X points out of its device face. Without that, the moving connector occupies the same frame as the one it fastens to.
 
 A device can be the moving side of one mate. A grounded device cannot be the one that moves. A chain is solved from the grounded device outward: a device moves only after the device it fastens to has been placed. A cycle is rejected. **de-mate** on the card removes the constraint that holds that device.
 

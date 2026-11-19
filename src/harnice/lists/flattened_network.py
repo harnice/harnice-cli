@@ -33,43 +33,53 @@ def spline_points(segment: dict, steps: int = 32) -> list[tuple[float, float, fl
     Sample the segment centerline in the network's coordinate units.
 
     - If ``spline_control_points`` is empty: ``[end_a, end_b]``.
-    - Otherwise: a degree-(N-1) Bezier through ``[end_a, *control_points, end_b]``,
-      sampled at ``steps`` intervals (endpoints included).
-
-    The 3D page stores each control point as an offset from end A, and adds
-    end A when it draws. This sampler places each stored triple in that
-    polygon as written, in the same coordinate space as the two ends.
+    - Otherwise: the curve the 3D page draws. Each stored control point is an
+      offset from end A. The polygon ``[end_a, end_a + cp..., end_b]`` is a
+      clamped uniform B-spline of degree ``min(5, N - 1)``, where N counts
+      the two ends. Up to six points that is the Bezier through them.
+      Sampled at ``steps`` intervals, endpoints included.
     """
-
-    def control_polygon():
-        a = _point3(segment["location_at_end_a"])
-        b = _point3(segment["location_at_end_b"])
-        control_points = [
-            _point3(point) for point in (segment.get("spline_control_points") or [])
-        ]
-        return [a, *control_points, b]
-
-    def bezier_point(pts, t):
-        n = len(pts) - 1
-        coeffs = []
-        for i in range(n + 1):
-            result = 1
-            for j in range(i):
-                result = result * (n - j) // (j + 1)
-            coeffs.append(result)
-        point = [0.0, 0.0, 0.0]
-        for i, p in enumerate(pts):
-            w = coeffs[i] * ((1 - t) ** (n - i)) * (t**i)
-            for d in range(3):
-                point[d] += w * p[d]
-        return (point[0], point[1], point[2])
-
-    pts = control_polygon()
-    if len(pts) == 2:
-        return pts
+    a = _point3(segment["location_at_end_a"])
+    b = _point3(segment["location_at_end_b"])
+    offsets = [_point3(point) for point in (segment.get("spline_control_points") or [])]
+    if not offsets:
+        return [a, b]
     if steps < 1:
         raise ValueError("spline_points needs at least 1 step")
-    return [bezier_point(pts, i / steps) for i in range(steps + 1)]
+    pts = [a, *[(a[0] + o[0], a[1] + o[1], a[2] + o[2]) for o in offsets], b]
+    count = len(pts)
+    degree = min(5, count - 1)
+    interior = max(0, count - degree - 1)
+    knots = (
+        [0.0] * (degree + 1)
+        + [j / (interior + 1) for j in range(1, interior + 1)]
+        + [1.0] * (count + degree + 1 - (degree + 1) - interior)
+    )
+
+    def basis(i, p, u):
+        if p == 0:
+            if u >= 1.0:
+                return 1.0 if i == count - 1 else 0.0
+            return 1.0 if knots[i] <= u < knots[i + 1] else 0.0
+        left = knots[i + p] - knots[i]
+        right = knots[i + p + 1] - knots[i + 1]
+        c1 = 0.0 if left <= 0 else (u - knots[i]) / left * basis(i, p - 1, u)
+        c2 = 0.0 if right <= 0 else (knots[i + p + 1] - u) / right * basis(i + 1, p - 1, u)
+        return c1 + c2
+
+    out = []
+    for step in range(steps + 1):
+        u = step / steps
+        point = [0.0, 0.0, 0.0]
+        for i, p in enumerate(pts):
+            w = basis(i, degree, u)
+            if w:
+                for d in range(3):
+                    point[d] += w * p[d]
+        out.append((point[0], point[1], point[2]))
+    out[0] = a
+    out[-1] = b
+    return out
 
 
 def oriented_spline_points(segment, start_location=None, direction="ab", steps=32):
@@ -392,9 +402,8 @@ def spline_length(segment: dict) -> float:
     - If spline_control_points is empty: straight-line Pythagorean distance
       between location_at_end_a and location_at_end_b.
     - If spline_control_points exist: numerically integrates the arc length
-      of a degree-(N-1) Bezier curve, where N is the total number of points
-      [end_a, cp[0], ..., cp[n-1], end_b]. Works for any number of control
-      points; degree is derived from N at runtime. Sampled at 100 steps.
+      of the curve ``spline_points`` samples (control points are offsets
+      from end A, as the 3D page stores them). Sampled at 100 steps.
     """
 
     def dist(p, q):
@@ -415,8 +424,8 @@ def derive(network: dict) -> list[dict]:
     The network decides which rows exist and sets ``segment_id``,
     ``node_at_end_a``, ``node_at_end_b``, and ``length``. ``length`` is the
     3D curve length. The 3D page stores each ``spline_control_points`` triple
-    as an offset from end A. ``spline_length`` places those stored triples in
-    the Bezier polygon with the two ends and does not add end A.
+    as an offset from end A, and ``spline_length`` measures the curve the 3D
+    page draws from those offsets.
 
     ``length_tolerance``, ``angle``, ``angle_constraint``, and
     ``subdivisions`` already saved for a ``segment_id`` are kept. ``angle``
@@ -700,9 +709,10 @@ def map_instance_to_segments(instance):
     **Note:** Cavity endpoints are resolved to the ``node`` in the same connector
     group. If ``node_at_end_a`` / ``node_at_end_b`` are already ``item_type=="node"``
     instances, they are used directly. When both ends resolve to the same node,
-    the instance is a loopback: it is mapped out and back on the free stub
-    leaving that connector, and each hop's ``length`` is twice the segment
-    length.
+    the instance is a loopback: it is mapped out and back on one segment, the
+    shortest one leaving that connector toward a free (non-connector) node, and
+    that hop's ``length`` is twice the segment length. This is the same
+    turnaround the trace drawing uses.
 
     **Args:**
 
@@ -780,27 +790,42 @@ def map_instance_to_segments(instance):
 
     loopback = start_node == end_node
     if loopback:
-        stub_graph = {}
+        # Same rule as the drawing (svg_utils._self_hop_outbound): one segment
+        # out to the adjacent free end on the shortest segment, then back.
+        def seg_length(seg_name):
+            try:
+                return float(instances_list.attribute_of(seg_name, "length"))
+            except (TypeError, ValueError):
+                return float("inf")
+
+        neighbors = []
         for seg_name, (a, b) in seg_endpoints.items():
             if not a or not b or a == b or not seg_name:
                 continue
-            if a in connector_nodes and b in connector_nodes:
-                continue
-            if (a == start_node or a not in connector_nodes) and (
-                b == start_node or b not in connector_nodes
-            ):
-                stub_graph.setdefault(a, set()).add(b)
-                stub_graph.setdefault(b, set()).add(a)
-        graph = stub_graph
+            if a == start_node and b not in connector_nodes:
+                neighbors.append((seg_length(seg_name), str(b), str(seg_name), "ab"))
+            elif b == start_node and a not in connector_nodes:
+                neighbors.append((seg_length(seg_name), str(a), str(seg_name), "ba"))
+        if not neighbors:
+            return
+        _length, _node, seg_name, direction = min(neighbors)
+        segment_steps = [(seg_name, direction)]
+        write_mapped_segment_instances(instance, segment_steps)
+        base = instances_list.attribute_of(seg_name, "length")
+        if base not in ("", None):
+            instances_list.modify(
+                f"{instance.get('instance_name')}.{seg_name}",
+                {"length": float(base) * 2},
+            )
+        return
 
     # BFS recording, for each visited node, the edge it was reached through.
-    # A loopback keeps walking the free stub; the target is chosen afterwards.
     pred = {}  # node -> (previous node, segment name, direction)
     visited = {start_node}
     queue = deque([start_node])
     while queue:
         u = queue.popleft()
-        if not loopback and u == end_node:
+        if u == end_node:
             break
         for v in graph.get(u, []):
             if v in visited:
@@ -813,25 +838,7 @@ def map_instance_to_segments(instance):
             visited.add(v)
             queue.append(v)
 
-    if loopback:
-        leaves = [
-            node
-            for node in visited
-            if node != start_node and len(graph.get(node, ())) <= 1
-        ]
-        candidates = leaves or [node for node in visited if node != start_node]
-        if not candidates:
-            return
-        hop_count = {}
-        for node in candidates:
-            count = 0
-            cur = node
-            while cur in pred:
-                cur = pred[cur][0]
-                count += 1
-            hop_count[node] = count
-        end_node = max(candidates, key=lambda node: (hop_count[node], str(node)))
-    elif end_node not in pred and start_node != end_node:
+    if end_node not in pred and start_node != end_node:
         raise ValueError(f"No segment path found between {start_node} and {end_node}")
 
     segment_steps = []
@@ -843,15 +850,6 @@ def map_instance_to_segments(instance):
     segment_steps.reverse()
 
     write_mapped_segment_instances(instance, segment_steps)
-    if loopback:
-        for seg_name, _direction in segment_steps:
-            base = instances_list.attribute_of(seg_name, "length")
-            if base in ("", None):
-                continue
-            instances_list.modify(
-                f"{instance.get('instance_name')}.{seg_name}",
-                {"length": float(base) * 2},
-            )
 
 
 def calculate_location(lookup_instance, instances):
@@ -1053,6 +1051,7 @@ def build_console_network_2d(rows):
             "node_at_end_a": na,
             "node_at_end_b": nb,
             "waypoints": [{"x": px, "y": py} for px, py in poly[1:-1]],
+            "length": row.get("length"),
         }
 
     return {"nodes": nodes, "segments": segments}

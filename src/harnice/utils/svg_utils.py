@@ -1608,12 +1608,31 @@ def _free_node_distance(graph, origin_id, node_id):
         return float("inf")
 
 
+def _free_end_distance(graph, origin_id, node_id, seg_uuid):
+    """How far a loopback travels to turn on ``node_id`` over ``seg_uuid``.
+
+    Uses the segment's model ``length`` when the network carries one, so the
+    drawing turns on the same end that conductor lengths are computed from
+    (flattened_network.map_instance_to_segments). Falls back to the 2D
+    distance between the two nodes.
+    """
+    info = (graph.get("segments") or {}).get(seg_uuid) or {}
+    try:
+        length = float(info.get("length"))
+        if math.isfinite(length):
+            return length
+    except (TypeError, ValueError):
+        pass
+    return _free_node_distance(graph, origin_id, node_id)
+
+
 def _self_hop_outbound(graph, node_id, connector_node_ids=None, route_segment_ids=None):
     """One segment from a connector to the nearest free wire end.
 
     The loop turns on the free node reached in the fewest segments. Every
     free neighbor is one hop, so that is the adjacent wire junction (or
-    harness node outside ``connector_node_ids``) closest to ``node_id``.
+    harness node outside ``connector_node_ids``) on the shortest segment
+    (model ``length``, else 2D distance from ``node_id``).
     The walk stops before another connector. Returns ``(segments,
     directions)`` toward that end, or ``None`` when the connector has no
     free stub.
@@ -1637,7 +1656,7 @@ def _self_hop_outbound(graph, node_id, connector_node_ids=None, route_segment_id
 
     def rank(item):
         nxt, seg, _direction = item
-        return (_free_node_distance(graph, node_id, nxt), str(nxt), str(seg))
+        return (_free_end_distance(graph, node_id, nxt, seg), str(nxt), str(seg))
 
     _nxt, seg, direction = min(neighbors, key=rank)
     return [seg], [direction]
@@ -2111,8 +2130,8 @@ def draw_segments_across_paths(
             connector take separate lanes. With the set omitted, only
             ``wirejunction-`` nodes are free ends.
             A trace whose ends are the same node is drawn out one segment to the
-            nearest free end — fewest hops from that connector, then the closest
-            node — and back on the next lane (a short local U when that connector
+            nearest free end — the adjacent free node on the shortest segment
+            (model ``length``, else 2D distance) — and back on the next lane (a short local U when that connector
             has no stub). Both contacts are kept: the node entry is the outbound
             contact, and ``__self_hop__`` holds ``start`` (from-channel) and
             ``end`` (to-channel).

@@ -16,8 +16,9 @@ connector and a harness 3D node: ``R = Rx(alpha) · Ry(beta) · Rz(gamma)``.
 A fasten mate locks all six degrees of freedom of device ``b``. Its mate
 connector is placed on device ``a``'s with no offset: the two connector
 frames coincide, origin and orientation. ``flip`` is still a full lock. It
-turns that target 180° about the connector's X axis, so the two Z axes
-point opposite ways and the parts sit face to face. There is no residual
+turns that target 180° about the connector's Z axis, so the two X axes
+point opposite ways and the parts sit face to face. A mating connector's +X
+points out of its device face. There is no residual
 translation or rotation, and no degree of freedom is left free. An offset
 along a mate, or a mate that unlocks a degree of freedom, is not part of
 this model.
@@ -33,6 +34,7 @@ the moving side of a mate, and its placement is left as stored.
 """
 
 import json
+from pathlib import Path
 import os
 import re
 
@@ -330,7 +332,7 @@ def frame_of(pose, mate, flip=False):
     mate_r = _zyx_rotation_matrix(mate["alpha"], mate["beta"], mate["gamma"])
     rotation = _matmul3(device_r, mate_r)
     if flip:
-        rotation = _matmul3(rotation, _zyx_rotation_matrix(180.0, 0.0, 0.0))
+        rotation = _matmul3(rotation, _zyx_rotation_matrix(0.0, 0.0, 180.0))
     offset = _rotate3(device_r, tuple(mate["location"]))
     origin = (
         pose["x"] + offset[0],
@@ -344,7 +346,7 @@ def solve_moving_pose(fixed_pose, fixed_mate, moving_mate, flip=False):
     """Pose of the moving device that puts its mate connector on the fixed one."""
     target_r, target_t = frame_of(fixed_pose, fixed_mate, flip=False)
     if flip:
-        target_r = _matmul3(target_r, _zyx_rotation_matrix(180.0, 0.0, 0.0))
+        target_r = _matmul3(target_r, _zyx_rotation_matrix(0.0, 0.0, 180.0))
     moving_r = _zyx_rotation_matrix(
         moving_mate["alpha"], moving_mate["beta"], moving_mate["gamma"]
     )
@@ -385,7 +387,7 @@ def apply_mates(placements, mates, discovered):
 
     The stored pose of a moving device is discarded. Its connector frame
     becomes the holding connector's frame, with no offset. ``flip`` turns
-    the target 180° about X and still leaves nothing free. A fasten that
+    the target 180° about Z and still leaves nothing free. A fasten that
     cannot be solved yet is left alone, and the stored pose stays.
     """
     index = _mate_index(discovered)
@@ -580,6 +582,120 @@ def mating_connector_nodes(discovered, placements):
         return all(abs(x - y) <= 0.001 for x, y in zip(a, b))
 
     return _coalesce_coincident_mate_nodes(raw, near)
+
+
+
+
+def _source_folder(source):
+    """A system revision folder from a folder path or a ``rev_history.info()`` row."""
+    if isinstance(source, dict):
+        return source_system_revision_folder(source)
+    return source or None
+
+def list_mating_connectors(source):
+    """
+    Use this when a harness build needs one available-network node per mating connector in its source system's physical model.
+
+    ``source`` is this harness's ``rev_history.info()``, whose ``source_*``
+    fields name the system, or that system's revision folder. Every fasten
+    mate is solved first,
+    the same way the physical model page places devices. Each node is named
+    ``<device_refdes>.<mating_connector_id>``, sits at that mating
+    connector's location and orientation, and carries a ``mate`` tag.
+    Mating connectors that share a point become one node, ``{a+b}``.
+
+    **Returns:**
+    - ``list``: Node dicts. Empty when there is no source system or it has
+      no placed device with a body.
+    """
+    revision = _source_folder(source)
+    if not revision:
+        return []
+    revision = os.path.abspath(revision)
+    discovered = discover(os.path.join(revision, "instance_data", "device"))
+    model = load_assembly(os.path.join(revision, "physical.json"))
+    placements = locked_placements(discovered, model)
+    return mating_connector_nodes(discovered, placements)
+
+
+def list_segments(source):
+    """
+    Use this when a harness build needs the segments routed in its source system.
+
+    ``source`` is this harness's ``rev_history.info()``, whose ``source_*``
+    fields name the system, or that system's revision folder. Reads the
+    segments drawn on the
+    system's physical model page in Route mode (the system's
+    ``available_network.json``), in the same frame as
+    ``list_mating_connectors``.
+
+    **Returns:**
+    - ``list``: Segment dicts, as stored. Empty when there is no source
+      system or it has no routed segments.
+    """
+    revision = _source_folder(source)
+    if not revision:
+        return []
+    path = os.path.join(os.path.abspath(revision), "available_network.json")
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        return []
+    return [seg for seg in data.get("segments") or [] if isinstance(seg, dict)]
+
+def source_system_revision_folder(rev_history_row=None):
+    """
+    Use this when a harness build needs the folder of the system revision this harness was made from.
+
+    Reads ``source_part_number``, ``source_lib_repo``, ``source_subpath`` and
+    ``source_revision`` from ``rev_history_row``, or from this harness's
+    ``rev_history.info()`` when it is omitted.
+
+    **Returns:**
+    - ``str`` or ``None``: The source revision folder, or ``None`` when the
+      harness has no source, the source cannot be found, or the source is
+      not a system.
+    """
+    from harnice.lists import rev_history
+    from harnice.utils import library_utils
+
+    row = rev_history_row
+    if row is None:
+        try:
+            row = rev_history.info()
+        except Exception:
+            return None
+    part_number = (row.get("source_part_number") or "").strip()
+    repo = (row.get("source_lib_repo") or "").strip()
+    if not part_number or not repo:
+        return None
+    try:
+        folder, _rev = library_utils.resolve_source_library_revision_folder(
+            {
+                "mpn": part_number,
+                "lib_repo": repo,
+                "lib_subpath": (row.get("source_subpath") or "").strip(),
+                "lib_rev_used_here": (row.get("source_revision") or "").strip(),
+            }
+        )
+    except Exception:
+        return None
+    folder = Path(folder)
+    history = folder.parent / f"{folder.parent.name}-revision_history.tsv"
+    project_type = ""
+    if history.is_file():
+        import csv
+
+        with open(history, newline="", encoding="utf-8") as handle:
+            for history_row in csv.DictReader(handle, delimiter="\t"):
+                project_type = (history_row.get("project_type") or "").strip()
+                if project_type:
+                    break
+    if project_type != "system":
+        return None
+    return str(folder)
 
 
 def sync_mating_connector_nodes():

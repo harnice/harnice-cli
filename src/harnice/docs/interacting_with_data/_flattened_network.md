@@ -29,8 +29,8 @@
     The network decides which rows exist and sets ``segment_id``,
     ``node_at_end_a``, ``node_at_end_b``, and ``length``. ``length`` is the
     3D curve length. The 3D page stores each ``spline_control_points`` triple
-    as an offset from end A. ``spline_length`` places those stored triples in
-    the Bezier polygon with the two ends and does not add end A.
+    as an offset from end A, and ``spline_length`` measures the curve the 3D
+    page draws from those offsets.
     
     ``length_tolerance``, ``angle``, ``angle_constraint``, and
     ``subdivisions`` already saved for a ``segment_id`` are kept. ``angle``
@@ -69,9 +69,10 @@
     **Note:** Cavity endpoints are resolved to the ``node`` in the same connector
     group. If ``node_at_end_a`` / ``node_at_end_b`` are already ``item_type=="node"``
     instances, they are used directly. When both ends resolve to the same node,
-    the instance is a loopback: it is mapped out and back on the free stub
-    leaving that connector, and each hop's ``length`` is twice the segment
-    length.
+    the instance is a loopback: it is mapped out and back on one segment, the
+    shortest one leaving that connector toward a free (non-connector) node, and
+    that hop's ``length`` is twice the segment length. This is the same
+    turnaround the trace drawing uses.
     
     **Args:**
     
