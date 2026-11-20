@@ -11,10 +11,45 @@ The 3D page writes ``networks/available.json``. Build loads that file. A node is
     Load the available network from disk.
     
     If the file does not exist yet, returns an empty network
-    (``{"segments": [], "nodes": []}``) and writes nothing. The default
-    harness build then adds the nodes the chosen network needs with
-    ``bundle_network_utils.connect_required_nodes``, in memory only, so the
-    available network keeps only what was drawn, imported, or synced.
+    (``{"segments": [], "nodes": []}``) and writes nothing.
+
+??? info "`available_network.save(network)`"
+
+    Use this when a harness build has changed the available network and the change belongs in ``available.json``.
+    
+    Replace this revision's available network file with ``network``.
+    
+    Everything the available network editor shows comes from this file, so
+    a node or segment a build adds is only visible there once it is saved.
+    
+    **Args**
+    
+    - **network** — Network dict with ``"nodes"`` and ``"segments"``.
+
+??? info "`available_network.source_of_truth(item)`"
+
+    Use this when a harness build needs to know where an available-network node or segment comes from.
+    
+    Return the ``source_of_truth`` of a node or segment: ``"gui"``, or the
+    id of the routing context it was read from.
+    
+    An item with no ``source_of_truth`` is ``"gui"``, except a node that
+    carries a ``mate`` tag, which came from the source system
+    (``SOURCE_SYSTEM_CONTEXT``).
+
+??? info "`available_network.tag_source_of_truth(items, source)`"
+
+    Use this when a harness build adds nodes or segments read from a routing context to the available network.
+    
+    Return copies of ``items`` with ``source_of_truth`` set to ``source``.
+
+??? info "`available_network.keep_only_gui(network)`"
+
+    Use this when a harness build is about to reload every routing context into the available network.
+    
+    Return a copy of ``network`` without the nodes and segments whose
+    ``source_of_truth`` is not ``"gui"``. The build then adds them again,
+    fresh from their contexts.
 
 ??? info "`available_network.source_context_from_path(local_path=None, lib_repo=None, relative_path=None)`"
 

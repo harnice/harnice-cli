@@ -71,7 +71,7 @@ If your electrical system can be implemented by simple logic statements, Harnice
 
 ![Interactive system-wide channel map and connection data](index_images/Xnip2026-09-24_18-43-26.png)
 
-- **Device solids, fastened in the system.** A device build writes a body. The system physical model mates those bodies together. See [CAD](cad.md).
+- **Device solids, fastened in the system.** A device build writes a body. The system physical model mates those bodies together. See [CAD](interacting_with_data/cad.md).
 
 - **Real routing, in context.** Lay out harnesses around your hardware in 3D, with lengths calculated from the route.
 

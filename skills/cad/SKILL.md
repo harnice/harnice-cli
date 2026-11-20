@@ -28,14 +28,14 @@ documentation folder.
 
     harnice --docs
 
-That prints the folder. `cad.md` is next to `index.md`. If `harnice` is
+That prints the folder. `cad.md` is in its `interacting_with_data` folder. If `harnice` is
 not on PATH:
 
     python3 /path/to/harnice-cli/src/harnice/__main__.py --docs
 
 A clone of https://github.com/harnice/harnice-cli keeps the same folder at
-`src/harnice/docs/`. The same pages are at https://harnice.io/ when you
-can reach the internet. The CAD page is `cad.md`.
+`src/harnice/docs/`, so the page is `src/harnice/docs/interacting_with_data/cad.md`. The same pages are at https://harnice.io/ when you
+can reach the internet. The CAD page is `interacting_with_data/cad.md`.
 
 Read `cad.md` before you sketch, before you choose a plane, and before you
 edit `physical.json`. Do not invent a function, a plane normal, or a mate

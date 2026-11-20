@@ -53,10 +53,7 @@ def load():
     Load the available network from disk.
 
     If the file does not exist yet, returns an empty network
-    (``{"segments": [], "nodes": []}``) and writes nothing. The default
-    harness build then adds the nodes the chosen network needs with
-    ``bundle_network_utils.connect_required_nodes``, in memory only, so the
-    available network keeps only what was drawn, imported, or synced.
+    (``{"segments": [], "nodes": []}``) and writes nothing.
     """
     path = Path(fileio.path("available network"))
     if not path.exists():
@@ -64,6 +61,87 @@ def load():
     with open(path) as f:
         return json.load(f)
 
+
+def save(network):
+    """
+    Use this when a harness build has changed the available network and the change belongs in ``available.json``.
+
+    Replace this revision's available network file with ``network``.
+
+    Everything the available network editor shows comes from this file, so
+    a node or segment a build adds is only visible there once it is saved.
+
+    ## Args
+
+    - **network** — Network dict with ``"nodes"`` and ``"segments"``.
+    """
+    path = fileio.path("available network")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(network, f, indent=4)
+
+
+# ---------------------------------------------------------------------------
+# Source of truth
+# ---------------------------------------------------------------------------
+
+# A node or segment drawn in the available network editor, or added by a
+# build step that leaves it for you to edit.
+GUI = "gui"
+# A node or segment read from the source system's physical model. This is
+# the routing context the console lists as "Source part physical model".
+SOURCE_SYSTEM_CONTEXT = "source physical model.step"
+
+
+def source_of_truth(item):
+    """
+    Use this when a harness build needs to know where an available-network node or segment comes from.
+
+    Return the ``source_of_truth`` of a node or segment: ``"gui"``, or the
+    id of the routing context it was read from.
+
+    An item with no ``source_of_truth`` is ``"gui"``, except a node that
+    carries a ``mate`` tag, which came from the source system
+    (``SOURCE_SYSTEM_CONTEXT``).
+    """
+    if item.get("source_of_truth"):
+        return item["source_of_truth"]
+    if item.get("mate") or item.get("mates"):
+        return SOURCE_SYSTEM_CONTEXT
+    return GUI
+
+
+def tag_source_of_truth(items, source):
+    """
+    Use this when a harness build adds nodes or segments read from a routing context to the available network.
+
+    Return copies of ``items`` with ``source_of_truth`` set to ``source``.
+    """
+    tagged = []
+    for item in items:
+        item = dict(item)
+        item["source_of_truth"] = source
+        tagged.append(item)
+    return tagged
+
+
+def keep_only_gui(network):
+    """
+    Use this when a harness build is about to reload every routing context into the available network.
+
+    Return a copy of ``network`` without the nodes and segments whose
+    ``source_of_truth`` is not ``"gui"``. The build then adds them again,
+    fresh from their contexts.
+    """
+    nodes = []
+    for node in network.get("nodes", []):
+        if source_of_truth(node) == GUI:
+            nodes.append(dict(node))
+    segments = []
+    for segment in network.get("segments", []):
+        if source_of_truth(segment) == GUI:
+            segments.append(dict(segment))
+    return {"nodes": nodes, "segments": segments}
 
 
 def source_context_from_path(local_path=None, lib_repo=None, relative_path=None):

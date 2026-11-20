@@ -7,7 +7,8 @@ description: >-
   Use when the user asks for harness build instructions, harness rules, a
   chosen network, a formboard, a node move, or a backshell clock. A system
   revision uses the system-build skill. A device pinout uses the
-  device-signals-list skill. A catalog of library SKUs, including a catalog
+  device-signals-list skill. Updating an older build.py to the current
+  build API uses the build-api-updates skill. A catalog of library SKUs, including a catalog
   of devices, uses the part-family skill. Follow this skill when it is the
   best match. Do not ask which skill
   to follow. If the request is not clear, ask for clarification.
@@ -298,14 +299,17 @@ triple only when that triple itself sits on the old location.
 script appends is the four fields above.
 
 `load()` returns an empty network when `available.json` is missing and
-writes nothing. The build never writes `available.json`. Generated
-geometry comes from `bundle_network_utils.connect_required_nodes`, in
-memory, so it shows up only in the chosen network. Its anchor is the
-first node joined by segments to a required node, else `hub`, else a new `far` 4 inches in
--X of the only required node, or a new `hub` at the origin. A missing
-required node gets a `{node_id}_leg` spoke off the anchor, length 6 to
-18 at a random angle in XY. A required node with no segment keeps its
-location and gets a straight `{node_id}_leg` to the anchor.
+writes nothing. `available_network.save(network)` writes the file.
+
+Every node and segment has a `source_of_truth`: `"gui"` (drawn in the
+available network editor, or added by a build step for you to edit) or
+the id of the routing context it was read from
+(`available_network.SOURCE_SYSTEM_CONTEXT`, `"source physical model.step"`,
+for the source system's physical model). A missing `source_of_truth` is
+`"gui"`, except a node with a `mate` tag. The editor shows exactly what
+is in `available.json`, so a build step that adds to the available
+network saves it. Generated geometry is `"gui"`, so it stays where the
+next build finds it.
 
 ### Flattened network
 
@@ -486,32 +490,45 @@ returned network back to `bundle_network`.
 
 The stock script does this:
 
-1. `available_network.load()` reads the drawn network. Then a loop over
-   `physical_assembly.list_mating_connectors(rev_history.info())` adds a node
-   at each mating connector in the source system's physical model, read
-   fresh on every build, in memory only. A node of the same name is
-   removed first with `bundle_network_utils.delete_node`. Skip one in the
-   loop to leave it out.
-   A second loop over `physical_assembly.list_segments(rev_history.info())`
-   adds the segments routed in the source system the same way, removing
-   a segment of the same name first with
-   `bundle_network_utils.delete_segment`.
-2. `chosen_network.end_all_segments_in_nodes` gives a free end a node.
-   Then `bundle_network_utils.adopt_mating_connector_nodes` renames the
-   node at each harness connector's device mating connector, named
+- `available_network.load()` reads `available.json` with everything in it.
+- `available_network.keep_only_gui` drops every node and segment whose
+   source of truth is not `"gui"`. Loops over
+   `physical_assembly.list_mating_connectors(rev_history.info())` and
+   `physical_assembly.list_segments(rev_history.info())` add them again,
+   fresh from the source system, tagged with its context id. Skip one in
+   a loop to leave it out. `available_network.save` writes the file.
+- `chosen = copy.deepcopy(available)`: the chosen network starts as all
+   of the available network.
+- `bundle_network_utils.adopt_mating_connector_nodes(chosen,
+   replace_existing=False)` renames the node named after each harness
+   connector's device mating connector,
    `<device_side_refdes>.<device_side_connector_id>`, to
-   `<connector_group>.node`, and turns it 180° about its Z axis to face
-   the device. When `<connector_group>.node` is already a different
-   node, the mating connector wins: segment ends on the old node move to
-   it, the old node is dropped, and the script warns.
-3. Collect `instance_name` for every instance with `item_type` `"node"`.
-4. `bundle_network_utils.connect_required_nodes` gives each missing
-   required node a spoke and each required node with no segment a leg,
-   in memory only (see above). The `else` branch raises on missing
-   nodes instead. Ask before you switch to it.
-5. `chosen_network.calculate_possible_sub_networks` finds routes that
+   `<connector_group>.node`, whatever its source of truth, and turns it
+   180° about its Z axis to face the device.
+- `bundle_network_utils.raise_on_duplicate_node_ids` raises on two nodes
+   with one name, whatever their source of truth.
+- `bundle_network_utils.end_all_segments_in_nodes` gives a free end a node.
+   Then collect `instance_name` for every instance with `item_type`
+   `"node"`.
+- Plain code in the script adds each required node the chosen network
+   lacks to both networks, 6 to 18 from the average location of the
+   chosen nodes at a random angle in XY.
+- Plain code then joins the required nodes, unless there are fewer than
+   two (a single connector skips this). `connected_nodes` is the list of
+   required nodes one route already joins. It starts with `hub` when there
+   is one, otherwise with one required node picked at random. The rest are
+   shuffled and added to it one at a time. Each time
+   `bundle_network_utils.calculate_possible_sub_networks` finds no route
+   that joins every node in `connected_nodes`, it adds a segment to the new
+   one from `hub` when there is one, otherwise from the nearest node
+   already in the list. With more than three connectors, no segments in
+   the available network, and no `hub` yet, it adds a `hub` at the average
+   location of the required nodes first. Every node and segment it adds is
+   `"gui"` and goes into both networks, and `available_network.save`
+   writes the file again.
+- `bundle_network_utils.calculate_possible_sub_networks(chosen, ...)` finds routes that
    touch every required node. When more than one route comes back and
-   I named a stable id, `chosen_network.find_network_with` keeps the
+   I named a stable id, `bundle_network_utils.find_network_with` keeps the
    routes that contain `preferred_segment_ids` or `preferred_node_ids`.
    Leave those lists empty unless I named those ids. An empty pair
    matches nothing, so do not call `find_network_with` with both lists

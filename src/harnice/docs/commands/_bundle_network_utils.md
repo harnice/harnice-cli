@@ -1,18 +1,164 @@
 # Bundle Network Utilities
 
-These functions turn an available network into the chosen network. The available network is the starting shape, already on disk: a route drawn in this Harnice project, imported from CAD with ``available_network.source_context_from_path``, or copied from another Harnice project with ``available_network.source_available_network_from_project``. The chosen network is that route after the harness build changes it, and it is the network that defines the harness.
+**In short:** these functions turn the *available network* (every path a harness could take) into the *chosen network* (the one path this harness takes). The available network is a massive subset of any possible route this harness could take. Use these functions to distill, modify, and refine the available network to form the chosen network that the harness is built from. 
 
-The build script is that transformation. Each call changes a small piece and returns a new dict. Assign the dict it returns and use that as the network from then on:
+## Words on this page
 
-    network = bundle_network_utils.move_node(network, node_id, direction=offset)
+- **Network** — a dict with `"nodes"` and `"segments"`.
+- **Node** — a point in 3D: a connector, a branch, or a bend. It has a `node_id` and a `location` `[x, y, z]`.
+- **Segment** — a run of wire bundle between two points. It has a `segment_id` and two end locations.
+- **Available network** — every route the harness could take. Saved in `networks/available.json`. The available network editor shows exactly this file.
+- **Chosen network** — the one route this harness takes. Saved in `networks/chosen.json`. The harness is built from it.
+- **Needed node** — a node the harness must reach. Usually one per connector, named `<connector_group>.node`.
+- **Source of truth** — where a node or segment came from:
+    - `"gui"`: you drew it, or the build added it for you to edit. It stays in the file.
+    - A routing context, such as `"source physical model.step"` (the source system). The build reloads it fresh every time.
 
-Load the available network, give every free segment end a node, add any connector node the available network does not yet contain, and keep the one route that touches every required node. Layout moves belong after that one route exists and before ``chosen_network.save``. ``flattened_network.derive`` then builds the flat drawing from the chosen network.
+## Where the available network comes from
 
-``adopt_mating_connector_nodes`` renames the node a system build wrote at each device mating connector (``<device_refdes>.<mating_connector_id>``) to the ``<connector_group>.node`` of the harness connector that plugs into it, turned 180° to face the device. ``connect_required_nodes`` then adds a spoke for each missing required node and a leg for each one with no segment, in memory, so generated geometry shows up only in the chosen network. ``chosen_network.end_all_segments_in_nodes``, ``ensure_nodes_exist``, ``calculate_possible_sub_networks``, and ``find_network_with`` do the first part of that. ``new_node`` adds a node and does not add a segment. ``move_node``, ``rename_node``, ``reroute_segment``, and ``clock_backshell`` edit the chosen route. A connector group with a backshell is clocked toward its hop with ``clock_backshell``, which already shifts the node by the connector mate. A group with no backshell keeps that mate on the available-network point with ``move_node`` and ``output_offset(..., "3d-mate")``.
+- You draw it in the available network editor.
+- The build reads it from the source system's physical model.
+- You import it from CAD with `available_network.source_context_from_path`.
+- You copy it from another project with `available_network.source_available_network_from_project`.
 
-The chosen network is a dict with ``"nodes"`` and ``"segments"``.
+## How to call these functions
 
-A coordinate system is a different dict, ``{x, y, z, alpha, beta, gamma}``. ``x``, ``y``, and ``z`` are the position. ``alpha``, ``beta``, and ``gamma`` are degrees about X, Y, and Z. The rotation is ``Rx(alpha) · Ry(beta) · Rz(gamma)``, so Z is applied first, then Y, then X. ``output_offset`` and ``difference_between_csys`` return one of these dicts. Pass it to ``move_node`` as ``direction``.
+- Each call returns a **new** network. The one you pass in is not changed.
+- Always assign the result back, for example `network = bundle_network_utils.move_node(network, node_id, direction=offset)`.
+
+## Which function does what
+
+- **Building the route:**
+    - `end_all_segments_in_nodes`: gives every loose segment end a node.
+    - `raise_on_duplicate_node_ids`: stops the build if two nodes share a name.
+    - `adopt_mating_connector_nodes`: renames the node where a harness connector plugs into a device to `<connector_group>.node`, turned to face the device.
+    - `ensure_nodes_exist`: lists the needed nodes that are missing.
+    - `calculate_possible_sub_networks`: lists every route that reaches all the needed nodes. Empty means no route.
+    - `find_network_with`: keeps the routes that contain a segment or node you name.
+- **Editing the chosen route:** `new_node`, `move_node`, `rename_node`, `reroute_segment`, `clock_backshell`.
+- **Placing connectors:**
+    - With a backshell: `clock_backshell` turns it toward the next node. It already shifts by the connector mate.
+    - Without a backshell: `move_node` with `output_offset(..., "3d-mate")`.
+- **Order:** layout moves go after one route is picked and before `chosen_network.save`. Then `flattened_network.derive` makes the flat drawing.
+
+## Coordinate systems
+
+- A coordinate system is a dict: `{x, y, z, alpha, beta, gamma}`.
+- `x`, `y`, `z`: the position.
+- `alpha`, `beta`, `gamma`: degrees about X, Y, and Z.
+- The rotation is `Rx(alpha) · Ry(beta) · Rz(gamma)`. Z is applied first, then Y, then X.
+- `output_offset` and `difference_between_csys` return one. Pass it to `move_node` as `direction`.
+
+---
+## How the default harness build makes the chosen network
+
+- **Starts with:** `networks/available.json`.
+- **Ends with:** `networks/chosen.json` and the flat drawing.
+- **Boxes** are steps, numbered [1] to [24]. The table below the diagram uses the same numbers. **Arrows** say why the build moves on.
+- **Dashed boxes** are yes-or-no questions. The arrows out of them start with Yes or No.
+- **Two loops:**
+    - The first places any needed node that is missing.
+    - The second connects every needed node into one route.
+- **Stop** boxes are where the build fails with an error.
+
+```mermaid
+stateDiagram-v2
+    Load : [1] Read available.json<br>into memory as the<br><span style='color:red'>available network</span>. A<br>missing file gives an<br>empty available network.
+    ReloadContexts : [2] In the<br><span style='color:red'>available network</span>, drop<br>every node and segment<br>that is not gui, then add<br>the source system's mating<br>connectors and routed<br>segments again.
+    SaveAvailable : [3] Write the<br><span style='color:red'>available network</span> to<br>available.json.
+    CopyToChosen : [4] Read the whole<br><span style='color:red'>available network</span> and copy<br>it into a new<br><span style='color:cyan'>chosen network</span>.
+    AdoptMatingConnectors : [5] In the <span style='color:cyan'>chosen network</span>,<br>rename each node at a<br>harness connector's device<br>mating connector to<br>connector_group.node and<br>turn it to face the<br>device. The available<br>network keeps the old<br>name.
+    NamesUnique : [6] Read the<br><span style='color:cyan'>chosen network</span>. Is every<br>node name unique?
+    EndSegments : [7] In the <span style='color:cyan'>chosen network</span>,<br>give every segment end<br>that is not on a node a<br>new node. The available<br>network is not changed.
+    NextNeededNode : [8] Take the next needed<br>node from the<br><span style='color:yellow'>instances list</span>.
+    AlreadyInChosen : [9] Read the<br><span style='color:cyan'>chosen network</span>. Does it<br>already have a node with<br>this name?
+    PlaceNode : [10] Write the node to<br>both the <span style='color:red'>available network</span><br>and the <span style='color:cyan'>chosen network</span>, at<br>a random spot near the<br>other nodes of the chosen<br>network.
+    NeededLeftToCheck : [11] Are any needed nodes<br>left to check?
+    TwoOrMoreNeeded : [12] Are there two or more<br>needed nodes?
+    MaybeAddHub : [13] When there are more<br>than three connectors, no<br>segments in the<br><span style='color:red'>available network</span>, and no<br>hub, write a hub node to<br>both the <span style='color:red'>available network</span><br>and the <span style='color:cyan'>chosen network</span>.
+    StartConnectedNodes : [14] Start the list of<br>connected nodes with hub,<br>or with one needed node<br>picked at random when<br>there is no hub. Shuffle<br>the rest.
+    NeededLeftToConnect : [15] Are any needed nodes<br>left to connect?
+    AddNextNode : [16] Add the next needed<br>node to the connected<br>nodes.
+    RouteFound : [17] Read the<br><span style='color:cyan'>chosen network</span>. Does<br>calculate_possible_sub_networks<br>find a route that joins<br>all the connected nodes?
+    AddLeg : [18] Write a gui segment<br>to the new node, from hub<br>or from the nearest<br>connected node, to both<br>the <span style='color:red'>available network</span> and<br>the <span style='color:cyan'>chosen network</span>.
+    SaveAvailableAgain : [19] Write the<br><span style='color:red'>available network</span>, with<br>everything the build<br>added, to available.json.
+    ExactlyOneRoute : [20] Read the<br><span style='color:cyan'>chosen network</span>. Does<br>calculate_possible_sub_networks<br>find exactly one route<br>that joins all the needed<br>nodes?
+    MoveConnectorNodes : [21] In the one route<br>picked from the<br><span style='color:cyan'>chosen network</span>, move each<br>connector node by its<br>backshell clock or its<br>3d-mate offset.
+    SaveChosen : [22] Write that route to<br>chosen.json as the<br><span style='color:cyan'>chosen network</span>, and build<br>the flat drawing from it.
+    StopDuplicateNames : [23] The build stops with<br>an error that names the<br>duplicate nodes. Nothing<br>more is written.
+    StopRouteCount : [24] The build stops with<br>an error that says how<br>many routes it found.<br>Nothing more is written.<br>The user is encouraged to<br>use functions like<br>bundle_network_utils.find_network_with(input_networks,<br>segment_ids=[],<br>node_ids=[]) to approach<br>the desired network.
+    [*] --> Load : The harness build<br>reaches its network<br>section.
+    Load --> ReloadContexts : The available network<br>is in memory.
+    ReloadContexts --> SaveAvailable : The available network<br>has fresh source<br>system items.
+    SaveAvailable --> CopyToChosen : available.json matches<br>the available network.
+    CopyToChosen --> AdoptMatingConnectors : The chosen network has<br>every node and segment<br>of the available<br>network.
+    AdoptMatingConnectors --> NamesUnique : Connector nodes in the<br>chosen network have<br>their harness names.
+    NamesUnique --> StopDuplicateNames : No. Two nodes share a<br>name.
+    NamesUnique --> EndSegments : Yes.
+    EndSegments --> NextNeededNode : Every segment in the<br>chosen network ends on<br>a node.
+    NextNeededNode --> AlreadyInChosen : There is a needed node<br>to check.
+    AlreadyInChosen --> NeededLeftToCheck : Yes. Nothing to add.
+    AlreadyInChosen --> PlaceNode : No. It is missing.
+    PlaceNode --> NeededLeftToCheck : The node is in both<br>the available network<br>and the chosen<br>network.
+    NeededLeftToCheck --> NextNeededNode : Yes.
+    NeededLeftToCheck --> TwoOrMoreNeeded : No. Every needed node<br>is checked.
+    TwoOrMoreNeeded --> NeededLeftToConnect : No. There is nothing<br>to connect.
+    TwoOrMoreNeeded --> MaybeAddHub : Yes.
+    MaybeAddHub --> StartConnectedNodes : A hub exists if this<br>harness needs one.
+    StartConnectedNodes --> NeededLeftToConnect : The list has its first<br>node.
+    NeededLeftToConnect --> AddNextNode : Yes.
+    NeededLeftToConnect --> SaveAvailableAgain : No. Every needed node<br>is connected.
+    AddNextNode --> RouteFound : One more needed node<br>is on the list.
+    RouteFound --> NeededLeftToConnect : Yes. The new node is<br>already connected.
+    RouteFound --> AddLeg : No. The new node is<br>not connected yet.
+    AddLeg --> NeededLeftToConnect : The new node is now<br>connected in both the<br>available network and<br>the chosen network.
+    SaveAvailableAgain --> ExactlyOneRoute : available.json holds<br>everything the build<br>added.
+    ExactlyOneRoute --> StopRouteCount : No. There are zero<br>routes, or more than<br>one.
+    ExactlyOneRoute --> MoveConnectorNodes : Yes.
+    MoveConnectorNodes --> SaveChosen : Connector nodes sit at<br>their mating faces.
+    SaveChosen --> [*] : chosen.json and the<br>flat drawing are on<br>disk.
+    classDef question stroke-dasharray: 5 5
+    class NamesUnique,AlreadyInChosen,NeededLeftToCheck,TwoOrMoreNeeded,NeededLeftToConnect,RouteFound,ExactlyOneRoute question
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+| Block | State | What happens | What is written |
+| --- | --- | --- | --- |
+| 1 | **Load** | ``available_network.load()`` reads ``available.json``. A missing file is an empty network. | Nothing. |
+| 2 | **ReloadContexts** | ``keep_only_gui`` drops every node and segment that is not ``"gui"``. The source system's mating connector nodes and routed segments are added again, fresh, tagged ``"source physical model.step"``. | Nothing yet. |
+| 3 | **SaveAvailable** | ``available_network.save`` writes the <span style='color:red'>available network</span>. | ``available.json`` |
+| 4 | **CopyToChosen** | The <span style='color:cyan'>chosen network</span> starts as a copy of the whole <span style='color:red'>available network</span>. | Nothing. |
+| 5 | **AdoptMatingConnectors** | A node named after the device mating connector a harness connector plugs into (``<device_side_refdes>.<device_side_connector_id>``), whatever its source of truth, becomes ``<connector_group>.node``, turned 180° to face the device. <span style='color:cyan'>Chosen network</span> only. | Nothing. |
+| 6 | **NamesUnique** | ``raise_on_duplicate_node_ids`` reads the <span style='color:cyan'>chosen network</span>. Two nodes with one name, whatever their source of truth, stop the build. | Nothing. |
+| 7 | **EndSegments** | ``end_all_segments_in_nodes`` gives every free segment end a node. <span style='color:cyan'>Chosen network</span> only. | Nothing. |
+| 8 | **NextNeededNode** | First loop. Takes each needed node (an instance with ``item_type`` ``"node"``) from the <span style='color:yellow'>instances list</span>, in turn. | Nothing. |
+| 9 | **AlreadyInChosen** | Reads the <span style='color:cyan'>chosen network</span> to see whether it already has a node with that name. | Nothing. |
+| 10 | **PlaceNode** | Adds the missing node to both the <span style='color:red'>available network</span> and the <span style='color:cyan'>chosen network</span> as ``"gui"``, 6 to 18 inches from the average location of the chosen nodes, at a random angle in XY. | Nothing yet. |
+| 11 | **NeededLeftToCheck** | The first loop repeats until every needed node is checked. | Nothing. |
+| 12 | **TwoOrMoreNeeded** | A harness with fewer than two needed nodes (one connector) has nothing to connect. It skips the hub and the list, and the next question answers No. | Nothing. |
+| 13 | **MaybeAddHub** | With more than three connectors, no segments in the <span style='color:red'>available network</span>, and no ``hub`` yet, a ``hub`` node is added to both the <span style='color:red'>available network</span> and the <span style='color:cyan'>chosen network</span> as ``"gui"``, at the average location of the needed nodes. | Nothing yet. |
+| 14 | **StartConnectedNodes** | The list of connected nodes (needed nodes that one route already joins) starts with ``hub`` when there is one, otherwise with one needed node picked at random. The rest are shuffled. | Nothing. |
+| 15 | **NeededLeftToConnect** | The second loop repeats until every needed node is connected. | Nothing. |
+| 16 | **AddNextNode** | Second loop. The next needed node is added to the connected nodes. | Nothing. |
+| 17 | **RouteFound** | ``calculate_possible_sub_networks(chosen, connected_nodes)`` reads the <span style='color:cyan'>chosen network</span> and looks for a route that joins all the connected nodes. | Nothing. |
+| 18 | **AddLeg** | A ``"gui"`` segment named ``<new node>_leg`` goes into both the <span style='color:red'>available network</span> and the <span style='color:cyan'>chosen network</span>: from ``hub`` when there is one, otherwise from the nearest node already connected. | Nothing yet. |
+| 19 | **SaveAvailableAgain** | ``available_network.save`` writes the <span style='color:red'>available network</span> with every node and segment added above, so the next build reuses them. A harness with fewer than two needed nodes (one connector) comes straight here. | ``available.json`` |
+| 20 | **ExactlyOneRoute** | ``calculate_possible_sub_networks(chosen, needed_nodes)`` reads the <span style='color:cyan'>chosen network</span> and lists the routes. ``find_network_with`` can narrow them to the one with a preferred segment or node. Anything but exactly one route stops the build. | Nothing. |
+| 21 | **MoveConnectorNodes** | Each connector node is moved by its backshell clock or by its connector's ``3d-mate`` offset. <span style='color:cyan'>Chosen network</span> only. | Nothing. |
+| 22 | **SaveChosen** | ``chosen_network.save`` writes the one route. ``flattened_network.derive`` then builds the flat drawing from it. | ``chosen.json``, ``flat.csv`` |
+| 23 | **StopDuplicateNames** | The build raises an error that names the duplicate nodes and their sources of truth. | Nothing more. |
+| 24 | **StopRouteCount** | The build raises an error that says how many routes it found. The user is encouraged to use functions like ``bundle_network_utils.find_network_with(input_networks, segment_ids=[], node_ids=[])`` to approach the desired network. | Nothing more. |
 
 ---
 ##Commands
@@ -317,7 +463,7 @@ A coordinate system is a different dict, ``{x, y, z, alpha, beta, gamma}``. ``x`
     - **input_network** — Network dict. A copy is returned; the input is not modified.
     - **segment_id** — ``segment_id`` to remove. A missing segment is not an error.
 
-??? info "`bundle_network_utils.adopt_mating_connector_nodes(input_network, flip=True, instances=None)`"
+??? info "`bundle_network_utils.adopt_mating_connector_nodes(input_network, flip=True, instances=None, replace_existing=True)`"
 
     Use this when a harness build's available network has a node at each device mating connector its harness connectors plug into, such as the nodes a system build writes from its physical model.
     
@@ -343,15 +489,13 @@ A coordinate system is a different dict, ``{x, y, z, alpha, beta, gamma}``. ``x`
     - **input_network** — Network dict. A copy is returned; the input is not modified.
     - **flip** — Turn each adopted node 180° about its own Z axis. Optional; defaults to ``True``.
     - **instances** — Instance rows to read. Optional; defaults to ``instances_list.read()``.
+    - **replace_existing** — What to do when ``<connector_group>.node`` is already a different node. ``True`` (the default): the mating connector wins, with a warning; segment ends on that node move to the mating connector's location, and that node is dropped. ``False``: rename anyway and leave both nodes, so ``raise_on_duplicate_node_ids`` reports the clash.
     
     **Returns**
     
     A deep copy of ``input_network`` with the adopted nodes renamed and turned.
     
-    A connector with no node at its mating connector is skipped. When
-    ``<connector_group>.node`` is already a different node, the mating
-    connector wins, with a warning: segment ends on that node move to the
-    mating connector's location, and that node is dropped.
+    A connector with no node at its mating connector is skipped.
 
 ??? info "`bundle_network_utils.connect_required_nodes(input_network, required_node_ids, rng=None)`"
 
@@ -385,6 +529,16 @@ A coordinate system is a different dict, ``{x, y, z, alpha, beta, gamma}``. ``x`
     
     A deep copy of ``input_network`` with the generated nodes and segments added.
 
+??? info "`bundle_network_utils.average_location(nodes)`"
+
+    Use this when a harness build needs the middle of a set of nodes, such as where to place a new node near them.
+    
+    Return the average ``[x, y, z]`` of the nodes' locations.
+    
+    **Args**
+    
+    - **nodes** — List of node dicts, each with a ``location``. An empty list returns ``[0.0, 0.0, 0.0]``.
+
 ??? info "`bundle_network_utils.new_node(input_network, new_id, new_location=[], new_rotation=[], csys=None)`"
 
     Use this when a harness build needs a node added at a location in the chosen network.
@@ -398,6 +552,110 @@ A coordinate system is a different dict, ``{x, y, z, alpha, beta, gamma}``. ``x`
     - **new_location** — ``[x, y, z]`` world position. Optional; defaults to an empty location.
     - **new_rotation** — ``[alpha, beta, gamma]`` in degrees. Angles you omit are left unset. Optional.
     - **csys** — CSYS dict stored on the node. Optional; omit it to leave the node without a ``csys``.
+
+??? info "`bundle_network_utils.end_all_segments_in_nodes(input_network, proximity_threshold=1e-06)`"
+
+    Use this when a harness build needs every segment end closed on a node in the chosen network.
+    
+    Give every segment end a node, and reject two different nodes at one location or two segments on the same endpoints.
+    
+    **Behavior**
+    
+    - Verifies that each line or spline ends at the location of a node.
+    - If two nodes share the same location and the same name, deletes one of them.
+    - Mating-connector nodes that share a location become one node. Its id is
+      ``{nodea+nodeb}``, with the connector ids in order, unless one of them
+      was renamed by ``adopt_mating_connector_nodes``: then it keeps that
+      name. A mating-connector node alone at its location is left as it is. A fasten record is
+      not consulted: only the locations matter. A node is a mating-connector
+      node when it carries ``mate`` or ``mates``.
+    - If a segment endpoint has no matching node, creates one named `f"N{segment_id}A"` or `f"N{segment_id}B"` depending on which end is unmatched.
+    
+    **Errors**
+    
+    - **Duplicate node:** raises `ValueError` if two nodes share the same location and they are not both mating-connector nodes.
+    - **Duplicate segment:** raises `ValueError` if two segments share the same pair of endpoints.
+    
+    **Args**
+    
+    - **input_network** — Network dict with `"segments"` and `"nodes"` keys.
+    - **proximity_threshold** — Max distance between two points to be considered the same location. Defaults to `1e-6`.
+    
+    **Returns**
+    
+    A deep copy of `input_network` with deduplication applied and any missing nodes added.
+
+??? info "`bundle_network_utils.raise_on_duplicate_node_ids(input_network)`"
+
+    Use this when a harness build needs every node name in the chosen network to be unique, whatever each node's source of truth.
+    
+    Raise ``ValueError`` when two nodes share a ``node_id``. The message
+    names each duplicate and describes every copy: its ``source_of_truth``,
+    and, for a mating connector node that
+    ``adopt_mating_connector_nodes`` renamed, the name it has in the
+    available network. That tells you which copy to rename or delete there.
+    
+    **Args**
+    
+    - **input_network** — Network dict with a ``"nodes"`` list. Not modified.
+
+??? info "`bundle_network_utils.ensure_nodes_exist(input_network, set_of_required_nodes)`"
+
+    Use this when a harness build needs the required node ids that are still missing from a network.
+    
+    Return the required node ids that are not in the network.
+    
+    The network is not modified. Missing ids come back in first-seen order.
+    
+    **Args**
+    
+    - **input_network** — Network dict with a ``"nodes"`` list. Each node needs a ``node_id``. The network is not modified.
+    - **set_of_required_nodes** — Node ids that must already be in the network. The return value is the ids from this list that are missing, in first-seen order.
+
+??? info "`bundle_network_utils.calculate_possible_sub_networks(input_network, set_of_required_nodes)`"
+
+    Use this when a harness build needs every minimal route that joins a set of required nodes.
+    
+    Return every minimal subnetwork that joins all of the required nodes.
+    
+    Connected segments means segments that share endpoint locations.
+    
+    A node is said to be connected to a segment if the node's location equals a segment's endpoint.
+    
+    A "solution" is when a set of segments is found that connects all nodes in the set of required nodes.
+    
+    There can be zero, one, or many solutions. The output of this function should be a list of network dictionaries that are solutions.
+    
+    If no solution is found, the list is empty.
+    
+    When exactly one node is required, every segment that leaves that node is kept, with the node at its other end. That other node does not have to be an instance. A lone connector still carries its available-network stub. Zero required nodes still return no segments.
+    
+    **Args**
+    
+    - **input_network** — Network dict with ``"segments"`` and ``"nodes"``. A segment is connected to a node when they share an endpoint location.
+    - **set_of_required_nodes** — Node ids one subnetwork must connect. Raises if any id is missing from the network. Returns a list of network dicts, one per minimal solution, or an empty list when no subnetwork connects them.
+
+??? info "`bundle_network_utils.find_network_with(input_networks, segment_ids=[], node_ids=[])`"
+
+    Use this when a harness build got more than one route and needs the one that contains a segment id or a node id the user named. Both id lists empty matches nothing.
+    
+    Keep the networks that contain any listed segment id or any listed node id.
+    
+    A network of segments A, B, C and a network of segments C, D, E:
+    
+    - ``segment_ids=["A"]`` keeps the first network.
+    - ``segment_ids=["B", "E"]`` keeps both.
+    - ``segment_ids=["C"]`` keeps both.
+    - ``segment_ids=["F"]`` keeps nothing.
+    
+    Both ``segment_ids`` and ``node_ids`` empty matches nothing. Call this
+    only when more than one solution came back and a stable id was named.
+    
+    **Args**
+    
+    - **input_networks** — List of network dicts to filter.
+    - **segment_ids** — Segment ids to look for. A network is kept when it contains any of these. Optional; pass an empty list to ignore segments.
+    - **node_ids** — Node ids to look for. A network is kept when it contains any of these or any of ``segment_ids``. Optional; pass an empty list to ignore nodes. If both lists are empty, nothing matches.
 
 ??? info "`bundle_network_utils.reroute_segment(input_network, existing_endpoint_node_name, new_endpoint_node_name)`"
 

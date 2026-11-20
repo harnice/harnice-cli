@@ -555,7 +555,7 @@ def mating_connector_nodes(discovered, placements):
     Connectors that share a point become one node, ``{nodea+nodeb}``. A fasten
     record is not read here: only the world location of each connector is.
     """
-    from harnice.lists.chosen_network import _coalesce_coincident_mate_nodes
+    from harnice.utils.bundle_network_utils import _coalesce_coincident_mate_nodes
 
     raw = []
     for device in discovered:
@@ -608,6 +608,11 @@ def list_mating_connectors(source):
     - ``list``: Node dicts. Empty when there is no source system or it has
       no placed device with a body.
     """
+    from harnice.lists.available_network import (
+        SOURCE_SYSTEM_CONTEXT,
+        tag_source_of_truth,
+    )
+
     revision = _source_folder(source)
     if not revision:
         return []
@@ -615,7 +620,9 @@ def list_mating_connectors(source):
     discovered = discover(os.path.join(revision, "instance_data", "device"))
     model = load_assembly(os.path.join(revision, "physical.json"))
     placements = locked_placements(discovered, model)
-    return mating_connector_nodes(discovered, placements)
+    return tag_source_of_truth(
+        mating_connector_nodes(discovered, placements), SOURCE_SYSTEM_CONTEXT
+    )
 
 
 def list_segments(source):
@@ -643,7 +650,15 @@ def list_segments(source):
         data = json.load(handle)
     if not isinstance(data, dict):
         return []
-    return [seg for seg in data.get("segments") or [] if isinstance(seg, dict)]
+    from harnice.lists.available_network import (
+        SOURCE_SYSTEM_CONTEXT,
+        tag_source_of_truth,
+    )
+
+    return tag_source_of_truth(
+        [seg for seg in data.get("segments") or [] if isinstance(seg, dict)],
+        SOURCE_SYSTEM_CONTEXT,
+    )
 
 def source_system_revision_folder(rev_history_row=None):
     """
@@ -704,7 +719,7 @@ def sync_mating_connector_nodes():
     A system build calls this. Nodes placed by hand, and every segment, stay.
     """
     from harnice import fileio
-    from harnice.lists.chosen_network import _is_mate_node
+    from harnice.utils.bundle_network_utils import _is_mate_node
 
     path = system_available_network_path()
     discovered = discover()

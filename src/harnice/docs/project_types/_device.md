@@ -62,7 +62,7 @@ The first build writes these instructions when `build.py` does not exist yet.
 
 ## Physical model
 
-A device body is `fileio.path("body")` (`body.step`). Mate connectors live in `attributes.json` under `mate_connectors`. How to write the solid, place mates, paste a face picture, and arrange devices in a system is [CAD](../cad.md).
+A device body is `fileio.path("body")` (`body.step`). Mate connectors live in `attributes.json` under `mate_connectors`. How to write the solid, place mates, paste a face picture, and arrange devices in a system is [CAD](../interacting_with_data/cad.md).
 
 Open **attributes** to read and write `attributes.json`. Changes autosave. Open **physical model** to move mate connectors on the solid the build wrote, and to paste a picture on a face. A pasted picture stays through the next build when `images` names that file, or when the macro that rewrites `body.step` is commented out. The PNG stays in `body_images/` either way. Every signals-list `connector_id` has a mate with that same id. The build adds any that are missing, at the origin, and that writes `mate_connectors` when the key is absent. The physical model page reads those mates. It does not add them.
 
@@ -94,7 +94,7 @@ Open **attributes** to read and write `attributes.json`. Changes autosave. Open 
 
         {% include-markdown "fragments/how-to-update-signals-list.md" %}
 
-1. Give the device a body when it should show up in a system assembly. Paste the **CAD** prompt on [Building with AI](../ai_prompts.md), or follow [CAD](../cad.md).
+1. Give the device a body when it should show up in a system assembly. Paste the **CAD** prompt on [Building with AI](../ai_prompts.md), or follow [CAD](../interacting_with_data/cad.md).
 
 1. Work on your block diagram symbol.
 

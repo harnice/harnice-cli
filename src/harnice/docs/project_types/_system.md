@@ -200,7 +200,7 @@ Completes passthrough routing for each mapped channel (optional user `route()` w
 
 ## Physical model
 
-Open **physical model** on a system to pose every placed device that has a `body.step`. Poses and fasten mates are `physical.json` (`fileio.path("physical assembly")`). The page rewrites `assembly.step` from that file. How the mates solve, and how a device gets a body, is [CAD](../cad.md).
+Open **physical model** on a system to pose every placed device that has a `body.step`. Poses and fasten mates are `physical.json` (`fileio.path("physical assembly")`). The page rewrites `assembly.step` from that file. How the mates solve, and how a device gets a body, is [CAD](../interacting_with_data/cad.md).
 
 
 ## File Structure

@@ -1,3 +1,4 @@
+import copy
 import math
 import os
 import random
@@ -48,41 +49,48 @@ for instance in instances_list.read():
 # ===========================================================================
 
 # available network (cad or manual) -> chosen network (modified subset) -> flattened network (visually arranged in 2D)
+#
+# Every node and segment has a "source_of_truth": "gui" (drawn in the
+# available network editor, or added below for you to edit) or the id of the
+# routing context it was read from. The available network editor shows
+# exactly what is in available.json, so anything this build adds to the
+# available network is saved there.
 
-# The network drawn in the available network editor (available.json).
-available_network = available_network.load()
+# Load available.json with every node and segment already in it.
+available = available_network.load()
 
-# Add a node at each mating connector in the source system's physical model,
-# named "<device_refdes>.<mating_connector_id>". The physical model is read
-# fresh on every build, so a node of the same name already in the available
-# network is replaced. This only changes the network in memory; available.json
-# is not written.
+# Drop every node and segment whose source of truth is not "gui", then
+# load them again, fresh from their contexts. Today the only context with
+# nodes and segments is the source system's physical model: a node at each
+# mating connector ("<device_refdes>.<mating_connector_id>") and each segment
+# routed there.
+available = available_network.keep_only_gui(available)
 for mating_connector in physical_assembly.list_mating_connectors(rev_history.info()):
     # To leave one out, skip it here, for example:
     # if mating_connector["node_id"].startswith("RACK-2."):
     #     continue
-    if mating_connector["node_id"] in [n["node_id"] for n in available_network["nodes"]]:
-        available_network = bundle_network_utils.delete_node(available_network, mating_connector["node_id"])
-    available_network["nodes"].append(mating_connector)
-
-# Add each segment routed in the source system, read fresh on every build, so a
-# segment of the same name already in the available network is replaced. This
-# only changes the network in memory; available.json is not written.
+    available["nodes"].append(mating_connector)
 for segment in physical_assembly.list_segments(rev_history.info()):
     # To leave one out, skip it here, for example:
     # if segment["segment_id"] == "S1":
     #     continue
-    if segment["segment_id"] in [s["segment_id"] for s in available_network["segments"]]:
-        available_network = bundle_network_utils.delete_segment(available_network, segment["segment_id"])
-    available_network["segments"].append(segment)
+    available["segments"].append(segment)
+available_network.save(available)
 
-# Assign nodes to any segments that may not have nodes attached
-available_network = chosen_network.end_all_segments_in_nodes(available_network)
+# The chosen network starts as a copy of the whole available network.
+chosen = copy.deepcopy(available)
 
-# A node at the device mating connector a harness connector plugs into
-# ("<device_side_refdes>.<device_side_connector_id>") becomes that connector's
-# "<connector_group>.node", turned 180 degrees to face the device.
-available_network = bundle_network_utils.adopt_mating_connector_nodes(available_network)
+# A node named after the device mating connector a harness connector plugs
+# into ("<device_side_refdes>.<device_side_connector_id>"), whatever its
+# source of truth, becomes that connector's "<connector_group>.node", turned
+# 180 degrees to face the device.
+chosen = bundle_network_utils.adopt_mating_connector_nodes(chosen, replace_existing=False)
+
+# Two nodes with the same name, whatever their source of truth, is an error.
+bundle_network_utils.raise_on_duplicate_node_ids(chosen)
+
+# Give every segment end that is not on a node a node.
+chosen = bundle_network_utils.end_all_segments_in_nodes(chosen)
 
 # Gather the collection of all instances with item_type == node
 needed_nodes = []
@@ -92,27 +100,169 @@ for instance in instances_list.read():
         if name not in needed_nodes:
             needed_nodes.append(name)
 
-# Generate geometry for required nodes the chosen network would not have yet:
-# a missing node gets a random spoke off an anchor node, and a required node
-# with no segment (such as one adopted from a mating connector) gets a leg to
-# that anchor. This only changes the network in memory, so the generated
-# geometry shows up in the chosen network, never in available.json.
-# Set to False to raise an error instead.
-if True:
-    available_network = bundle_network_utils.connect_required_nodes(
-        available_network, needed_nodes
-    )
-else:
-    missing_nodes = chosen_network.ensure_nodes_exist(
-        input_network=available_network,
-        set_of_required_nodes=needed_nodes,
-    )
-    if len(missing_nodes) > 0:
-        raise ValueError(f"Missing node(s) {missing_nodes}")
+# Add every needed node the chosen network does not have yet, to both the
+# available and the chosen network. It goes 6 to 18 inches from the average
+# location of the chosen nodes, at a random angle in the XY plane. Its 
+# source of truth is "gui", so it is saved in available.json and the next 
+# build reuses it.
+center = bundle_network_utils.average_location(chosen["nodes"])
+for node_id in needed_nodes:
+
+    # Skip a needed node if the chosen network already contains that node
+    already_in_chosen = False
+    for node in chosen["nodes"]:
+        if node["node_id"] == node_id:
+            already_in_chosen = True
+            break
+    if already_in_chosen:
+        continue
+
+    # Choose a random location for the new node
+    distance = random.uniform(6.0, 18.0)
+    angle = random.uniform(0.0, 2.0 * math.pi)
+    location = [
+        round(center[0] + distance * math.cos(angle), 3),
+        round(center[1] + distance * math.sin(angle), 3),
+        round(center[2], 3),
+    ]
+    while location in [node["location"] for node in chosen["nodes"]]:
+        location[0] += 1.0
+    new_node = {
+        "node_id": node_id,
+        "location": location,
+        "alpha": None,
+        "beta": None,
+        "gamma": None,
+        "source_of_truth": "gui",
+    }
+
+    # Add it to the chosen and available networks at the same time
+    chosen["nodes"].append(dict(new_node))
+    if node_id not in [node["node_id"] for node in available["nodes"]]:
+        available["nodes"].append(dict(new_node))
+
+# Join every needed node into one route. A harness with fewer than two needed
+# nodes (a single connector) has nothing to join, so it skips this.
+if len(needed_nodes) > 1:
+
+    # Look up chosen nodes by name.
+    node_by_id = {}
+    for node in chosen["nodes"]:
+        node_by_id[node["node_id"]] = node
+    segment_ids = [segment["segment_id"] for segment in available["segments"] + chosen["segments"]]
+
+    # With more than three connectors and no segments in the available
+    # network yet, add a "hub" node first, at the average location of the
+    # needed nodes, to both networks. Its source of truth is "gui".
+    connector_count = 0
+    for instance in instances_list.read():
+        if instance.get("item_type") == "harness_connector":
+            connector_count += 1
+    if "hub" not in node_by_id and connector_count > 3 and len(available["segments"]) == 0:
+        location = bundle_network_utils.average_location(
+            [node_by_id[node_id] for node_id in needed_nodes]
+        )
+        location = [round(value, 3) for value in location]
+        # if the average location is already taken, move it along +X until it is free
+        while location in [node["location"] for node in chosen["nodes"]]:
+            location[0] += 1.0
+        hub = {
+            "node_id": "hub",
+            "location": location,
+            "alpha": None,
+            "beta": None,
+            "gamma": None,
+            "source_of_truth": "gui",
+        }
+        chosen["nodes"].append(dict(hub))
+        available["nodes"].append(dict(hub))
+        node_by_id["hub"] = chosen["nodes"][-1]
+
+    # connected_nodes is the list of needed nodes that one route already joins.
+    # It starts with "hub" when there is one, otherwise with one needed node
+    # picked at random. The rest are shuffled and added one at a time below.
+    order = []
+    for node_id in needed_nodes:
+        if node_id != "hub":
+            order.append(node_id)
+    random.shuffle(order)
+    if "hub" in node_by_id:
+        connected_nodes = ["hub"]
+    else:
+        connected_nodes = [order.pop(0)]
+
+    # Add the needed nodes to connected_nodes one at a time. After each one,
+    # if calculate_possible_sub_networks finds no route that joins every node
+    # in connected_nodes, add a segment to the new node from "hub" when there
+    # is one, otherwise from the nearest node already in connected_nodes. The
+    # segment goes into both the available and the chosen network, named
+    # "<new node>_leg" ("_leg-2", "_leg-3", ... when taken). Its source of
+    # truth is "gui", so it is saved in available.json and the next build
+    # reuses it.
+    for node_id in order:
+
+        # Add the next needed node to connected_nodes.
+        connected_nodes.append(node_id)
+
+        # If existing segments already make a route that touches every node
+        # in connected_nodes, the new node is connected. Nothing to add; move on.
+        if len(bundle_network_utils.calculate_possible_sub_networks(chosen, connected_nodes)) > 0:
+            continue
+
+        # The new node is not connected to the others yet. Pick the node the
+        # new segment starts from: "hub" when there is one.
+        if "hub" in node_by_id:
+            from_id = "hub"
+
+        # Otherwise, the node already in connected_nodes that is closest to
+        # the new node. connected_nodes[:-1] is every node in the list except
+        # the new one.
+        else:
+            from_id = None
+            shortest = None
+            for other in connected_nodes[:-1]:
+                distance = math.dist(node_by_id[other]["location"], node_by_id[node_id]["location"])
+                if shortest is None or distance < shortest:
+                    shortest = distance
+                    from_id = other
+
+        # Name the segment "<new node>_leg". If that name is already used in
+        # either network, try "<new node>_leg-2", "-3", ... until one is free.
+        segment_id = f"{node_id}_leg"
+        index = 2
+        while segment_id in segment_ids:
+            segment_id = f"{node_id}_leg-{index}"
+            index += 1
+
+        # Remember the name so a later segment in this loop can't reuse it.
+        segment_ids.append(segment_id)
+
+        # A straight segment from the start node to the new node. Its source of
+        # truth is "gui", so it is saved in available.json and the next build
+        # finds it there instead of adding it again.
+        new_segment = {
+            "segment_id": segment_id,
+            "type": "line",
+            "location_at_end_a": list(node_by_id[from_id]["location"]),
+            "location_at_end_b": list(node_by_id[node_id]["location"]),
+            "spline_control_points": [],
+            "source_of_truth": "gui",
+        }
+
+        # Add it to both networks right away, so the route check for the next
+        # node in the loop sees this segment.
+        chosen["segments"].append(dict(new_segment))
+        available["segments"].append(dict(new_segment))
+
+# Overwrite networks/available.json with the whole available dict: the "gui"
+# items already in it, the items just reloaded from the source system, and
+# every node and segment added above. The chosen network is saved further
+# down by chosen_network.save, once one route is picked.
+available_network.save(available)
 
 # Find any possible solution within the network
-found_solutions = chosen_network.calculate_possible_sub_networks(
-    input_network=available_network,
+found_solutions = bundle_network_utils.calculate_possible_sub_networks(
+    input_network=chosen,
     set_of_required_nodes=needed_nodes,
 )
 
@@ -121,7 +271,7 @@ found_solutions = chosen_network.calculate_possible_sub_networks(
 preferred_segment_ids = []  # example: ["segment-1", "segment-2"]
 preferred_node_ids = []  # example: ["branch-node"]
 if len(found_solutions) > 1 and (preferred_segment_ids or preferred_node_ids):
-    sorted_solutions = chosen_network.find_network_with(
+    sorted_solutions = bundle_network_utils.find_network_with(
         input_networks=found_solutions,
         segment_ids=preferred_segment_ids,
         node_ids=preferred_node_ids,

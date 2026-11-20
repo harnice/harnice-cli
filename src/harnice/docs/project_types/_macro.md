@@ -583,7 +583,7 @@ Default system build calls it once (`artifact_id="physical-1"`, `scale=1`, `line
 
 ### Device body macros
 
-`build_rectangular_physical_model`, `build_rackmount_physical_model`, `build_rackmount_enclosure`, and `build_physical_model_from_step` live in `macros/device_artifacts`. A device build calls one of them. The macro writes `fileio.path("body")`, the device's `body.step`. Arguments, the inch frame, and mate connectors are on the [CAD](../cad.md) page.
+`build_rectangular_physical_model`, `build_rackmount_physical_model`, `build_rackmount_enclosure`, and `build_physical_model_from_step` live in `macros/device_artifacts`. A device build calls one of them. The macro writes `fileio.path("body")`, the device's `body.step`. Arguments, the inch frame, and mate connectors are on the [CAD](../interacting_with_data/cad.md) page.
 
 Default call: `artifact_id="body-1"`.
 

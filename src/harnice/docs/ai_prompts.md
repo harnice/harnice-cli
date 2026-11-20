@@ -167,7 +167,7 @@ This message says the device body to write, or which devices to fasten, or that 
 
 https://github.com/harnice/harnice-cli
 
-Clone that repository. Follow `skills/cad/SKILL.md`. The documentation is in the same clone at `src/harnice/docs/cad.md`.
+Clone that repository. Follow `skills/cad/SKILL.md`. The documentation is in the same clone at `src/harnice/docs/interacting_with_data/cad.md`.
 
 If you cannot clone the repository, open this URL, read the entire file, and follow it:
 
